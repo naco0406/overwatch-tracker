@@ -14,7 +14,7 @@ npm run format
 
 ## 환경 변수
 
-Supabase 연동은 M1에서 붙입니다. 실제 값은 `.env.local`에 넣고, 저장소에는 `.env.example`만 유지합니다.
+실제 값은 `.env.local`에 넣고, 저장소에는 `.env.example`만 유지합니다.
 
 ```bash
 VITE_SUPABASE_URL=
@@ -25,11 +25,19 @@ VITE_SUPABASE_PUBLISHABLE_KEY=
 
 1. Supabase 프로젝트를 생성합니다.
 2. Project URL과 publishable key를 `.env.local`에 넣습니다.
-3. Authentication > Users에서 개인 계정을 수동 생성합니다.
-4. `PRD.md`의 Supabase schema/RLS SQL을 SQL Editor에서 실행합니다.
-5. 앱에는 `@supabase/supabase-js` client, Auth helper, Match CRUD 순서로 붙입니다.
+3. Authentication > Providers에서 Email provider를 켭니다.
+4. Authentication > URL Configuration에 로컬/배포 URL을 등록합니다.
+5. Supabase Dashboard > SQL Editor에서 `supabase/migrations/20260527000000_initial_schema.sql` 전체를 실행합니다.
+6. 앱에서 회원가입/로그인 후 수기 입력 폼 또는 개발 콘솔에서 Match CRUD를 검증합니다.
 
 자세한 절차는 `PRD.md`의 `14. Supabase 세팅 가이드`를 기준으로 합니다.
+
+현재 프론트엔드에는 다음 데이터 계층이 준비되어 있습니다.
+
+- `src/supabase/matches.ts`: 경기 목록/상세/생성/수정/삭제
+- `src/hooks/useMatches.ts`: React Query 기반 Match hooks
+- `src/supabase/userSettings.ts`: 사용자 기본 계정/큐/ROI 설정
+- `src/hooks/useUserSettings.ts`: React Query 기반 Settings hooks
 
 ## 배포
 
