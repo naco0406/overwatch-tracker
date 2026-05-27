@@ -1,5 +1,14 @@
 import type { LucideIcon } from 'lucide-react';
-import { BarChart3, Command, Home, LogOut, Settings, Sparkles, Swords } from 'lucide-react';
+import {
+  BarChart3,
+  BookOpenCheck,
+  Command,
+  Home,
+  LogOut,
+  Settings,
+  Sparkles,
+  Swords,
+} from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
@@ -17,6 +26,7 @@ const navItems: NavItem[] = [
   { to: '/', label: '홈', icon: Home },
   { to: '/sessions', label: '세션', icon: Swords },
   { to: '/stats', label: '통계', icon: BarChart3 },
+  { to: '/master-data', label: '마스터', icon: BookOpenCheck },
   { to: '/settings', label: '설정', icon: Settings },
 ];
 
@@ -101,7 +111,7 @@ const AppLayout = () => {
         <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-24 pt-5 sm:px-6 xl:px-8 xl:py-8">
           <Outlet />
         </main>
-        <nav className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-4 rounded-lg border border-border/80 bg-card/95 p-1 backdrop-blur-xl xl:hidden">
+        <nav className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-5 rounded-lg border border-border/80 bg-card/95 p-1 backdrop-blur-xl xl:hidden">
           {navItems.map((item) => (
             <NavLink
               key={item.to}

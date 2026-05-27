@@ -4,6 +4,7 @@ import { AppLayout } from '@/components/common/AppLayout';
 import { RequireAuth } from '@/components/common/RequireAuth';
 import { HomePage } from '@/pages/HomePage';
 import { LoginPage } from '@/pages/LoginPage';
+import { MasterDataPage } from '@/pages/MasterDataPage';
 import { SessionsPage } from '@/pages/SessionsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { StatsPage } from '@/pages/StatsPage';
@@ -16,6 +17,7 @@ const AppRoutes = () => (
         <Route path="/" element={<HomePage />} />
         <Route path="/sessions" element={<SessionsPage />} />
         <Route path="/stats" element={<StatsPage />} />
+        <Route path="/master-data" element={<MasterDataPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
     </Route>

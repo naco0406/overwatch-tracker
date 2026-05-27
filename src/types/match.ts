@@ -18,6 +18,7 @@ export type OcrConfidence = Record<string, number>;
 
 export interface Match {
   account: AccountType;
+  accountId?: string | null;
   createdAt: string;
   enemyScore: number;
   id: string;
@@ -42,6 +43,7 @@ export type MatchDateInput = Date | string;
 
 export interface MatchCreateInput {
   account?: AccountType;
+  accountId?: string | null;
   enemyScore: number;
   mapId: string;
   memo?: string;
@@ -60,6 +62,7 @@ export interface MatchCreateInput {
 
 export interface MatchUpdateInput {
   account?: AccountType;
+  accountId?: string | null;
   enemyScore?: number;
   id: string;
   mapId?: string;
@@ -79,6 +82,7 @@ export interface MatchUpdateInput {
 
 export interface MatchFilters {
   account?: AccountType;
+  accountId?: string;
   heroId?: string;
   mapId?: string;
   modeId?: ModeId;

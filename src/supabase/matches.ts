@@ -40,6 +40,7 @@ const normalizeHeroIds = (heroIds: string[] = []) =>
 
 const rowToMatch = (row: MatchRow, heroRows: HeroRow[] = []): Match => ({
   account: row.account,
+  accountId: row.account_id,
   createdAt: row.created_at,
   enemyScore: row.enemy_score,
   id: row.id,
@@ -172,6 +173,7 @@ const buildMatchUpdate = (input: MatchUpdateInput) => {
   const playedAt = toIsoString(input.playedAt);
 
   if (input.account !== undefined) update.account = input.account;
+  if (input.accountId !== undefined) update.account_id = input.accountId;
   if (input.enemyScore !== undefined) update.enemy_score = input.enemyScore;
   if (input.mapId !== undefined) update.map_id = input.mapId;
   if (input.memo !== undefined) update.memo = input.memo;
@@ -199,6 +201,7 @@ export const listMatches = async (filters: MatchFilters = {}) => {
     .order('played_at', { ascending: false });
 
   if (filters.account) query = query.eq('account', filters.account);
+  if (filters.accountId) query = query.eq('account_id', filters.accountId);
   if (filters.mapId) query = query.eq('map_id', filters.mapId);
   if (filters.modeId) query = query.eq('mode_id', filters.modeId);
   if (filters.playedFrom) query = query.gte('played_at', toIsoString(filters.playedFrom) ?? '');
@@ -243,6 +246,7 @@ export const createMatch = async (input: MatchCreateInput) => {
 
   const row: MatchInsert = {
     account: input.account ?? 'main',
+    account_id: input.accountId ?? null,
     enemy_score: input.enemyScore,
     map_id: input.mapId,
     memo: input.memo ?? '',

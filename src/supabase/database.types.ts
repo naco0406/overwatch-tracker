@@ -43,6 +43,7 @@ export interface Database {
       matches: {
         Row: {
           account: Database['public']['Enums']['account_type'];
+          account_id: string | null;
           created_at: string;
           enemy_score: number;
           id: string;
@@ -63,6 +64,7 @@ export interface Database {
         };
         Insert: {
           account?: Database['public']['Enums']['account_type'];
+          account_id?: string | null;
           created_at?: string;
           enemy_score: number;
           id?: string;
@@ -83,6 +85,7 @@ export interface Database {
         };
         Update: {
           account?: Database['public']['Enums']['account_type'];
+          account_id?: string | null;
           created_at?: string;
           enemy_score?: number;
           id?: string;
@@ -98,6 +101,45 @@ export interface Database {
           tags?: string[];
           team_comp?: Json | null;
           team_score?: number;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      player_accounts: {
+        Row: {
+          battle_tag: string;
+          created_at: string;
+          deactivated_at: string | null;
+          display_name: string;
+          id: string;
+          is_active: boolean;
+          is_main: boolean;
+          sort_order: number;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          battle_tag: string;
+          created_at?: string;
+          deactivated_at?: string | null;
+          display_name?: string;
+          id?: string;
+          is_active?: boolean;
+          is_main?: boolean;
+          sort_order?: number;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          battle_tag?: string;
+          created_at?: string;
+          deactivated_at?: string | null;
+          display_name?: string;
+          id?: string;
+          is_active?: boolean;
+          is_main?: boolean;
+          sort_order?: number;
           updated_at?: string;
           user_id?: string;
         };
