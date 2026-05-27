@@ -1,3 +1,4 @@
+import { lazy, Suspense, type ReactNode } from 'react';
 import { Route, Routes } from 'react-router-dom';
 
 import { AppLayout } from '@/components/common/AppLayout';
@@ -7,7 +8,18 @@ import { LoginPage } from '@/pages/LoginPage';
 import { MasterDataPage } from '@/pages/MasterDataPage';
 import { SessionsPage } from '@/pages/SessionsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
-import { StatsPage } from '@/pages/StatsPage';
+
+const StatsPage = lazy(() =>
+  import('@/pages/StatsPage').then((module) => ({ default: module.StatsPage })),
+);
+
+const LazyPage = ({ children }: { children: ReactNode }) => (
+  <Suspense
+    fallback={<div className="text-sm font-semibold text-muted-foreground">불러오는 중</div>}
+  >
+    {children}
+  </Suspense>
+);
 
 const AppRoutes = () => (
   <Routes>
@@ -16,7 +28,14 @@ const AppRoutes = () => (
       <Route element={<AppLayout />}>
         <Route path="/" element={<HomePage />} />
         <Route path="/sessions" element={<SessionsPage />} />
-        <Route path="/stats" element={<StatsPage />} />
+        <Route
+          path="/stats"
+          element={
+            <LazyPage>
+              <StatsPage />
+            </LazyPage>
+          }
+        />
         <Route path="/master-data" element={<MasterDataPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>

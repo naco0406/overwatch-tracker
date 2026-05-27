@@ -9,7 +9,22 @@ import {
   Swords,
   Target,
 } from 'lucide-react';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ComposedChart,
+  Legend,
+  Line,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -70,6 +85,38 @@ const getPeriodStart = (period: PeriodFilter) => {
 };
 
 const formatHour = (hour: number) => `${String(hour).padStart(2, '0')}:00`;
+
+const chartFontFamily =
+  'Pretendard, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
+const chartColors = {
+  card: 'hsl(var(--card))',
+  draw: 'hsl(var(--muted-foreground) / 0.42)',
+  grid: 'hsl(var(--border))',
+  loss: 'hsl(var(--destructive))',
+  primary: 'hsl(var(--primary))',
+  text: 'hsl(var(--muted-foreground))',
+  win: 'hsl(var(--primary))',
+};
+
+const tooltipStyle = {
+  backgroundColor: chartColors.card,
+  border: `1px solid ${chartColors.grid}`,
+  borderRadius: 8,
+  boxShadow: '0 16px 36px -28px hsl(var(--foreground) / 0.36)',
+  color: 'hsl(var(--foreground))',
+  fontFamily: chartFontFamily,
+} satisfies CSSProperties;
+
+const legendStyle = {
+  fontFamily: chartFontFamily,
+} satisfies CSSProperties;
+
+const getAxisTick = (fontSize = 12) => ({
+  fill: chartColors.text,
+  fontFamily: chartFontFamily,
+  fontSize,
+});
 
 const StatsPage = () => {
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('30d');
@@ -207,10 +254,48 @@ const StatsPage = () => {
       .sort((a, b) => a.order - b.order);
   }, [sessions]);
 
+  const modeChartData = useMemo(
+    () =>
+      modeStats.map((stat) => ({
+        name: stat.label,
+        무승부: stat.draws,
+        승리: stat.wins,
+        승률: stat.winRate ?? 0,
+        패배: stat.losses,
+      })),
+    [modeStats],
+  );
+  const resultChartData = useMemo(
+    () =>
+      [
+        { fill: chartColors.win, name: '승리', value: summary.wins },
+        { fill: chartColors.loss, name: '패배', value: summary.losses },
+        { fill: chartColors.draw, name: '무승부', value: summary.draws },
+      ].filter((item) => item.value > 0),
+    [summary.draws, summary.losses, summary.wins],
+  );
+  const hourlyChartData = useMemo(
+    () =>
+      hourlyStats.map((stat) => ({
+        name: formatHour(stat.hour),
+        경기: stat.total,
+        승률: stat.winRate ?? 0,
+      })),
+    [hourlyStats],
+  );
+  const orderChartData = useMemo(
+    () =>
+      orderStats.map((stat) => ({
+        name: `${stat.order}번째`,
+        경기: stat.total,
+        승률: stat.winRate ?? 0,
+      })),
+    [orderStats],
+  );
+
   const maxModeCount = Math.max(1, ...modeStats.map((stat) => stat.total));
   const maxMapCount = Math.max(1, ...mapStats.map((stat) => stat.total));
   const maxHeroCount = Math.max(1, ...heroStats.map((stat) => stat.total));
-  const maxHourlyCount = Math.max(1, ...hourlyStats.map((stat) => stat.total));
   const maxOrderCount = Math.max(1, ...orderStats.map((stat) => stat.total));
   const activeFilterCount = [
     periodFilter !== '30d',
@@ -385,18 +470,97 @@ const StatsPage = () => {
 
             <TabsContent value="mode" className="mt-4">
               <AnalysisPanel icon={BarChart3} label="모드 분포" title="모드별 성과">
-                <div className="space-y-2">
-                  {modeStats.map((stat) => (
-                    <StatRow
-                      key={stat.value}
-                      count={stat.total}
-                      detail={`${stat.wins}승 ${stat.losses}패 ${stat.draws}무`}
-                      label={stat.label}
-                      maxCount={maxModeCount}
-                      winRate={stat.winRate}
-                    />
-                  ))}
-                </div>
+                {filteredMatches.length > 0 ? (
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+                    <ChartShell>
+                      <BarChart
+                        data={modeChartData}
+                        margin={{ bottom: 0, left: -18, right: 8, top: 12 }}
+                      >
+                        <CartesianGrid
+                          stroke={chartColors.grid}
+                          strokeDasharray="3 3"
+                          vertical={false}
+                        />
+                        <XAxis
+                          dataKey="name"
+                          tick={getAxisTick()}
+                          tickLine={false}
+                          axisLine={false}
+                          interval={0}
+                        />
+                        <YAxis
+                          allowDecimals={false}
+                          tick={getAxisTick()}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <Tooltip
+                          contentStyle={tooltipStyle}
+                          cursor={{ fill: 'hsl(var(--secondary) / 0.65)' }}
+                          itemStyle={tooltipStyle}
+                          labelStyle={tooltipStyle}
+                        />
+                        <Legend wrapperStyle={legendStyle} />
+                        <Bar
+                          dataKey="승리"
+                          stackId="result"
+                          fill={chartColors.win}
+                          radius={[0, 0, 4, 4]}
+                        />
+                        <Bar dataKey="무승부" stackId="result" fill={chartColors.draw} />
+                        <Bar
+                          dataKey="패배"
+                          stackId="result"
+                          fill={chartColors.loss}
+                          radius={[4, 4, 0, 0]}
+                        />
+                      </BarChart>
+                    </ChartShell>
+
+                    <ChartShell>
+                      <PieChart>
+                        <Tooltip
+                          contentStyle={tooltipStyle}
+                          itemStyle={tooltipStyle}
+                          labelStyle={tooltipStyle}
+                        />
+                        <Pie
+                          data={resultChartData}
+                          dataKey="value"
+                          innerRadius={58}
+                          nameKey="name"
+                          outerRadius={90}
+                          paddingAngle={2}
+                        >
+                          {resultChartData.map((entry) => (
+                            <Cell key={entry.name} fill={entry.fill} />
+                          ))}
+                        </Pie>
+                        <Legend wrapperStyle={legendStyle} />
+                      </PieChart>
+                    </ChartShell>
+
+                    <div className="space-y-2 xl:col-span-2">
+                      {modeStats.map((stat) => (
+                        <StatRow
+                          key={stat.value}
+                          count={stat.total}
+                          detail={`${stat.wins}승 ${stat.losses}패 ${stat.draws}무`}
+                          label={stat.label}
+                          maxCount={maxModeCount}
+                          winRate={stat.winRate}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <TabEmpty
+                    icon={BarChart3}
+                    isLoading={isLoading}
+                    title="필터에 해당하는 모드 기록이 없습니다."
+                  />
+                )}
               </AnalysisPanel>
             </TabsContent>
 
@@ -456,11 +620,62 @@ const StatsPage = () => {
             <TabsContent value="time" className="mt-4">
               <AnalysisPanel icon={Clock3} label="시간대" title="시간대별 집중도">
                 {filteredMatches.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-                    {hourlyStats.map((stat) => (
-                      <HourCell key={stat.hour} maxCount={maxHourlyCount} {...stat} />
-                    ))}
-                  </div>
+                  <ChartShell className="h-[360px]">
+                    <ComposedChart
+                      data={hourlyChartData}
+                      margin={{ bottom: 8, left: -18, right: 8, top: 12 }}
+                    >
+                      <CartesianGrid
+                        stroke={chartColors.grid}
+                        strokeDasharray="3 3"
+                        vertical={false}
+                      />
+                      <XAxis
+                        dataKey="name"
+                        tick={getAxisTick(11)}
+                        tickLine={false}
+                        axisLine={false}
+                        interval={1}
+                      />
+                      <YAxis
+                        yAxisId="left"
+                        allowDecimals={false}
+                        tick={getAxisTick()}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis
+                        yAxisId="right"
+                        orientation="right"
+                        domain={[0, 100]}
+                        tick={getAxisTick()}
+                        tickFormatter={(value) => `${value}%`}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <Tooltip
+                        contentStyle={tooltipStyle}
+                        cursor={{ fill: 'hsl(var(--secondary) / 0.65)' }}
+                        itemStyle={tooltipStyle}
+                        labelStyle={tooltipStyle}
+                      />
+                      <Legend wrapperStyle={legendStyle} />
+                      <Bar
+                        yAxisId="left"
+                        dataKey="경기"
+                        fill={chartColors.primary}
+                        radius={[4, 4, 0, 0]}
+                      />
+                      <Line
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="승률"
+                        stroke="hsl(var(--success))"
+                        strokeWidth={2}
+                        dot={{ fill: 'hsl(var(--success))', r: 3 }}
+                      />
+                    </ComposedChart>
+                  </ChartShell>
                 ) : (
                   <TabEmpty
                     icon={Clock3}
@@ -474,17 +689,75 @@ const StatsPage = () => {
             <TabsContent value="order" className="mt-4">
               <AnalysisPanel icon={ListOrdered} label="세션 순서" title="세션 내 순서별 성과">
                 {orderStats.length > 0 ? (
-                  <div className="space-y-2">
-                    {orderStats.slice(0, 12).map((stat) => (
-                      <StatRow
-                        key={stat.order}
-                        count={stat.total}
-                        detail={`${stat.wins}승 ${stat.losses}패 ${stat.draws}무`}
-                        label={`${stat.order}번째 경기`}
-                        maxCount={maxOrderCount}
-                        winRate={stat.winRate}
-                      />
-                    ))}
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+                    <ChartShell className="h-[340px]">
+                      <ComposedChart
+                        data={orderChartData}
+                        margin={{ bottom: 8, left: -18, right: 8, top: 12 }}
+                      >
+                        <CartesianGrid
+                          stroke={chartColors.grid}
+                          strokeDasharray="3 3"
+                          vertical={false}
+                        />
+                        <XAxis
+                          dataKey="name"
+                          tick={getAxisTick()}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis
+                          yAxisId="left"
+                          allowDecimals={false}
+                          tick={getAxisTick()}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis
+                          yAxisId="right"
+                          orientation="right"
+                          domain={[0, 100]}
+                          tick={getAxisTick()}
+                          tickFormatter={(value) => `${value}%`}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <Tooltip
+                          contentStyle={tooltipStyle}
+                          cursor={{ fill: 'hsl(var(--secondary) / 0.65)' }}
+                          itemStyle={tooltipStyle}
+                          labelStyle={tooltipStyle}
+                        />
+                        <Legend wrapperStyle={legendStyle} />
+                        <Bar
+                          yAxisId="left"
+                          dataKey="경기"
+                          fill={chartColors.primary}
+                          radius={[4, 4, 0, 0]}
+                        />
+                        <Line
+                          yAxisId="right"
+                          type="monotone"
+                          dataKey="승률"
+                          stroke="hsl(var(--success))"
+                          strokeWidth={2}
+                          dot={{ fill: 'hsl(var(--success))', r: 3 }}
+                        />
+                      </ComposedChart>
+                    </ChartShell>
+
+                    <div className="space-y-2">
+                      {orderStats.slice(0, 12).map((stat) => (
+                        <StatRow
+                          key={stat.order}
+                          count={stat.total}
+                          detail={`${stat.wins}승 ${stat.losses}패 ${stat.draws}무`}
+                          label={`${stat.order}번째 경기`}
+                          maxCount={maxOrderCount}
+                          winRate={stat.winRate}
+                        />
+                      ))}
+                    </div>
                   </div>
                 ) : (
                   <TabEmpty
@@ -584,6 +857,24 @@ const AnalysisPanel = ({ children, icon: Icon, label, title }: AnalysisPanelProp
   </div>
 );
 
+interface ChartShellProps {
+  children: ReactNode;
+  className?: string;
+}
+
+const ChartShell = ({ children, className }: ChartShellProps) => (
+  <div
+    className={cn(
+      'h-[320px] min-w-0 rounded-lg border border-border bg-[hsl(var(--surface-2))] p-3',
+      className,
+    )}
+  >
+    <ResponsiveContainer height="100%" width="100%">
+      {children}
+    </ResponsiveContainer>
+  </div>
+);
+
 interface StatRowProps {
   count: number;
   detail: string;
@@ -661,37 +952,6 @@ const MediaStatRow = ({
         </span>
       </div>
     </div>
-  </div>
-);
-
-interface HourCellProps {
-  draws: number;
-  hour: number;
-  losses: number;
-  maxCount: number;
-  total: number;
-  winRate: number | null;
-  wins: number;
-}
-
-const HourCell = ({ hour, maxCount, total, winRate }: HourCellProps) => (
-  <div className="rounded-md border border-border bg-[hsl(var(--surface-2))] p-3">
-    <div className="flex items-center justify-between gap-2">
-      <p className="text-sm font-bold">{formatHour(hour)}</p>
-      <span className="text-xs font-semibold text-muted-foreground">{total}경기</span>
-    </div>
-    <div className="mt-4 flex h-20 items-end rounded-md bg-card p-2">
-      <div
-        className={cn(
-          'w-full rounded-t-md',
-          total > 0 ? 'bg-primary' : 'border border-dashed border-border bg-transparent',
-        )}
-        style={{ height: `${total === 0 ? 10 : Math.max(12, (total / maxCount) * 100)}%` }}
-      />
-    </div>
-    <p className="mt-2 text-xs font-semibold text-muted-foreground">
-      승률 {formatWinRate(winRate)}
-    </p>
   </div>
 );
 

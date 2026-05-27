@@ -4,31 +4,36 @@ import {
   CheckCircle2,
   Clipboard,
   Clock3,
-  Crosshair,
   FilePlus2,
   Flag,
+  ImagePlus,
   MapIcon,
+  Pencil,
   Plus,
   ShieldCheck,
   Swords,
+  Trash2,
   TrendingUp,
+  X,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
+} from 'react';
 
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageHeader } from '@/components/common/PageHeader';
-import { MatchEntryForm } from '@/components/input/MatchEntryForm';
+import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
+import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
-import { useCreateMatch, useMatches } from '@/hooks/useMatches';
+import { useCreateMatch, useDeleteMatch, useMatches, useUpdateMatch } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import {
@@ -46,6 +51,12 @@ import { getPlayerAccountLabel } from '@/types/playerAccount';
 
 const emptySessionSlots = Array.from({ length: 6 });
 
+interface ScreenshotPreview {
+  imageUrl: string;
+  name: string;
+  size: number;
+}
+
 const formatTime = (value?: string) => {
   if (!value) {
     return '-';
@@ -55,6 +66,14 @@ const formatTime = (value?: string) => {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value));
+};
+
+const formatFileSize = (size: number) => {
+  if (size < 1024 * 1024) {
+    return `${Math.max(1, Math.round(size / 1024))}KB`;
+  }
+
+  return `${(size / 1024 / 1024).toFixed(1)}MB`;
 };
 
 const getResultTone = (result: Match['result']) => {
@@ -107,6 +126,10 @@ const pipeline = [
 const HomePage = () => {
   const [entryDialogOpen, setEntryDialogOpen] = useState(false);
   const [entrySource, setEntrySource] = useState<MatchCreateInput['source']>('manual');
+  const [editingMatch, setEditingMatch] = useState<Match | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Match | null>(null);
+  const [screenshotPreview, setScreenshotPreview] = useState<ScreenshotPreview | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const todayRange = useMemo(() => getTodayRange(), []);
   const { data: todayMatches = [], isLoading } = useMatches({
     playedFrom: todayRange.start,
@@ -115,6 +138,8 @@ const HomePage = () => {
   const { data: userSettings } = useUserSettings();
   const { data: playerAccounts = [] } = usePlayerAccounts();
   const createMatchMutation = useCreateMatch();
+  const updateMatchMutation = useUpdateMatch();
+  const deleteMatchMutation = useDeleteMatch();
 
   const sortedTodayMatches = useMemo(
     () =>
@@ -134,6 +159,15 @@ const HomePage = () => {
   const accountById = useMemo(
     () => new Map(playerAccounts.map((account) => [account.id, account])),
     [playerAccounts],
+  );
+
+  useEffect(
+    () => () => {
+      if (screenshotPreview?.imageUrl) {
+        URL.revokeObjectURL(screenshotPreview.imageUrl);
+      }
+    },
+    [screenshotPreview?.imageUrl],
   );
 
   const reviewFields = latestMatch
@@ -163,6 +197,7 @@ const HomePage = () => {
   const handleCreateMatch = async (input: MatchCreateInput) => {
     try {
       await createMatchMutation.mutateAsync(input);
+      setScreenshotPreview(null);
       toast({
         description: '오늘 세션에 새 경기가 추가됐습니다.',
         title: '경기 저장 완료',
@@ -177,21 +212,148 @@ const HomePage = () => {
     }
   };
 
+  const handleUpdateMatch = async (input: MatchCreateInput) => {
+    if (!editingMatch) {
+      return;
+    }
+
+    try {
+      await updateMatchMutation.mutateAsync({
+        ...input,
+        id: editingMatch.id,
+      });
+      toast({
+        description: '저장된 경기 정보를 갱신했습니다.',
+        title: '경기 수정 완료',
+      });
+    } catch (error) {
+      toast({
+        description: error instanceof Error ? error.message : '잠시 후 다시 시도하세요.',
+        title: '경기 수정 실패',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  };
+
+  const handleDeleteMatch = async () => {
+    if (!deleteTarget) {
+      return;
+    }
+
+    try {
+      await deleteMatchMutation.mutateAsync(deleteTarget.id);
+      toast({
+        description: '세션과 통계에서 해당 경기를 제거했습니다.',
+        title: '경기 삭제 완료',
+      });
+      setDeleteTarget(null);
+    } catch (error) {
+      toast({
+        description: error instanceof Error ? error.message : '잠시 후 다시 시도하세요.',
+        title: '경기 삭제 실패',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  };
+
+  const setScreenshotFile = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast({
+        description: 'PNG, JPEG, WebP 이미지를 사용할 수 있습니다.',
+        title: '이미지 파일이 아닙니다.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setScreenshotPreview({
+      imageUrl: URL.createObjectURL(file),
+      name: file.name || 'clipboard-image',
+      size: file.size,
+    });
+    setEntrySource('mixed');
+    setEditingMatch(null);
+  };
+
+  const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
+    const imageFile = Array.from(event.clipboardData.files).find((file) =>
+      file.type.startsWith('image/'),
+    );
+
+    if (!imageFile) {
+      return;
+    }
+
+    event.preventDefault();
+    setScreenshotFile(imageFile);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const imageFile = Array.from(event.dataTransfer.files).find((file) =>
+      file.type.startsWith('image/'),
+    );
+
+    if (imageFile) {
+      setScreenshotFile(imageFile);
+    }
+  };
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    if (file) {
+      setScreenshotFile(file);
+    }
+
+    event.target.value = '';
+  };
+
   const openDirectEntry = () => {
     setEntrySource('manual');
+    setEditingMatch(null);
+    setScreenshotPreview(null);
     setEntryDialogOpen(true);
   };
 
+  const openScreenshotEntry = () => {
+    setEntrySource(screenshotPreview ? 'mixed' : 'manual');
+    setEditingMatch(null);
+    setEntryDialogOpen(true);
+  };
+
+  const openEditEntry = (match: Match) => {
+    setEditingMatch(match);
+    setEntrySource(match.source);
+    setEntryDialogOpen(true);
+  };
+
+  const closeEntryDialog = (open: boolean) => {
+    setEntryDialogOpen(open);
+
+    if (!open) {
+      setEditingMatch(null);
+      setEntrySource('manual');
+    }
+  };
+
   return (
-    <div className="flex flex-1 flex-col gap-6">
+    <div className="flex flex-1 flex-col gap-6" onPaste={handlePaste}>
       <PageHeader
         eyebrow="오늘"
         title="경기 기록"
         actions={
           <>
-            <Button variant="outline" className="hidden sm:inline-flex" disabled>
-              <Crosshair className="h-4 w-4" />
-              OCR 입력
+            <Button
+              variant="outline"
+              className="hidden bg-transparent sm:inline-flex"
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <ImagePlus className="h-4 w-4" />
+              이미지 선택
             </Button>
             <Button type="button" onClick={openDirectEntry}>
               <Plus className="h-4 w-4" />
@@ -199,6 +361,13 @@ const HomePage = () => {
             </Button>
           </>
         }
+      />
+      <input
+        ref={fileInputRef}
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        type="file"
+        onChange={handleFileChange}
       />
 
       <section className="workspace-panel overflow-hidden">
@@ -265,22 +434,66 @@ const HomePage = () => {
               </Badge>
             </div>
 
-            <div className="field-surface flex min-h-[320px] items-center justify-center p-6 text-center sm:min-h-[380px]">
+            <div
+              className="field-surface flex min-h-[320px] items-center justify-center p-6 text-center outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring/25 sm:min-h-[380px]"
+              aria-label="스크린샷 붙여넣기 영역"
+              tabIndex={0}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={handleDrop}
+            >
               <div className="relative z-10 w-full max-w-lg">
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-lg border border-primary/20 bg-card text-primary">
-                  <Clipboard className="h-7 w-7" />
-                </div>
-                <h3 className="mt-5 text-2xl font-bold tracking-normal">스코어보드 캡처</h3>
-                <p className="mt-2 text-sm text-muted-foreground">붙여넣기 대기 중</p>
+                {screenshotPreview ? (
+                  <div className="overflow-hidden rounded-lg border border-border bg-card text-left">
+                    <div className="aspect-video bg-secondary">
+                      <img
+                        alt={screenshotPreview.name}
+                        className="h-full w-full object-cover"
+                        src={screenshotPreview.imageUrl}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="metric-label">스크린샷</p>
+                        <p className="mt-1 truncate text-sm font-bold">{screenshotPreview.name}</p>
+                        <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                          {formatFileSize(screenshotPreview.size)}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="bg-transparent"
+                        onClick={() => setScreenshotPreview(null)}
+                      >
+                        <X className="h-4 w-4" />
+                        제거
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-lg border border-primary/20 bg-card text-primary">
+                      <Clipboard className="h-7 w-7" />
+                    </div>
+                    <h3 className="mt-5 text-2xl font-bold tracking-normal">스코어보드 캡처</h3>
+                    <p className="mt-2 text-sm text-muted-foreground">붙여넣기 또는 파일 선택</p>
+                  </>
+                )}
 
                 <div className="mt-7 grid gap-2 sm:grid-cols-2">
-                  <Button size="lg" disabled>
-                    <Crosshair className="h-4 w-4" />
-                    OCR 입력
-                  </Button>
-                  <Button size="lg" type="button" variant="outline" onClick={openDirectEntry}>
+                  <Button size="lg" type="button" onClick={openScreenshotEntry}>
                     <FilePlus2 className="h-4 w-4" />
-                    직접 입력
+                    {screenshotPreview ? '정보 입력' : '직접 입력'}
+                  </Button>
+                  <Button
+                    size="lg"
+                    type="button"
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <ImagePlus className="h-4 w-4" />
+                    이미지 선택
                   </Button>
                 </div>
               </div>
@@ -312,10 +525,24 @@ const HomePage = () => {
                   {latestMatch ? '최근 저장' : '입력 대기'}
                 </h3>
               </div>
-              <span className="status-chip">
-                <span className="status-dot" />
-                {latestMatch ? formatTime(latestMatch.playedAt) : 'Idle'}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="status-chip">
+                  <span className="status-dot" />
+                  {latestMatch ? formatTime(latestMatch.playedAt) : 'Idle'}
+                </span>
+                {latestMatch ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="bg-transparent"
+                    onClick={() => openEditEntry(latestMatch)}
+                  >
+                    <Pencil className="h-4 w-4" />
+                    수정
+                  </Button>
+                ) : null}
+              </div>
             </div>
 
             <div className="mt-5 overflow-hidden rounded-lg border border-border bg-card">
@@ -391,7 +618,7 @@ const HomePage = () => {
               {sortedTodayMatches.slice(0, 6).map((match) => (
                 <div
                   key={match.id}
-                  className="flat-row grid gap-3 p-3 sm:grid-cols-[72px_minmax(0,1fr)_80px]"
+                  className="flat-row grid gap-3 p-3 sm:grid-cols-[72px_minmax(0,1fr)_80px_auto]"
                 >
                   <div className="text-sm font-bold">{formatTime(match.playedAt)}</div>
                   <div className="min-w-0">
@@ -409,6 +636,28 @@ const HomePage = () => {
                     )}`}
                   >
                     {match.teamScore}:{match.enemyScore}
+                  </div>
+                  <div className="flex gap-1">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-9 w-9"
+                      aria-label="경기 수정"
+                      onClick={() => openEditEntry(match)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-9 w-9 text-destructive hover:text-destructive"
+                      aria-label="경기 삭제"
+                      onClick={() => setDeleteTarget(match)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -434,24 +683,30 @@ const HomePage = () => {
         </div>
       </section>
 
-      <Dialog open={entryDialogOpen} onOpenChange={setEntryDialogOpen}>
-        <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-5xl gap-0 p-0 sm:max-h-[calc(100dvh-3rem)]">
-          <DialogHeader className="border-b border-border bg-card px-4 py-4 pr-14 sm:px-5 sm:py-5">
-            <DialogTitle>경기 입력</DialogTitle>
-            <DialogDescription>경기 결과와 플레이 정보</DialogDescription>
-          </DialogHeader>
-          <div className="max-h-[calc(100dvh-6.5rem)] overflow-y-auto overscroll-contain p-4 sm:max-h-[calc(100dvh-9rem)] sm:p-5">
-            <MatchEntryForm
-              accounts={activePlayerAccounts}
-              defaultSettings={userSettings}
-              isSubmitting={createMatchMutation.isPending}
-              source={entrySource}
-              onSaved={() => setEntryDialogOpen(false)}
-              onSubmit={handleCreateMatch}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
+      <MatchEntryDialog
+        accounts={editingMatch ? playerAccounts : activePlayerAccounts}
+        defaultSettings={userSettings}
+        isSubmitting={createMatchMutation.isPending || updateMatchMutation.isPending}
+        match={editingMatch}
+        open={entryDialogOpen}
+        screenshot={editingMatch ? null : screenshotPreview}
+        source={entrySource}
+        onOpenChange={closeEntryDialog}
+        onSaved={() => closeEntryDialog(false)}
+        onSubmit={editingMatch ? handleUpdateMatch : handleCreateMatch}
+      />
+
+      <MatchDeleteDialog
+        isDeleting={deleteMatchMutation.isPending}
+        match={deleteTarget}
+        open={Boolean(deleteTarget)}
+        onConfirm={handleDeleteMatch}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+          }
+        }}
+      />
     </div>
   );
 };

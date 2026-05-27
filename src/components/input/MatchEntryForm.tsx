@@ -17,6 +17,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  getMapLabel,
   getHeroLabel,
   getModeLabel,
   getResultOptionsForMode,
@@ -30,7 +31,7 @@ import {
   type HeroRoleFilter,
 } from '@/data/matchOptions';
 import { cn } from '@/lib/utils';
-import type { MatchCreateInput } from '@/types/match';
+import type { Match, MatchCreateInput } from '@/types/match';
 import type { PlayerAccount } from '@/types/playerAccount';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
 import type { UserSettings } from '@/types/userSettings';
@@ -58,10 +59,12 @@ type MatchEntryFormValues = z.infer<typeof matchEntrySchema>;
 interface MatchEntryFormProps {
   accounts?: PlayerAccount[];
   defaultSettings?: UserSettings;
+  initialMatch?: Match;
   isSubmitting?: boolean;
   onSaved?: () => void;
   onSubmit: (input: MatchCreateInput) => Promise<void>;
   source?: MatchCreateInput['source'];
+  submitLabel?: string;
 }
 
 const toDatetimeLocalValue = (date = new Date()) => {
@@ -76,34 +79,40 @@ const splitTags = (value: string) =>
     .map((tag) => tag.trim())
     .filter(Boolean);
 
+const getDefaultFormValues = (defaultSettings?: UserSettings, initialMatch?: Match) => ({
+  enemyScore: String(initialMatch?.enemyScore ?? 0),
+  mapId: initialMatch?.mapId ?? '',
+  memo: initialMatch?.memo ?? '',
+  modeId: initialMatch?.modeId ?? 'control',
+  playedAt: toDatetimeLocalValue(initialMatch ? new Date(initialMatch.playedAt) : new Date()),
+  queueType: initialMatch?.queueType ?? defaultSettings?.defaultQueueType ?? 'solo',
+  result: initialMatch?.result ?? 'win',
+  tagsText: initialMatch?.tags.join(', ') ?? '',
+  teamScore: String(initialMatch?.teamScore ?? 0),
+});
+
 const MatchEntryForm = ({
   accounts = [],
   defaultSettings,
+  initialMatch,
   isSubmitting = false,
   onSaved,
   onSubmit,
-  source = 'manual',
+  source,
+  submitLabel,
 }: MatchEntryFormProps) => {
   const mainAccount = accounts.find((account) => account.isMain);
   const fallbackAccountId = mainAccount?.id ?? accounts[0]?.id ?? '';
-  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
-  const [selectedHeroes, setSelectedHeroes] = useState<string[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
+    initialMatch ? (initialMatch.accountId ?? '') : null,
+  );
+  const [selectedHeroes, setSelectedHeroes] = useState<string[]>(initialMatch?.myHeroes ?? []);
   const [heroError, setHeroError] = useState('');
   const [heroQuery, setHeroQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<HeroRoleFilter>('all');
 
   const form = useForm<MatchEntryFormValues>({
-    defaultValues: {
-      enemyScore: '0',
-      mapId: '',
-      memo: '',
-      modeId: 'control',
-      playedAt: toDatetimeLocalValue(),
-      queueType: defaultSettings?.defaultQueueType ?? 'solo',
-      result: 'win',
-      tagsText: '',
-      teamScore: '0',
-    },
+    defaultValues: getDefaultFormValues(defaultSettings, initialMatch),
     resolver: zodResolver(matchEntrySchema),
   });
 
@@ -147,10 +156,10 @@ const MatchEntryForm = ({
   }, [form, watchedModeId, watchedResult]);
 
   useEffect(() => {
-    if (defaultSettings?.defaultQueueType) {
+    if (!initialMatch && defaultSettings?.defaultQueueType) {
       form.setValue('queueType', defaultSettings.defaultQueueType);
     }
-  }, [defaultSettings, form]);
+  }, [defaultSettings, form, initialMatch]);
 
   const toggleHero = (heroId: string) => {
     setHeroError('');
@@ -162,19 +171,9 @@ const MatchEntryForm = ({
   };
 
   const resetForm = () => {
-    form.reset({
-      enemyScore: '0',
-      mapId: filteredMaps[0]?.value ?? '',
-      memo: '',
-      modeId: watchedModeId,
-      playedAt: toDatetimeLocalValue(),
-      queueType: defaultSettings?.defaultQueueType ?? 'solo',
-      result: 'win',
-      tagsText: '',
-      teamScore: '0',
-    });
-    setSelectedAccountId(null);
-    setSelectedHeroes([]);
+    form.reset(getDefaultFormValues(defaultSettings, initialMatch));
+    setSelectedAccountId(initialMatch ? (initialMatch.accountId ?? '') : null);
+    setSelectedHeroes(initialMatch?.myHeroes ?? []);
     setHeroError('');
     setHeroQuery('');
     setRoleFilter('all');
@@ -197,12 +196,14 @@ const MatchEntryForm = ({
       playedAt: new Date(values.playedAt).toISOString(),
       queueType: values.queueType,
       result: values.result,
-      source,
+      source: source ?? initialMatch?.source ?? 'manual',
       tags: splitTags(values.tagsText),
       teamScore: Number(values.teamScore),
     });
 
-    resetForm();
+    if (!initialMatch) {
+      resetForm();
+    }
     onSaved?.();
   });
 
@@ -281,6 +282,7 @@ const MatchEntryForm = ({
               >
                 {getPlayerAccountLabel(account)}
                 {account.isMain ? ' · 본계' : ''}
+                {!account.isActive ? ' · 비활성' : ''}
               </button>
             ))}
           </div>
@@ -330,6 +332,15 @@ const MatchEntryForm = ({
                 {map.label}
               </button>
             ))}
+            {filteredMaps.length === 0 && watchedMapId ? (
+              <button
+                type="button"
+                className="min-h-10 rounded-md border border-primary bg-primary text-left text-sm font-bold text-primary-foreground"
+                disabled
+              >
+                {getMapLabel(watchedMapId)}
+              </button>
+            ) : null}
           </div>
           {form.formState.errors.mapId ? (
             <p className="text-sm font-medium text-destructive">
@@ -531,7 +542,7 @@ const MatchEntryForm = ({
           </Button>
           <Button disabled={isSubmitting} type="submit">
             <Save className="h-4 w-4" />
-            {isSubmitting ? '저장 중' : '저장'}
+            {isSubmitting ? '저장 중' : (submitLabel ?? '저장')}
           </Button>
         </div>
       </form>

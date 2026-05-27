@@ -1,17 +1,22 @@
 import type { LucideIcon } from 'lucide-react';
-import { CalendarClock, Circle, Swords } from 'lucide-react';
-import { useMemo } from 'react';
+import { CalendarClock, Circle, Pencil, Swords, Trash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
 
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageHeader } from '@/components/common/PageHeader';
+import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
+import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { getHeroLabel, getMapLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
-import { useMatches } from '@/hooks/useMatches';
+import { toast } from '@/hooks/use-toast';
+import { useDeleteMatch, useMatches, useUpdateMatch } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
+import { useUserSettings } from '@/hooks/useUserSettings';
 import { formatWinRate, getLongestStreak, summarizeResults } from '@/lib/matchStats';
 import { groupMatchesBySession, type MatchSession } from '@/lib/session';
 import { cn } from '@/lib/utils';
-import type { Match } from '@/types/match';
+import type { Match, MatchCreateInput } from '@/types/match';
 import type { PlayerAccount } from '@/types/playerAccount';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
 
@@ -66,8 +71,13 @@ const getResultTone = (result: Match['result']) => {
 };
 
 const SessionsPage = () => {
+  const [editingMatch, setEditingMatch] = useState<Match | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Match | null>(null);
   const { data: matches = [], isLoading } = useMatches();
   const { data: playerAccounts = [] } = usePlayerAccounts();
+  const { data: userSettings } = useUserSettings();
+  const updateMatchMutation = useUpdateMatch();
+  const deleteMatchMutation = useDeleteMatch();
   const sessions = useMemo(() => groupMatchesBySession(matches), [matches]);
   const accountById = useMemo(
     () => new Map(playerAccounts.map((account) => [account.id, account])),
@@ -83,6 +93,52 @@ const SessionsPage = () => {
     sessions.length === 0
       ? '--'
       : (matches.length / sessions.length).toFixed(matches.length % sessions.length === 0 ? 0 : 1);
+
+  const handleUpdateMatch = async (input: MatchCreateInput) => {
+    if (!editingMatch) {
+      return;
+    }
+
+    try {
+      await updateMatchMutation.mutateAsync({
+        ...input,
+        id: editingMatch.id,
+      });
+      toast({
+        description: '저장된 경기 정보를 갱신했습니다.',
+        title: '경기 수정 완료',
+      });
+    } catch (error) {
+      toast({
+        description: error instanceof Error ? error.message : '잠시 후 다시 시도하세요.',
+        title: '경기 수정 실패',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  };
+
+  const handleDeleteMatch = async () => {
+    if (!deleteTarget) {
+      return;
+    }
+
+    try {
+      await deleteMatchMutation.mutateAsync(deleteTarget.id);
+      toast({
+        description: '세션과 통계에서 해당 경기를 제거했습니다.',
+        title: '경기 삭제 완료',
+      });
+      setDeleteTarget(null);
+    } catch (error) {
+      toast({
+        description: error instanceof Error ? error.message : '잠시 후 다시 시도하세요.',
+        title: '경기 삭제 실패',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  };
 
   const metrics = [
     {
@@ -145,6 +201,8 @@ const SessionsPage = () => {
                     key={session.sessionId}
                     accountById={accountById}
                     session={session}
+                    onDeleteMatch={setDeleteTarget}
+                    onEditMatch={setEditingMatch}
                   />
                 ))}
               </div>
@@ -201,6 +259,33 @@ const SessionsPage = () => {
           </aside>
         </div>
       </section>
+
+      <MatchEntryDialog
+        accounts={playerAccounts}
+        defaultSettings={userSettings}
+        isSubmitting={updateMatchMutation.isPending}
+        match={editingMatch}
+        open={Boolean(editingMatch)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingMatch(null);
+          }
+        }}
+        onSaved={() => setEditingMatch(null)}
+        onSubmit={handleUpdateMatch}
+      />
+
+      <MatchDeleteDialog
+        isDeleting={deleteMatchMutation.isPending}
+        match={deleteTarget}
+        open={Boolean(deleteTarget)}
+        onConfirm={handleDeleteMatch}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+          }
+        }}
+      />
     </div>
   );
 };
@@ -227,10 +312,12 @@ const MetricCell = ({ detail, icon: Icon, label, value }: MetricCellProps) => (
 
 interface SessionBlockProps {
   accountById: Map<string, PlayerAccount>;
+  onDeleteMatch: (match: Match) => void;
+  onEditMatch: (match: Match) => void;
   session: MatchSession;
 }
 
-const SessionBlock = ({ accountById, session }: SessionBlockProps) => {
+const SessionBlock = ({ accountById, onDeleteMatch, onEditMatch, session }: SessionBlockProps) => {
   const summary = summarizeResults(session.matches);
 
   return (
@@ -259,6 +346,8 @@ const SessionBlock = ({ accountById, session }: SessionBlockProps) => {
             accountLabel={getPlayerAccountLabel(accountById.get(match.accountId ?? ''))}
             index={index}
             match={match}
+            onDelete={() => onDeleteMatch(match)}
+            onEdit={() => onEditMatch(match)}
           />
         ))}
       </div>
@@ -270,10 +359,12 @@ interface MatchRowProps {
   accountLabel: string;
   index: number;
   match: Match;
+  onDelete: () => void;
+  onEdit: () => void;
 }
 
-const MatchRow = ({ accountLabel, index, match }: MatchRowProps) => (
-  <div className="grid gap-3 rounded-md border border-border bg-[hsl(var(--surface-2))] p-3 sm:grid-cols-[56px_minmax(0,1fr)_80px] sm:items-center">
+const MatchRow = ({ accountLabel, index, match, onDelete, onEdit }: MatchRowProps) => (
+  <div className="grid gap-3 rounded-md border border-border bg-[hsl(var(--surface-2))] p-3 sm:grid-cols-[56px_minmax(0,1fr)_80px_auto] sm:items-center">
     <div className="flex items-center gap-2 sm:block">
       <div className="flex h-8 w-8 items-center justify-center rounded-md bg-card text-xs font-bold text-muted-foreground">
         {index + 1}
@@ -305,6 +396,29 @@ const MatchRow = ({ accountLabel, index, match }: MatchRowProps) => (
       <p className="text-right text-sm font-bold sm:mt-2">
         {match.teamScore}:{match.enemyScore}
       </p>
+    </div>
+
+    <div className="flex justify-end gap-1">
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-9 w-9"
+        aria-label="경기 수정"
+        onClick={onEdit}
+      >
+        <Pencil className="h-4 w-4" />
+      </Button>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-9 w-9 text-destructive hover:text-destructive"
+        aria-label="경기 삭제"
+        onClick={onDelete}
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
     </div>
   </div>
 );
