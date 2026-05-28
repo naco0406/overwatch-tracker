@@ -2,7 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import { CalendarClock, Circle, Pencil, Swords, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import { EmptyState } from '@/components/common/EmptyState';
+import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
 import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
@@ -172,13 +172,17 @@ const SessionsPage = () => {
       <PageHeader
         eyebrow="기록"
         title="세션"
-        actions={<Badge variant="secondary">{matches.length.toLocaleString('ko-KR')} 경기</Badge>}
+        actions={
+          <Badge variant="secondary">
+            {isLoading ? '불러오는 중' : `${matches.length.toLocaleString('ko-KR')} 경기`}
+          </Badge>
+        }
       />
 
       <section className="workspace-panel overflow-hidden">
         <div className="grid border-b border-border md:grid-cols-3">
           {metrics.map((metric) => (
-            <MetricCell key={metric.label} {...metric} />
+            <MetricCell key={metric.label} {...metric} isLoading={isLoading} />
           ))}
         </div>
 
@@ -194,7 +198,9 @@ const SessionsPage = () => {
               </Badge>
             </div>
 
-            {sessions.length > 0 ? (
+            {isLoading ? (
+              <SessionTimelineSkeleton />
+            ) : sessions.length > 0 ? (
               <div className="overflow-hidden rounded-lg border border-border">
                 {sessions.map((session) => (
                   <SessionBlock
@@ -207,16 +213,7 @@ const SessionsPage = () => {
                 ))}
               </div>
             ) : (
-              <EmptyState
-                icon={CalendarClock}
-                title={isLoading ? '세션 불러오는 중' : '세션 없음'}
-                description={
-                  isLoading
-                    ? 'Supabase에서 경기 기록을 확인하고 있습니다.'
-                    : '경기를 저장하면 30분 간격 기준으로 자동 그룹핑됩니다.'
-                }
-                className="min-h-[360px]"
-              />
+              <SessionTimelineEmpty />
             )}
           </div>
 
@@ -226,7 +223,9 @@ const SessionsPage = () => {
               <h3 className="mt-2 text-lg font-bold">최근 세션</h3>
             </div>
 
-            {sessions.length > 0 ? (
+            {isLoading ? (
+              <RecentSessionsSkeleton />
+            ) : sessions.length > 0 ? (
               <div className="overflow-hidden rounded-lg border border-border bg-card">
                 {sessions.slice(0, 8).map((session) => {
                   const summary = summarizeResults(session.matches);
@@ -252,8 +251,14 @@ const SessionsPage = () => {
                 })}
               </div>
             ) : (
-              <div className="rounded-lg border border-dashed border-border bg-card p-4 text-sm font-semibold text-muted-foreground">
-                저장된 세션이 없습니다.
+              <div className="overflow-hidden rounded-lg border border-border bg-card">
+                <div className="flat-row p-3">
+                  <InlineEmptyState
+                    title="저장된 세션 없음"
+                    description="세션 요약이 비어 있습니다."
+                  />
+                </div>
+                <RecentSessionPlaceholder />
               </div>
             )}
           </aside>
@@ -293,21 +298,163 @@ const SessionsPage = () => {
 interface MetricCellProps {
   detail: string;
   icon: LucideIcon;
+  isLoading?: boolean;
   label: string;
   value: string;
 }
 
-const MetricCell = ({ detail, icon: Icon, label, value }: MetricCellProps) => (
+const MetricCell = ({ detail, icon: Icon, isLoading = false, label, value }: MetricCellProps) => (
   <div className="flex min-h-[112px] items-start justify-between gap-4 border-b border-border p-4 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0 sm:p-5">
     <div className="min-w-0">
       <p className="metric-label">{label}</p>
-      <p className="mt-3 truncate text-2xl font-bold">{value}</p>
-      <p className="mt-1 truncate text-xs text-muted-foreground">{detail}</p>
+      {isLoading ? (
+        <>
+          <SkeletonBlock className="mt-3 h-7 w-16" />
+          <SkeletonBlock className="mt-2 h-3 w-24" />
+        </>
+      ) : (
+        <>
+          <p className="mt-3 truncate text-2xl font-bold">{value}</p>
+          <p className="mt-1 truncate text-xs text-muted-foreground">{detail}</p>
+        </>
+      )}
     </div>
     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-secondary text-primary">
       <Icon className="h-5 w-5" />
     </div>
   </div>
+);
+
+const SessionTimelineSkeleton = () => (
+  <div className="overflow-hidden rounded-lg border border-border">
+    {Array.from({ length: 3 }, (_, index) => (
+      <article
+        key={index}
+        className="grid gap-4 border-b border-border bg-card p-4 last:border-b-0 lg:grid-cols-[180px_minmax(0,1fr)]"
+      >
+        <div>
+          <SkeletonBlock className="h-3 w-20" />
+          <SkeletonBlock className="mt-3 h-6 w-32" />
+          <div className="mt-3 flex flex-wrap gap-2">
+            <SkeletonBlock className="h-6 w-14" />
+            <SkeletonBlock className="h-6 w-20" />
+          </div>
+          <SkeletonBlock className="mt-4 h-2 w-full rounded-full" />
+          <SkeletonBlock className="mt-3 h-3 w-16" />
+        </div>
+
+        <div className="space-y-2">
+          {Array.from({ length: index === 0 ? 3 : 2 }, (_, rowIndex) => (
+            <MatchRowSkeleton key={rowIndex} />
+          ))}
+        </div>
+      </article>
+    ))}
+  </div>
+);
+
+const SessionTimelineEmpty = () => (
+  <div className="overflow-hidden rounded-lg border border-border">
+    <article className="grid gap-4 bg-card p-4 lg:grid-cols-[180px_minmax(0,1fr)]">
+      <div>
+        <p className="metric-label">세션 없음</p>
+        <h3 className="mt-2 text-lg font-bold">--:-- - --:--</h3>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Badge variant="secondary">0경기</Badge>
+          <Badge variant="outline" className="bg-transparent">
+            0분
+          </Badge>
+        </div>
+        <div className="mt-4 h-2 rounded-full bg-secondary" />
+        <p className="mt-2 text-xs font-semibold text-muted-foreground">승률 --</p>
+      </div>
+
+      <div className="space-y-2">
+        <InlineEmptyState
+          title="세션 없음"
+          description="경기를 저장하면 시간순으로 세션이 생성됩니다."
+        />
+        <EmptyMatchRowPlaceholder />
+        <EmptyMatchRowPlaceholder />
+      </div>
+    </article>
+  </div>
+);
+
+const MatchRowSkeleton = () => (
+  <div className="grid gap-3 rounded-md border border-border bg-[hsl(var(--surface-2))] p-3 sm:grid-cols-[56px_minmax(0,1fr)_80px_auto] sm:items-center">
+    <div>
+      <SkeletonBlock className="h-8 w-8" />
+      <SkeletonBlock className="mt-2 h-3 w-12" />
+    </div>
+    <div className="min-w-0">
+      <SkeletonBlock className="h-4 w-48 max-w-full" />
+      <SkeletonBlock className="mt-2 h-3 w-64 max-w-full" />
+    </div>
+    <div>
+      <SkeletonBlock className="h-8 w-16" />
+      <SkeletonBlock className="mt-2 h-4 w-10" />
+    </div>
+    <div className="flex justify-end gap-1">
+      <SkeletonBlock className="h-9 w-9" />
+      <SkeletonBlock className="h-9 w-9" />
+    </div>
+  </div>
+);
+
+const EmptyMatchRowPlaceholder = () => (
+  <div className="grid gap-3 rounded-md border border-dashed border-border bg-[hsl(var(--surface-2))] p-3 opacity-60 sm:grid-cols-[56px_minmax(0,1fr)_80px_auto] sm:items-center">
+    <div>
+      <div className="h-8 w-8 rounded-md bg-card" />
+      <div className="mt-2 h-3 w-12 rounded-md bg-card" />
+    </div>
+    <div className="min-w-0">
+      <div className="h-4 w-48 max-w-full rounded-md bg-card" />
+      <div className="mt-2 h-3 w-64 max-w-full rounded-md bg-card" />
+    </div>
+    <div>
+      <div className="h-8 w-16 rounded-md bg-card" />
+      <div className="mt-2 h-4 w-10 rounded-md bg-card" />
+    </div>
+    <div className="hidden justify-end gap-1 sm:flex">
+      <div className="h-9 w-9 rounded-md bg-card" />
+      <div className="h-9 w-9 rounded-md bg-card" />
+    </div>
+  </div>
+);
+
+const RecentSessionsSkeleton = () => (
+  <div className="overflow-hidden rounded-lg border border-border bg-card">
+    {Array.from({ length: 5 }, (_, index) => (
+      <div key={index} className="flat-row p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <SkeletonBlock className="h-4 w-24" />
+            <SkeletonBlock className="mt-2 h-3 w-28" />
+          </div>
+          <SkeletonBlock className="h-6 w-16" />
+        </div>
+        <SkeletonBlock className="mt-3 h-2 w-full rounded-full" />
+      </div>
+    ))}
+  </div>
+);
+
+const RecentSessionPlaceholder = () => (
+  <>
+    {Array.from({ length: 3 }, (_, index) => (
+      <div key={index} className="flat-row p-3 opacity-60">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="h-4 w-24 rounded-md bg-secondary/70" />
+            <div className="mt-2 h-3 w-28 rounded-md bg-secondary/70" />
+          </div>
+          <div className="h-6 w-16 rounded-md bg-secondary/70" />
+        </div>
+        <div className="mt-3 h-2 rounded-full bg-secondary/70" />
+      </div>
+    ))}
+  </>
 );
 
 interface SessionBlockProps {

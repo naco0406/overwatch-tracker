@@ -18,6 +18,7 @@ interface ScreenshotContext {
 interface MatchEntryDialogProps {
   accounts: PlayerAccount[];
   defaultSettings?: UserSettings;
+  initialDraft?: Partial<MatchCreateInput>;
   isSubmitting?: boolean;
   match?: Match | null;
   onOpenChange: (open: boolean) => void;
@@ -31,6 +32,7 @@ interface MatchEntryDialogProps {
 const MatchEntryDialog = ({
   accounts,
   defaultSettings,
+  initialDraft,
   isSubmitting,
   match,
   onOpenChange,
@@ -68,9 +70,10 @@ const MatchEntryDialog = ({
             </div>
           ) : null}
           <MatchEntryForm
-            key={match?.id ?? source ?? 'manual'}
+            key={match?.id ?? screenshot?.imageUrl ?? source ?? 'manual'}
             accounts={accounts}
             defaultSettings={defaultSettings}
+            initialDraft={initialDraft}
             initialMatch={match ?? undefined}
             isSubmitting={isSubmitting}
             source={source ?? match?.source}

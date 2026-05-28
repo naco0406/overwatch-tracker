@@ -7,13 +7,14 @@ import {
   FilePlus2,
   Flag,
   ImagePlus,
+  Loader2,
   MapIcon,
   Pencil,
   Plus,
   ShieldCheck,
-  Swords,
   Trash2,
   TrendingUp,
+  Wand2,
   X,
 } from 'lucide-react';
 import {
@@ -26,7 +27,7 @@ import {
   type DragEvent,
 } from 'react';
 
-import { EmptyState } from '@/components/common/EmptyState';
+import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
 import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
@@ -46,12 +47,18 @@ import {
 } from '@/data/matchOptions';
 import { groupMatchesBySession } from '@/lib/session';
 import { calculateWinRate, getCurrentStreak, getTodayRange } from '@/lib/matchStats';
+import {
+  extractMatchFromScreenshot,
+  type VisionExtractionProgress,
+  type VisionExtractionResult,
+} from '@/lib/visionExtraction';
 import type { Match, MatchCreateInput } from '@/types/match';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
 
 const emptySessionSlots = Array.from({ length: 6 });
 
 interface ScreenshotPreview {
+  file: File;
   imageUrl: string;
   name: string;
   size: number;
@@ -129,6 +136,9 @@ const HomePage = () => {
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Match | null>(null);
   const [screenshotPreview, setScreenshotPreview] = useState<ScreenshotPreview | null>(null);
+  const [visionProgress, setVisionProgress] = useState<VisionExtractionProgress | null>(null);
+  const [visionResult, setVisionResult] = useState<VisionExtractionResult | null>(null);
+  const [isExtractingVision, setIsExtractingVision] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const todayRange = useMemo(() => getTodayRange(), []);
   const { data: todayMatches = [], isLoading } = useMatches({
@@ -160,7 +170,6 @@ const HomePage = () => {
     () => new Map(playerAccounts.map((account) => [account.id, account])),
     [playerAccounts],
   );
-
   useEffect(
     () => () => {
       if (screenshotPreview?.imageUrl) {
@@ -198,6 +207,8 @@ const HomePage = () => {
     try {
       await createMatchMutation.mutateAsync(input);
       setScreenshotPreview(null);
+      setVisionProgress(null);
+      setVisionResult(null);
       toast({
         description: '오늘 세션에 새 경기가 추가됐습니다.',
         title: '경기 저장 완료',
@@ -269,10 +280,13 @@ const HomePage = () => {
     }
 
     setScreenshotPreview({
+      file,
       imageUrl: URL.createObjectURL(file),
       name: file.name || 'clipboard-image',
       size: file.size,
     });
+    setVisionProgress(null);
+    setVisionResult(null);
     setEntrySource('mixed');
     setEditingMatch(null);
   };
@@ -315,10 +329,82 @@ const HomePage = () => {
     setEntrySource('manual');
     setEditingMatch(null);
     setScreenshotPreview(null);
+    setVisionProgress(null);
+    setVisionResult(null);
     setEntryDialogOpen(true);
   };
 
+  const handleAnalyzeScreenshot = async () => {
+    if (!screenshotPreview) {
+      openDirectEntry();
+      return;
+    }
+
+    const analysisStartedAt = performance.now();
+
+    console.info('[Overwatch Vision UI] analyze:start', {
+      accountCount: activePlayerAccounts.length,
+      file: {
+        name: screenshotPreview.file.name,
+        size: screenshotPreview.file.size,
+        type: screenshotPreview.file.type,
+      },
+      pipeline: 'ocr-image-matching',
+    });
+    setIsExtractingVision(true);
+    setVisionProgress({
+      message: '스크린샷 분석을 준비하는 중',
+      stage: 'preparing',
+    });
+
+    try {
+      const result = await extractMatchFromScreenshot({
+        accounts: activePlayerAccounts,
+        file: screenshotPreview.file,
+        onProgress: setVisionProgress,
+      });
+
+      console.info('[Overwatch Vision UI] extract:end', {
+        draft: result.draft,
+        durationMs: Math.round(performance.now() - analysisStartedAt),
+        heroCandidates: result.heroCandidates,
+        mapCandidates: result.mapCandidates,
+        ocrText: result.ocrText,
+        warnings: result.warnings,
+      });
+      setVisionResult(result);
+      setEntrySource('mixed');
+      setEditingMatch(null);
+      setEntryDialogOpen(true);
+      toast({
+        description: result.warnings[0] ?? '인식한 값을 입력폼에 채웠습니다. 저장 전 확인하세요.',
+        title: '이미지 분석 완료',
+      });
+    } catch (error) {
+      console.error('[Overwatch Vision UI] analyze:error', {
+        durationMs: Math.round(performance.now() - analysisStartedAt),
+        error,
+      });
+      toast({
+        description:
+          error instanceof Error ? error.message : '이미지에서 경기 정보를 추출하지 못했습니다.',
+        title: '스크린샷 분석 실패',
+        variant: 'destructive',
+      });
+    } finally {
+      console.info('[Overwatch Vision UI] analyze:end', {
+        durationMs: Math.round(performance.now() - analysisStartedAt),
+      });
+      setIsExtractingVision(false);
+    }
+  };
+
   const openScreenshotEntry = () => {
+    if (screenshotPreview && !visionResult) {
+      void handleAnalyzeScreenshot();
+      return;
+    }
+
     setEntrySource(screenshotPreview ? 'mixed' : 'manual');
     setEditingMatch(null);
     setEntryDialogOpen(true);
@@ -464,11 +550,113 @@ const HomePage = () => {
                         variant="outline"
                         size="sm"
                         className="bg-transparent"
-                        onClick={() => setScreenshotPreview(null)}
+                        onClick={() => {
+                          setScreenshotPreview(null);
+                          setVisionProgress(null);
+                          setVisionResult(null);
+                        }}
                       >
                         <X className="h-4 w-4" />
                         제거
                       </Button>
+                    </div>
+                    <div className="border-t border-border p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="status-chip">
+                          <Wand2 className="h-3.5 w-3.5" />
+                          이미지 분석
+                        </span>
+                        <span className="status-chip">
+                          <span className="status-dot" />
+                          영역 탐지
+                        </span>
+                        <span className="status-chip">
+                          <span className="status-dot" />
+                          OCR
+                        </span>
+                        <span className="status-chip">
+                          <span className="status-dot" />
+                          전장 매칭
+                        </span>
+                        <span className="status-chip">
+                          <span className="status-dot" />
+                          영웅 매칭
+                        </span>
+                        <span className="status-chip">
+                          <span className="status-dot" />내 행 탐지
+                        </span>
+                      </div>
+
+                      {visionProgress ? (
+                        <div className="mt-3 rounded-md border border-border bg-background p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="truncate text-xs font-bold">{visionProgress.message}</p>
+                            {typeof visionProgress.progress === 'number' ? (
+                              <span className="text-xs font-bold text-muted-foreground">
+                                {Math.round(visionProgress.progress)}%
+                              </span>
+                            ) : null}
+                          </div>
+                          {typeof visionProgress.progress === 'number' ? (
+                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary">
+                              <div
+                                className="h-full rounded-full bg-primary transition-all"
+                                style={{
+                                  width: `${Math.max(4, Math.min(100, visionProgress.progress))}%`,
+                                }}
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {visionResult ? (
+                        <div className="mt-3 space-y-3">
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <div className="rounded-md border border-border bg-background p-3">
+                              <p className="metric-label">결과</p>
+                              <p className="mt-2 text-sm font-bold">
+                                {visionResult.draft.result
+                                  ? getResultLabel(visionResult.draft.result)
+                                  : '확인 필요'}{' '}
+                                · {visionResult.draft.teamScore ?? '--'}:
+                                {visionResult.draft.enemyScore ?? '--'}
+                              </p>
+                            </div>
+                            <div className="rounded-md border border-border bg-background p-3">
+                              <p className="metric-label">전장</p>
+                              <p className="mt-2 truncate text-sm font-bold">
+                                {visionResult.draft.mapId
+                                  ? getMapLabel(visionResult.draft.mapId)
+                                  : '확인 필요'}
+                              </p>
+                            </div>
+                            <div className="rounded-md border border-border bg-background p-3">
+                              <p className="metric-label">영웅</p>
+                              <p className="mt-2 truncate text-sm font-bold">
+                                {visionResult.draft.myHeroes?.length
+                                  ? visionResult.draft.myHeroes.map(getHeroLabel).join(', ')
+                                  : '확인 필요'}
+                              </p>
+                            </div>
+                            <div className="rounded-md border border-border bg-background p-3">
+                              <p className="metric-label">후보</p>
+                              <p className="mt-2 text-sm font-bold">
+                                전장 {visionResult.mapCandidates.length} · 영웅{' '}
+                                {visionResult.heroCandidates.length}
+                              </p>
+                            </div>
+                          </div>
+                          {visionResult.warnings.length > 0 ? (
+                            <div className="rounded-md border border-[hsl(var(--warning)/0.35)] bg-[hsl(var(--warning)/0.08)] p-3 text-left">
+                              <p className="metric-label text-[hsl(var(--warning))]">확인</p>
+                              <p className="mt-2 text-xs font-semibold leading-5 text-foreground">
+                                {visionResult.warnings.slice(0, 2).join(' ')}
+                              </p>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ) : (
@@ -482,9 +670,26 @@ const HomePage = () => {
                 )}
 
                 <div className="mt-7 grid gap-2 sm:grid-cols-2">
-                  <Button size="lg" type="button" onClick={openScreenshotEntry}>
-                    <FilePlus2 className="h-4 w-4" />
-                    {screenshotPreview ? '정보 입력' : '직접 입력'}
+                  <Button
+                    size="lg"
+                    type="button"
+                    disabled={isExtractingVision}
+                    onClick={openScreenshotEntry}
+                  >
+                    {isExtractingVision ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : screenshotPreview ? (
+                      <Wand2 className="h-4 w-4" />
+                    ) : (
+                      <FilePlus2 className="h-4 w-4" />
+                    )}
+                    {isExtractingVision
+                      ? '분석 중'
+                      : screenshotPreview
+                        ? visionResult
+                          ? '분석 결과 열기'
+                          : '이미지 분석'
+                        : '직접 입력'}
                   </Button>
                   <Button
                     size="lg"
@@ -592,28 +797,34 @@ const HomePage = () => {
         </div>
         <div className="grid gap-4 p-4 sm:grid-cols-[220px_minmax(0,1fr)] sm:p-5">
           <div className="grid grid-cols-6 gap-2 sm:grid-cols-3">
-            {todayMatches.length > 0
-              ? sortedTodayMatches.slice(0, 9).map((match, index) => (
-                  <div
-                    key={match.id}
-                    className={`flex h-14 flex-col items-center justify-center rounded-md border text-xs font-bold ${getResultTone(
-                      match.result,
-                    )}`}
-                  >
-                    <span>{index + 1}</span>
-                    <span>{getResultLabel(match.result)}</span>
-                  </div>
+            {isLoading
+              ? emptySessionSlots.map((_, index) => (
+                  <SkeletonBlock key={index} className="h-14 rounded-md" />
                 ))
-              : emptySessionSlots.map((_, index) => (
-                  <div
-                    key={index}
-                    className="flex h-14 items-center justify-center rounded-md border border-dashed border-border bg-secondary/40 text-xs font-semibold text-muted-foreground"
-                  >
-                    {index + 1}
-                  </div>
-                ))}
+              : todayMatches.length > 0
+                ? sortedTodayMatches.slice(0, 9).map((match, index) => (
+                    <div
+                      key={match.id}
+                      className={`flex h-14 flex-col items-center justify-center rounded-md border text-xs font-bold ${getResultTone(
+                        match.result,
+                      )}`}
+                    >
+                      <span>{index + 1}</span>
+                      <span>{getResultLabel(match.result)}</span>
+                    </div>
+                  ))
+                : emptySessionSlots.map((_, index) => (
+                    <div
+                      key={index}
+                      className="flex h-14 items-center justify-center rounded-md border border-dashed border-border bg-secondary/40 text-xs font-semibold text-muted-foreground"
+                    >
+                      {index + 1}
+                    </div>
+                  ))}
           </div>
-          {todayMatches.length > 0 ? (
+          {isLoading ? (
+            <TodayMatchRowsSkeleton />
+          ) : todayMatches.length > 0 ? (
             <div className="overflow-hidden rounded-lg border border-border bg-card">
               {sortedTodayMatches.slice(0, 6).map((match) => (
                 <div
@@ -663,22 +874,34 @@ const HomePage = () => {
               ))}
             </div>
           ) : (
-            <EmptyState
-              icon={Swords}
-              title={isLoading ? '경기 불러오는 중' : '저장된 경기 없음'}
-              description={
-                isLoading
-                  ? 'Supabase에서 오늘 기록을 확인하고 있습니다.'
-                  : '첫 경기를 저장해보세요.'
-              }
-              className="min-h-[180px]"
-              action={
-                <Button variant="outline" className="bg-transparent" disabled>
-                  <Plus className="h-4 w-4" />
-                  경기 추가
-                </Button>
-              }
-            />
+            <div className="overflow-hidden rounded-lg border border-border bg-card">
+              <div className="flat-row p-3">
+                <InlineEmptyState
+                  title="저장된 경기 없음"
+                  description="오늘 저장된 경기 기록이 없습니다."
+                  action={
+                    <Button variant="outline" className="bg-transparent" disabled>
+                      <Plus className="h-4 w-4" />
+                      경기 추가
+                    </Button>
+                  }
+                />
+              </div>
+              {Array.from({ length: 2 }, (_, index) => (
+                <div
+                  key={index}
+                  className="flat-row grid gap-3 p-3 opacity-55 sm:grid-cols-[72px_minmax(0,1fr)_80px_auto]"
+                >
+                  <div className="h-9 rounded-md border border-dashed border-border bg-secondary/40" />
+                  <div className="min-w-0">
+                    <div className="h-4 w-40 rounded-md border border-dashed border-border bg-secondary/40" />
+                    <div className="mt-2 h-3 w-56 max-w-full rounded-md border border-dashed border-border bg-secondary/40" />
+                  </div>
+                  <div className="h-9 rounded-md border border-dashed border-border bg-secondary/40" />
+                  <div className="hidden h-9 w-20 rounded-md border border-dashed border-border bg-secondary/40 sm:block" />
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </section>
@@ -686,6 +909,7 @@ const HomePage = () => {
       <MatchEntryDialog
         accounts={editingMatch ? playerAccounts : activePlayerAccounts}
         defaultSettings={userSettings}
+        initialDraft={editingMatch ? undefined : visionResult?.draft}
         isSubmitting={createMatchMutation.isPending || updateMatchMutation.isPending}
         match={editingMatch}
         open={entryDialogOpen}
@@ -710,5 +934,27 @@ const HomePage = () => {
     </div>
   );
 };
+
+const TodayMatchRowsSkeleton = () => (
+  <div className="overflow-hidden rounded-lg border border-border bg-card">
+    {Array.from({ length: 4 }, (_, index) => (
+      <div
+        key={index}
+        className="flat-row grid gap-3 p-3 sm:grid-cols-[72px_minmax(0,1fr)_80px_auto]"
+      >
+        <SkeletonBlock className="h-5 w-12" />
+        <div className="min-w-0">
+          <SkeletonBlock className="h-4 w-48 max-w-full" />
+          <SkeletonBlock className="mt-2 h-3 w-64 max-w-full" />
+        </div>
+        <SkeletonBlock className="h-9 w-full" />
+        <div className="flex gap-1">
+          <SkeletonBlock className="h-9 w-9" />
+          <SkeletonBlock className="h-9 w-9" />
+        </div>
+      </div>
+    ))}
+  </div>
+);
 
 export { HomePage };

@@ -1,14 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import {
-  BarChart3,
-  BookOpenCheck,
-  Command,
-  Home,
-  LogOut,
-  Settings,
-  Sparkles,
-  Swords,
-} from 'lucide-react';
+import { BarChart3, BookOpenCheck, Command, Home, LogOut, Settings, Swords } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
@@ -76,11 +67,19 @@ const AppLayout = () => {
           ))}
         </nav>
         <div className="mx-3 mb-3 rounded-lg border border-primary/15 bg-primary/5 p-3">
-          <div className="flex items-center gap-2 text-primary">
-            <Sparkles className="h-4 w-4" />
-            <p className="text-sm font-semibold">M0 ready</p>
+          <div className="flex items-center justify-between gap-2 text-primary">
+            <div className="flex min-w-0 items-center gap-2">
+              <Command className="h-4 w-4 shrink-0" />
+              <p className="truncate text-sm font-semibold">이미지 분석</p>
+            </div>
+            <span className="text-xs font-bold">Ready</span>
           </div>
-          <p className="mt-2 text-xs leading-5 text-muted-foreground">Solo · Manual · OCR</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className="status-chip">영역</span>
+            <span className="status-chip">OCR</span>
+            <span className="status-chip">전장</span>
+            <span className="status-chip">영웅</span>
+          </div>
         </div>
         <div className="border-t border-border/80 p-3">
           <div className="mb-3 rounded-md border border-border/70 bg-secondary/70 px-3 py-2">

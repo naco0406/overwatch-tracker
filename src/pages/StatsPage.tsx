@@ -27,6 +27,7 @@ import {
 } from 'recharts';
 
 import { EmptyState } from '@/components/common/EmptyState';
+import { SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -961,17 +962,48 @@ interface TabEmptyProps {
   title: string;
 }
 
-const TabEmpty = ({ icon: Icon, isLoading, title }: TabEmptyProps) => (
-  <EmptyState
-    icon={Icon}
-    title={isLoading ? '기록 불러오는 중' : title}
-    description={
-      isLoading
-        ? 'Supabase에서 경기 기록을 확인하고 있습니다.'
-        : '필터를 바꾸거나 경기를 추가해보세요.'
-    }
-    className="min-h-[280px]"
-  />
+const TabEmpty = ({ icon: Icon, isLoading, title }: TabEmptyProps) =>
+  isLoading ? (
+    <TabLoadingSkeleton />
+  ) : (
+    <EmptyState
+      icon={Icon}
+      title={title}
+      description="필터를 바꾸거나 경기를 추가해보세요."
+      className="min-h-[220px]"
+    />
+  );
+
+const TabLoadingSkeleton = () => (
+  <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+    <div className="h-[260px] rounded-lg border border-border bg-[hsl(var(--surface-2))] p-4">
+      <div className="flex h-full items-center justify-center">
+        <div className="relative h-32 w-32 rounded-full border-[18px] border-secondary">
+          <SkeletonBlock className="absolute inset-5 rounded-full bg-card" />
+        </div>
+      </div>
+    </div>
+    <div className="space-y-3">
+      {Array.from({ length: 5 }, (_, index) => (
+        <div
+          key={index}
+          className="grid gap-3 rounded-md border border-border bg-[hsl(var(--surface-2))] p-3 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-center"
+        >
+          <div className="min-w-0">
+            <div className="flex items-center justify-between gap-3">
+              <SkeletonBlock className="h-4 w-36 max-w-full" />
+              <SkeletonBlock className="h-3 w-10" />
+            </div>
+            <SkeletonBlock className="mt-3 h-2 w-full rounded-full" />
+          </div>
+          <div className="flex items-center justify-between gap-3 sm:justify-end">
+            <SkeletonBlock className="h-3 w-20" />
+            <SkeletonBlock className="h-6 w-14" />
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
 );
 
 export { StatsPage };

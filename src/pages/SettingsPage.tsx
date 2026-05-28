@@ -7,7 +7,6 @@ import {
   ExternalLink,
   LogOut,
   Plus,
-  ScanLine,
   ShieldCheck,
   Star,
   Trash2,
@@ -277,13 +276,19 @@ const SettingsPage = () => {
         </div>
 
         <div className="flat-row grid gap-4 p-4 sm:grid-cols-[220px_minmax(0,1fr)] sm:p-5">
-          <SectionLead icon={ScanLine} label="OCR" title="보정" />
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-foreground">스코어보드 ROI 보정</p>
-            <Button variant="outline" className="bg-transparent sm:w-auto" disabled>
-              <Upload className="h-4 w-4" />
-              스크린샷 업로드
-            </Button>
+          <SectionLead icon={CheckCircle2} label="이미지 분석" title="파이프라인" />
+          <div className="grid gap-2 sm:grid-cols-4">
+            {[
+              { label: '영역', value: 'UI 탐지' },
+              { label: 'OCR', value: '텍스트' },
+              { label: '전장', value: '이미지 매칭' },
+              { label: '영웅', value: '내 행' },
+            ].map((item) => (
+              <div key={item.label} className="rounded-md border border-border bg-card p-3">
+                <p className="metric-label">{item.label}</p>
+                <p className="mt-2 text-sm font-bold">{item.value}</p>
+              </div>
+            ))}
           </div>
         </div>
 

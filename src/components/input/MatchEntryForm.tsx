@@ -26,6 +26,7 @@ import {
   modeAllowsDraw,
   modeOptions,
   queueOptions,
+  resultOptions,
   roleLabels,
   roleOptions,
   type HeroRoleFilter,
@@ -36,7 +37,23 @@ import type { PlayerAccount } from '@/types/playerAccount';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
 import type { UserSettings } from '@/types/userSettings';
 
+const modeValues = modeOptions.map((option) => option.value);
+const resultValues = resultOptions.map((option) => option.value);
+
+const isModeValue = (value: string): value is MatchCreateInput['modeId'] =>
+  modeValues.includes(value as MatchCreateInput['modeId']);
+
+const isValidModeValue = (value: string): boolean =>
+  modeValues.includes(value as MatchCreateInput['modeId']);
+
+const isValidResultValue = (value: string): boolean =>
+  resultValues.includes(value as MatchCreateInput['result']);
+
 const scoreSchema = z.string().refine((value) => {
+  if (!value.trim()) {
+    return false;
+  }
+
   const score = Number(value);
 
   return Number.isInteger(score) && score >= 0 && score <= 10;
@@ -46,10 +63,10 @@ const matchEntrySchema = z.object({
   enemyScore: scoreSchema,
   mapId: z.string().min(1, '맵을 선택하세요.'),
   memo: z.string().max(500, '메모는 500자 이하로 입력하세요.'),
-  modeId: z.enum(['control', 'hybrid', 'push', 'escort', 'flashpoint', 'clash']),
+  modeId: z.string().refine(isValidModeValue, '모드를 선택하세요.'),
   playedAt: z.string().min(1, '플레이 시간을 입력하세요.'),
   queueType: z.enum(['solo', 'duo', 'trio', 'quad', 'five']),
-  result: z.enum(['win', 'loss', 'draw']),
+  result: z.string().refine(isValidResultValue, '결과를 선택하세요.'),
   tagsText: z.string(),
   teamScore: scoreSchema,
 });
@@ -59,6 +76,7 @@ type MatchEntryFormValues = z.infer<typeof matchEntrySchema>;
 interface MatchEntryFormProps {
   accounts?: PlayerAccount[];
   defaultSettings?: UserSettings;
+  initialDraft?: Partial<MatchCreateInput>;
   initialMatch?: Match;
   isSubmitting?: boolean;
   onSaved?: () => void;
@@ -79,21 +97,52 @@ const splitTags = (value: string) =>
     .map((tag) => tag.trim())
     .filter(Boolean);
 
-const getDefaultFormValues = (defaultSettings?: UserSettings, initialMatch?: Match) => ({
-  enemyScore: String(initialMatch?.enemyScore ?? 0),
-  mapId: initialMatch?.mapId ?? '',
-  memo: initialMatch?.memo ?? '',
-  modeId: initialMatch?.modeId ?? 'control',
-  playedAt: toDatetimeLocalValue(initialMatch ? new Date(initialMatch.playedAt) : new Date()),
-  queueType: initialMatch?.queueType ?? defaultSettings?.defaultQueueType ?? 'solo',
-  result: initialMatch?.result ?? 'win',
-  tagsText: initialMatch?.tags.join(', ') ?? '',
-  teamScore: String(initialMatch?.teamScore ?? 0),
+const getDraftDate = (initialMatch?: Match, initialDraft?: Partial<MatchCreateInput>) => {
+  if (initialMatch) {
+    return new Date(initialMatch.playedAt);
+  }
+
+  if (initialDraft?.playedAt) {
+    return new Date(initialDraft.playedAt);
+  }
+
+  return new Date();
+};
+
+const getDefaultFormValues = (
+  defaultSettings?: UserSettings,
+  initialMatch?: Match,
+  initialDraft?: Partial<MatchCreateInput>,
+) => ({
+  enemyScore:
+    initialMatch?.enemyScore !== undefined
+      ? String(initialMatch.enemyScore)
+      : initialDraft?.enemyScore !== undefined
+        ? String(initialDraft.enemyScore)
+        : '',
+  mapId: initialMatch?.mapId ?? initialDraft?.mapId ?? '',
+  memo: initialMatch?.memo ?? initialDraft?.memo ?? '',
+  modeId: initialMatch?.modeId ?? initialDraft?.modeId ?? '',
+  playedAt: toDatetimeLocalValue(getDraftDate(initialMatch, initialDraft)),
+  queueType:
+    initialMatch?.queueType ??
+    initialDraft?.queueType ??
+    defaultSettings?.defaultQueueType ??
+    'solo',
+  result: initialMatch?.result ?? initialDraft?.result ?? '',
+  tagsText: initialMatch?.tags.join(', ') ?? initialDraft?.tags?.join(', ') ?? '',
+  teamScore:
+    initialMatch?.teamScore !== undefined
+      ? String(initialMatch.teamScore)
+      : initialDraft?.teamScore !== undefined
+        ? String(initialDraft.teamScore)
+        : '',
 });
 
 const MatchEntryForm = ({
   accounts = [],
   defaultSettings,
+  initialDraft,
   initialMatch,
   isSubmitting = false,
   onSaved,
@@ -104,25 +153,28 @@ const MatchEntryForm = ({
   const mainAccount = accounts.find((account) => account.isMain);
   const fallbackAccountId = mainAccount?.id ?? accounts[0]?.id ?? '';
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
-    initialMatch ? (initialMatch.accountId ?? '') : null,
+    initialMatch ? (initialMatch.accountId ?? '') : (initialDraft?.accountId ?? null),
   );
-  const [selectedHeroes, setSelectedHeroes] = useState<string[]>(initialMatch?.myHeroes ?? []);
+  const [selectedHeroes, setSelectedHeroes] = useState<string[]>(
+    initialMatch?.myHeroes ?? initialDraft?.myHeroes ?? [],
+  );
   const [heroError, setHeroError] = useState('');
   const [heroQuery, setHeroQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<HeroRoleFilter>('all');
 
   const form = useForm<MatchEntryFormValues>({
-    defaultValues: getDefaultFormValues(defaultSettings, initialMatch),
+    defaultValues: getDefaultFormValues(defaultSettings, initialMatch, initialDraft),
     resolver: zodResolver(matchEntrySchema),
   });
 
   const watchedModeId = useWatch({ control: form.control, name: 'modeId' });
   const watchedResult = useWatch({ control: form.control, name: 'result' });
   const watchedMapId = useWatch({ control: form.control, name: 'mapId' });
+  const selectedModeId = isModeValue(watchedModeId) ? watchedModeId : null;
 
   const filteredMaps = useMemo(
-    () => mapOptions.filter((map) => map.modeId === watchedModeId),
-    [watchedModeId],
+    () => (selectedModeId ? mapOptions.filter((map) => map.modeId === selectedModeId) : mapOptions),
+    [selectedModeId],
   );
   const filteredHeroes = useMemo(() => {
     const query = heroQuery.trim().toLowerCase();
@@ -137,29 +189,31 @@ const MatchEntryForm = ({
       return roleMatches && queryMatches;
     });
   }, [heroQuery, roleFilter]);
-  const availableResultOptions = getResultOptionsForMode(watchedModeId);
+  const availableResultOptions = selectedModeId
+    ? getResultOptionsForMode(selectedModeId)
+    : resultOptions;
   const effectiveSelectedAccountId = selectedAccountId ?? fallbackAccountId;
   const selectedAccount = accounts.find((account) => account.id === effectiveSelectedAccountId);
 
   useEffect(() => {
     const currentMapIsAvailable = filteredMaps.some((map) => map.value === watchedMapId);
 
-    if (!currentMapIsAvailable) {
-      form.setValue('mapId', filteredMaps[0]?.value ?? '', { shouldValidate: true });
+    if (watchedMapId && !currentMapIsAvailable) {
+      form.setValue('mapId', '', { shouldValidate: true });
     }
   }, [filteredMaps, form, watchedMapId]);
 
   useEffect(() => {
-    if (watchedResult === 'draw' && !modeAllowsDraw(watchedModeId)) {
-      form.setValue('result', 'win', { shouldValidate: true });
+    if (selectedModeId && watchedResult === 'draw' && !modeAllowsDraw(selectedModeId)) {
+      form.setValue('result', '', { shouldValidate: true });
     }
-  }, [form, watchedModeId, watchedResult]);
+  }, [form, selectedModeId, watchedResult]);
 
   useEffect(() => {
-    if (!initialMatch && defaultSettings?.defaultQueueType) {
+    if (!initialMatch && !initialDraft?.queueType && defaultSettings?.defaultQueueType) {
       form.setValue('queueType', defaultSettings.defaultQueueType);
     }
-  }, [defaultSettings, form, initialMatch]);
+  }, [defaultSettings, form, initialDraft?.queueType, initialMatch]);
 
   const toggleHero = (heroId: string) => {
     setHeroError('');
@@ -171,9 +225,11 @@ const MatchEntryForm = ({
   };
 
   const resetForm = () => {
-    form.reset(getDefaultFormValues(defaultSettings, initialMatch));
-    setSelectedAccountId(initialMatch ? (initialMatch.accountId ?? '') : null);
-    setSelectedHeroes(initialMatch?.myHeroes ?? []);
+    form.reset(getDefaultFormValues(defaultSettings, initialMatch, initialDraft));
+    setSelectedAccountId(
+      initialMatch ? (initialMatch.accountId ?? '') : (initialDraft?.accountId ?? null),
+    );
+    setSelectedHeroes(initialMatch?.myHeroes ?? initialDraft?.myHeroes ?? []);
     setHeroError('');
     setHeroQuery('');
     setRoleFilter('all');
@@ -191,12 +247,12 @@ const MatchEntryForm = ({
       enemyScore: Number(values.enemyScore),
       mapId: values.mapId,
       memo: values.memo.trim(),
-      modeId: values.modeId,
+      modeId: values.modeId as MatchCreateInput['modeId'],
       myHeroes: selectedHeroes,
       playedAt: new Date(values.playedAt).toISOString(),
       queueType: values.queueType,
-      result: values.result,
-      source: source ?? initialMatch?.source ?? 'manual',
+      result: values.result as MatchCreateInput['result'],
+      source: source ?? initialMatch?.source ?? initialDraft?.source ?? 'manual',
       tags: splitTags(values.tagsText),
       teamScore: Number(values.teamScore),
     });
@@ -313,7 +369,7 @@ const MatchEntryForm = ({
           <div className="flex items-center justify-between gap-3">
             <Label>맵</Label>
             <span className="text-xs font-semibold text-muted-foreground">
-              {getModeLabel(watchedModeId)}
+              {selectedModeId ? getModeLabel(selectedModeId) : '모드 미선택'}
             </span>
           </div>
           <div className="grid max-h-52 gap-2 overflow-y-auto rounded-lg border border-border bg-card p-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -327,7 +383,10 @@ const MatchEntryForm = ({
                     ? 'border-primary bg-primary text-primary-foreground'
                     : 'border-border bg-background text-foreground hover:bg-secondary',
                 )}
-                onClick={() => form.setValue('mapId', map.value, { shouldValidate: true })}
+                onClick={() => {
+                  form.setValue('modeId', map.modeId, { shouldValidate: true });
+                  form.setValue('mapId', map.value, { shouldValidate: true });
+                }}
               >
                 {map.label}
               </button>
@@ -353,7 +412,7 @@ const MatchEntryForm = ({
           <section className="space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <Label>결과</Label>
-              {!modeAllowsDraw(watchedModeId) ? (
+              {selectedModeId && !modeAllowsDraw(selectedModeId) ? (
                 <span className="text-xs font-semibold text-muted-foreground">무승부 없음</span>
               ) : null}
             </div>
