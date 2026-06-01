@@ -11,6 +11,9 @@ import {
   Line,
   ResponsiveContainer,
   Tooltip,
+  type TooltipContentProps,
+  type TooltipPayloadEntry,
+  type TooltipValueType,
   XAxis,
   YAxis,
 } from 'recharts';
@@ -118,9 +121,6 @@ const formatShare = (value: number) => `${value}%`;
 const getShare = (count: number, total: number) =>
   total === 0 ? 0 : Math.round((count / total) * 100);
 
-const truncateChartLabel = (value: string, maxLength = 8) =>
-  value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
-
 const getBestWinRate = <TItem extends { total: number; winRate: number | null }>(
   items: TItem[],
   minTotal = 1,
@@ -150,15 +150,6 @@ const chartColors = {
   win: 'hsl(var(--primary))',
 };
 
-const tooltipStyle = {
-  backgroundColor: chartColors.card,
-  border: `1px solid ${chartColors.grid}`,
-  borderRadius: 8,
-  boxShadow: '0 16px 36px -28px hsl(var(--foreground) / 0.36)',
-  color: 'hsl(var(--foreground))',
-  fontFamily: chartFontFamily,
-} satisfies CSSProperties;
-
 const legendStyle = {
   fontFamily: chartFontFamily,
 } satisfies CSSProperties;
@@ -168,6 +159,55 @@ const getAxisTick = (fontSize = 12) => ({
   fontFamily: chartFontFamily,
   fontSize,
 });
+
+const percentageTooltipKeys = new Set(['승률', '선택률']);
+
+const tooltipCursorStyle = {
+  fill: 'hsl(var(--primary) / 0.07)',
+  stroke: 'hsl(var(--primary) / 0.2)',
+  strokeWidth: 1,
+};
+
+const tooltipEscapeViewBox = { x: true, y: true };
+
+const tooltipWrapperStyle = {
+  outline: 'none',
+} satisfies CSSProperties;
+
+const getTooltipColor = (entry: TooltipPayloadEntry) =>
+  entry.color ?? entry.fill ?? entry.stroke ?? chartColors.primary;
+
+const formatTooltipLabel = (label: string | number | undefined) =>
+  label === undefined ? '데이터' : String(label);
+
+const formatTooltipValue = (
+  value: TooltipValueType | undefined,
+  name: string | number | undefined,
+) => {
+  if (value === undefined) {
+    return '--';
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(String).join(' - ');
+  }
+
+  if (typeof value === 'number') {
+    const formattedValue = value.toLocaleString('ko-KR', {
+      maximumFractionDigits: Number.isInteger(value) ? 0 : 1,
+    });
+
+    return percentageTooltipKeys.has(String(name)) ? `${formattedValue}%` : `${formattedValue}경기`;
+  }
+
+  return value;
+};
+
+const hasTooltipMode = (value: unknown): value is { mode: string } =>
+  typeof value === 'object' &&
+  value !== null &&
+  'mode' in value &&
+  typeof (value as { mode?: unknown }).mode === 'string';
 
 const StatsPage = () => {
   const { section } = useParams();
@@ -659,18 +699,12 @@ const StatsPage = () => {
                           <YAxis
                             type="category"
                             dataKey="name"
-                            width={92}
+                            width={128}
                             tick={getAxisTick(11)}
-                            tickFormatter={(value) => truncateChartLabel(String(value))}
                             tickLine={false}
                             axisLine={false}
                           />
-                          <Tooltip
-                            contentStyle={tooltipStyle}
-                            cursor={{ fill: 'hsl(var(--secondary) / 0.65)' }}
-                            itemStyle={tooltipStyle}
-                            labelStyle={tooltipStyle}
-                          />
+                          <ChartTooltipLayer />
                           <Bar dataKey="선택률" fill={chartColors.primary} radius={[0, 4, 4, 0]} />
                         </BarChart>
                       </ChartShell>
@@ -795,12 +829,7 @@ const StatsPage = () => {
                             tickLine={false}
                             axisLine={false}
                           />
-                          <Tooltip
-                            contentStyle={tooltipStyle}
-                            cursor={{ fill: 'hsl(var(--secondary) / 0.65)' }}
-                            itemStyle={tooltipStyle}
-                            labelStyle={tooltipStyle}
-                          />
+                          <ChartTooltipLayer />
                           <Legend wrapperStyle={legendStyle} />
                           <Bar
                             dataKey="승리"
@@ -887,12 +916,7 @@ const StatsPage = () => {
                           tickLine={false}
                           axisLine={false}
                         />
-                        <Tooltip
-                          contentStyle={tooltipStyle}
-                          cursor={{ fill: 'hsl(var(--secondary) / 0.65)' }}
-                          itemStyle={tooltipStyle}
-                          labelStyle={tooltipStyle}
-                        />
+                        <ChartTooltipLayer />
                         <Legend wrapperStyle={legendStyle} />
                         <Bar
                           yAxisId="left"
@@ -962,10 +986,12 @@ const StatsPage = () => {
                             <XAxis
                               dataKey="name"
                               tick={getAxisTick(11)}
-                              tickFormatter={(value) => truncateChartLabel(String(value), 5)}
+                              angle={-32}
+                              height={58}
                               tickLine={false}
                               axisLine={false}
                               interval={0}
+                              textAnchor="end"
                             />
                             <YAxis
                               yAxisId="left"
@@ -983,12 +1009,7 @@ const StatsPage = () => {
                               tickLine={false}
                               axisLine={false}
                             />
-                            <Tooltip
-                              contentStyle={tooltipStyle}
-                              cursor={{ fill: 'hsl(var(--secondary) / 0.65)' }}
-                              itemStyle={tooltipStyle}
-                              labelStyle={tooltipStyle}
-                            />
+                            <ChartTooltipLayer />
                             <Legend wrapperStyle={legendStyle} />
                             <Bar
                               yAxisId="left"
@@ -1055,12 +1076,7 @@ const StatsPage = () => {
                               tickLine={false}
                               axisLine={false}
                             />
-                            <Tooltip
-                              contentStyle={tooltipStyle}
-                              cursor={{ fill: 'hsl(var(--secondary) / 0.65)' }}
-                              itemStyle={tooltipStyle}
-                              labelStyle={tooltipStyle}
-                            />
+                            <ChartTooltipLayer />
                             <Legend wrapperStyle={legendStyle} />
                             <Bar
                               yAxisId="left"
@@ -1176,12 +1192,7 @@ const StatsPage = () => {
                           tickLine={false}
                           axisLine={false}
                         />
-                        <Tooltip
-                          contentStyle={tooltipStyle}
-                          cursor={{ fill: 'hsl(var(--secondary) / 0.65)' }}
-                          itemStyle={tooltipStyle}
-                          labelStyle={tooltipStyle}
-                        />
+                        <ChartTooltipLayer />
                         <Legend wrapperStyle={legendStyle} />
                         <Bar
                           yAxisId="left"
@@ -1268,12 +1279,7 @@ const StatsPage = () => {
                           tickLine={false}
                           axisLine={false}
                         />
-                        <Tooltip
-                          contentStyle={tooltipStyle}
-                          cursor={{ fill: 'hsl(var(--secondary) / 0.65)' }}
-                          itemStyle={tooltipStyle}
-                          labelStyle={tooltipStyle}
-                        />
+                        <ChartTooltipLayer />
                         <Legend wrapperStyle={legendStyle} />
                         <Bar
                           yAxisId="left"
@@ -1347,13 +1353,15 @@ const MetricCard = ({ className, detail, icon: Icon, label, value }: MetricCardP
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="metric-label">{label}</p>
-          <p className="mt-2 truncate text-xl font-bold leading-tight">{value}</p>
+          <p className="mt-2 break-words text-xl font-bold leading-tight">{value}</p>
         </div>
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-primary">
           <Icon className="h-4 w-4" />
         </div>
       </div>
-      <p className="mt-2 truncate text-xs font-semibold text-muted-foreground">{detail}</p>
+      <p className="mt-2 break-words text-xs font-semibold leading-relaxed text-muted-foreground">
+        {detail}
+      </p>
     </div>
   </div>
 );
@@ -1548,6 +1556,61 @@ const FilterSelect = ({ children, label }: FilterGroupProps) => (
   </div>
 );
 
+const ChartTooltipLayer = () => (
+  <Tooltip
+    allowEscapeViewBox={tooltipEscapeViewBox}
+    content={(props) => <ChartTooltip {...props} />}
+    cursor={tooltipCursorStyle}
+    isAnimationActive={false}
+    wrapperStyle={tooltipWrapperStyle}
+  />
+);
+
+const ChartTooltip = ({
+  active,
+  label,
+  payload,
+}: TooltipContentProps<TooltipValueType, string | number>) => {
+  const rows = payload?.filter((entry) => entry.value !== undefined && entry.value !== null) ?? [];
+
+  if (!active || rows.length === 0) {
+    return null;
+  }
+
+  const contextPayload = rows[0]?.payload;
+  const contextLabel = hasTooltipMode(contextPayload) ? contextPayload.mode : '데이터 포인트';
+
+  return (
+    <div className="max-w-[280px] rounded-lg border border-border/80 bg-card/95 px-3 py-2.5 text-foreground shadow-[0_18px_48px_-28px_hsl(var(--foreground)/0.55)] backdrop-blur-xl">
+      <div className="border-b border-border/60 pb-2">
+        <p className="metric-label">{contextLabel}</p>
+        <p className="mt-1 break-words text-sm font-bold leading-snug">
+          {formatTooltipLabel(label)}
+        </p>
+      </div>
+      <div className="mt-2 space-y-2">
+        {rows.map((entry, index) => (
+          <div
+            key={`${String(entry.dataKey ?? entry.name ?? 'metric')}-${index}`}
+            className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2"
+          >
+            <span
+              className="h-2 w-2 rounded-full"
+              style={{ backgroundColor: getTooltipColor(entry) }}
+            />
+            <span className="min-w-0 break-words text-xs font-semibold leading-snug text-muted-foreground">
+              {String(entry.name ?? entry.dataKey ?? '값')}
+            </span>
+            <span className="whitespace-nowrap text-right text-xs font-bold">
+              {formatTooltipValue(entry.value, entry.name)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 interface ChartShellProps {
   children: ReactNode;
   className?: string;
@@ -1573,8 +1636,8 @@ const StatRow = ({ count, detail, label, maxCount, winRate }: StatRowProps) => (
   <div className="grid gap-3 border-b border-border/60 py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-center">
     <div className="min-w-0">
       <div className="flex items-center justify-between gap-3">
-        <p className="truncate text-sm font-bold">{label}</p>
-        <span className="text-xs font-semibold text-muted-foreground">{count}경기</span>
+        <p className="min-w-0 flex-1 break-words text-sm font-bold leading-snug">{label}</p>
+        <span className="shrink-0 text-xs font-semibold text-muted-foreground">{count}경기</span>
       </div>
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-secondary">
         <div
@@ -1584,7 +1647,9 @@ const StatRow = ({ count, detail, label, maxCount, winRate }: StatRowProps) => (
       </div>
     </div>
     <div className="flex items-center justify-between gap-3 sm:justify-end">
-      <span className="text-xs font-semibold text-muted-foreground">{detail}</span>
+      <span className="min-w-0 break-words text-xs font-semibold leading-snug text-muted-foreground">
+        {detail}
+      </span>
       <Badge variant="outline" className="w-[64px] justify-center bg-transparent">
         {formatWinRate(winRate)}
       </Badge>
@@ -1621,8 +1686,10 @@ const MediaStatRow = ({
     <div className="min-w-0 py-1">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-sm font-bold">{label}</p>
-          <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">{detail}</p>
+          <p className="break-words text-sm font-bold leading-snug">{label}</p>
+          <p className="mt-1 break-words text-xs font-semibold leading-snug text-muted-foreground">
+            {detail}
+          </p>
         </div>
         <Badge variant="outline" className="shrink-0 bg-transparent">
           {formatWinRate(winRate)}
