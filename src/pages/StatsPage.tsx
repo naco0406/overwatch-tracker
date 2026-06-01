@@ -152,6 +152,7 @@ const chartColors = {
 
 const legendStyle = {
   fontFamily: chartFontFamily,
+  zIndex: 1,
 } satisfies CSSProperties;
 
 const getAxisTick = (fontSize = 12) => ({
@@ -172,6 +173,8 @@ const tooltipEscapeViewBox = { x: true, y: true };
 
 const tooltipWrapperStyle = {
   outline: 'none',
+  pointerEvents: 'none',
+  zIndex: 30,
 } satisfies CSSProperties;
 
 const getTooltipColor = (entry: TooltipPayloadEntry) =>
