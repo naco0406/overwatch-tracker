@@ -1,10 +1,8 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   CheckCircle2,
-  BookOpenCheck,
   Database,
   Download,
-  ExternalLink,
   LogOut,
   Plus,
   ShieldCheck,
@@ -13,8 +11,7 @@ import {
   Upload,
   UserRound,
 } from 'lucide-react';
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useRef, useState, type ChangeEvent } from 'react';
 
 import { PageHeader } from '@/components/common/PageHeader';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { useCreateMatch, useMatches } from '@/hooks/useMatches';
 import {
   useCreatePlayerAccount,
   useDeletePlayerAccount,
@@ -29,17 +27,22 @@ import {
   useRestorePlayerAccount,
   useUpdatePlayerAccount,
 } from '@/hooks/usePlayerAccounts';
+import { buildMatchesCsv, createCsvFileName, parseMatchesCsv } from '@/lib/matchCsv';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
 
 const SettingsPage = () => {
   const { signOut, user } = useAuth();
   const { data: playerAccounts = [] } = usePlayerAccounts();
+  const { data: matches = [] } = useMatches();
   const createPlayerAccount = useCreatePlayerAccount();
+  const createMatch = useCreateMatch();
   const updatePlayerAccount = useUpdatePlayerAccount();
   const deletePlayerAccount = useDeletePlayerAccount();
   const restorePlayerAccount = useRestorePlayerAccount();
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [battleTag, setBattleTag] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
   const activeAccounts = playerAccounts.filter((account) => account.isActive);
   const inactiveAccounts = playerAccounts.filter((account) => !account.isActive);
 
@@ -134,9 +137,84 @@ const SettingsPage = () => {
     }
   };
 
+  const handleExportCsv = () => {
+    const csv = buildMatchesCsv(matches, playerAccounts);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    link.href = url;
+    link.download = createCsvFileName();
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: 'CSV 내보내기 완료',
+      description: `${matches.length.toLocaleString('ko-KR')}개 경기 기록을 저장했습니다.`,
+    });
+  };
+
+  const handleImportCsv = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      toast({
+        title: 'CSV 파일이 아닙니다.',
+        description: '내보내기한 CSV 형식으로 가져올 수 있습니다.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsImporting(true);
+
+    try {
+      const text = await file.text();
+      const parsed = parseMatchesCsv(text, playerAccounts);
+
+      if (parsed.matches.length === 0) {
+        const firstIssue = parsed.issues[0];
+
+        toast({
+          title: '가져올 기록이 없습니다.',
+          description: firstIssue ? `${firstIssue.row}행: ${firstIssue.message}` : undefined,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      for (const match of parsed.matches) {
+        await createMatch.mutateAsync(match);
+      }
+
+      toast({
+        title: 'CSV 가져오기 완료',
+        description:
+          parsed.issues.length > 0
+            ? `${parsed.matches.length.toLocaleString('ko-KR')}개 저장, ${parsed.issues.length.toLocaleString('ko-KR')}개 항목은 확인이 필요합니다.`
+            : `${parsed.matches.length.toLocaleString('ko-KR')}개 경기 기록을 저장했습니다.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'CSV 가져오기 실패',
+        description: error instanceof Error ? error.message : '파일을 다시 확인하세요.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   return (
     <div className="page-stack">
-      <PageHeader eyebrow="설정" title="설정" />
+      <PageHeader eyebrow="설정" title="설정" description="계정과 데이터 파일을 관리합니다." />
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
         <div className="workspace-panel overflow-hidden">
@@ -267,48 +345,55 @@ const SettingsPage = () => {
         </div>
 
         <aside className="workspace-panel overflow-hidden">
-          <div className="flat-row grid gap-4 p-4 sm:p-5">
-            <SectionLead icon={BookOpenCheck} label="마스터 데이터" title="열람" />
-            <div className="flex flex-col gap-3">
-              <p className="text-sm text-muted-foreground">
-                영웅 초상화, 전장 이미지, 역할/모드 아이콘을 정적 asset으로 열람합니다.
-              </p>
-              <Button asChild variant="outline" className="w-fit bg-transparent">
-                <Link to="/master-data">
-                  <ExternalLink className="h-4 w-4" />
-                  열기
-                </Link>
-              </Button>
-            </div>
+          <div className="section-header">
+            <SectionLead icon={Database} label="데이터" title="파일" />
           </div>
 
-          <div className="flat-row grid gap-4 p-4 sm:p-5">
-            <SectionLead icon={CheckCircle2} label="이미지 분석" title="파이프라인" />
+          <div className="section-pad space-y-4">
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-              {[
-                { label: '영역', value: 'UI 탐지' },
-                { label: 'OCR', value: '텍스트' },
-                { label: '전장', value: '이미지 매칭' },
-                { label: '영웅', value: '내 행' },
-              ].map((item) => (
-                <div key={item.label} className="rounded-md border border-border/70 bg-card p-3">
-                  <p className="metric-label">{item.label}</p>
-                  <p className="mt-2 text-sm font-bold">{item.value}</p>
-                </div>
-              ))}
+              <div className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3">
+                <p className="metric-label">저장 기록</p>
+                <p className="mt-2 text-2xl font-bold">{matches.length.toLocaleString('ko-KR')}</p>
+              </div>
+              <div className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3">
+                <p className="metric-label">파일 형식</p>
+                <p className="mt-2 text-2xl font-bold">CSV</p>
+              </div>
             </div>
-          </div>
 
-          <div className="grid gap-4 p-4 sm:p-5">
-            <SectionLead icon={Database} label="데이터" title="데이터" />
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Button variant="outline" className="bg-transparent" disabled>
+            <div className="rounded-md border border-border/70 bg-card p-3">
+              <p className="text-sm font-semibold">CSV 백업과 이전</p>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                현재 기록을 CSV로 저장하고, 같은 컬럼 구조의 CSV 파일을 다시 가져옵니다.
+              </p>
+            </div>
+
+            <input
+              ref={importInputRef}
+              accept=".csv,text/csv"
+              className="hidden"
+              type="file"
+              onChange={handleImportCsv}
+            />
+
+            <div className="grid gap-2">
+              <Button
+                variant="outline"
+                className="justify-start bg-transparent"
+                disabled={isImporting || createMatch.isPending}
+                onClick={() => importInputRef.current?.click()}
+              >
                 <Upload className="h-4 w-4" />
-                가져오기
+                {isImporting ? '가져오는 중' : 'CSV 가져오기'}
               </Button>
-              <Button variant="outline" className="bg-transparent" disabled>
+              <Button
+                variant="outline"
+                className="justify-start bg-transparent"
+                disabled={matches.length === 0}
+                onClick={handleExportCsv}
+              >
                 <Download className="h-4 w-4" />
-                내보내기
+                CSV 내보내기
               </Button>
             </div>
           </div>
