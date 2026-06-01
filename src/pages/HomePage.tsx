@@ -1,16 +1,4 @@
-import {
-  Activity,
-  CalendarDays,
-  Clipboard,
-  ImagePlus,
-  Loader2,
-  Pencil,
-  Plus,
-  Trash2,
-  TrendingUp,
-  Wand2,
-  X,
-} from 'lucide-react';
+import { Clipboard, ImagePlus, Loader2, Pencil, Plus, Trash2, Wand2, X } from 'lucide-react';
 import {
   useEffect,
   useMemo,
@@ -96,23 +84,17 @@ const getSummaryMetrics = (matches: Match[]) => {
   return [
     {
       detail: matches.length > 0 ? '오늘 저장됨' : '저장 대기',
-      icon: CalendarDays,
       label: '오늘 경기',
-      tone: 'text-primary bg-primary/10',
       value: String(matches.length),
     },
     {
       detail: winRate === null ? '승패 데이터 없음' : '무승부 제외',
-      icon: TrendingUp,
       label: '승률',
-      tone: 'text-[hsl(var(--success))] bg-[hsl(var(--success)/0.12)]',
       value: winRate === null ? '--' : `${winRate}%`,
     },
     {
       detail: streak ? (streak.result === 'win' ? '연승 중' : '연패 중') : '세션 시작 전',
-      icon: Activity,
       label: '현재 흐름',
-      tone: 'text-[hsl(var(--warning))] bg-[hsl(var(--warning)/0.14)]',
       value: streak ? `${streak.count}${streak.result === 'win' ? 'W' : 'L'}` : '--',
     },
   ];
@@ -391,7 +373,7 @@ const HomePage = () => {
   };
 
   return (
-    <div className="flex flex-1 flex-col gap-6" onPaste={handlePaste}>
+    <div className="flex flex-1 flex-col gap-5 lg:gap-6" onPaste={handlePaste}>
       <PageHeader
         eyebrow="오늘"
         title="경기 기록"
@@ -415,28 +397,27 @@ const HomePage = () => {
         onChange={handleFileChange}
       />
 
-      <section className="workspace-panel overflow-hidden">
-        <div className="grid border-b border-border md:grid-cols-3">
+      <section className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="grid border-b border-border bg-[hsl(var(--surface-2))] sm:grid-cols-3 sm:divide-x sm:divide-border">
           {summaryMetrics.map((metric) => (
             <div
               key={metric.label}
-              className="flex min-h-[96px] items-start justify-between gap-4 border-b border-border p-4 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0 sm:p-5"
+              className="flex min-h-[74px] items-end justify-between gap-3 border-b border-border px-4 py-3 last:border-b-0 sm:border-b-0 sm:px-5 sm:py-4"
             >
-              <div>
+              <div className="min-w-0">
                 <p className="metric-label">{metric.label}</p>
-                <p className="mt-3 text-2xl font-bold leading-none">{metric.value}</p>
-                <p className="mt-2 text-xs text-muted-foreground">{metric.detail}</p>
-              </div>
-              <div
-                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md ${metric.tone}`}
-              >
-                <metric.icon className="h-5 w-5" />
+                <div className="mt-2 flex min-w-0 items-baseline gap-2">
+                  <p className="text-2xl font-bold leading-none">{metric.value}</p>
+                  <p className="truncate text-xs font-semibold text-muted-foreground">
+                    {metric.detail}
+                  </p>
+                </div>
               </div>
             </div>
           ))}
         </div>
 
-        <div className="p-4 sm:p-5">
+        <div className="p-3 sm:p-4 lg:p-5">
           <QuickMatchEntry
             accounts={activePlayerAccounts}
             defaultSettings={userSettings}
@@ -446,16 +427,16 @@ const HomePage = () => {
         </div>
       </section>
 
-      <section className="workspace-panel overflow-hidden">
-        <div className="flex items-center justify-between border-b border-border p-4 sm:p-5">
-          <div>
-            <p className="metric-label">세션</p>
-            <h2 className="mt-2 text-lg font-bold tracking-normal">오늘 세션</h2>
+      <section className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
+        <div className="grid gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="metric-label">세션</p>
+              <h2 className="mt-1 text-lg font-bold tracking-normal">오늘 세션</h2>
+            </div>
+            <Badge variant="secondary">{todayMatches.length} 경기</Badge>
           </div>
-          <Badge variant="secondary">{todayMatches.length} 경기</Badge>
-        </div>
-        <div className="grid gap-4 p-4 sm:grid-cols-[220px_minmax(0,1fr)] sm:p-5">
-          <div className="grid grid-cols-6 gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-6 gap-2 lg:grid-cols-3">
             {isLoading
               ? emptySessionSlots.map((_, index) => (
                   <SkeletonBlock key={index} className="h-14 rounded-md" />
@@ -480,6 +461,15 @@ const HomePage = () => {
                       {index + 1}
                     </div>
                   ))}
+          </div>
+        </div>
+
+        <div className="min-w-0">
+          <div className="mb-2 hidden items-center justify-between gap-3 lg:flex">
+            <p className="metric-label">최근 기록</p>
+            <span className="text-xs font-semibold text-muted-foreground">
+              {formatTime(sortedTodayMatches[0]?.playedAt)}
+            </span>
           </div>
           {isLoading ? (
             <TodayMatchRowsSkeleton />

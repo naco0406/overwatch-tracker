@@ -128,6 +128,8 @@ const QuickMatchEntry = ({
     const inferred = inferResult(nextTeamScore, nextEnemyScore);
     if (inferred) {
       setResult(inferred);
+    } else if (!isValidScore(nextTeamScore) || !isValidScore(nextEnemyScore)) {
+      setResult('');
     }
     setError('');
   };
@@ -180,49 +182,36 @@ const QuickMatchEntry = ({
   };
 
   return (
-    <>
-      <div className="mx-auto w-full max-w-3xl">
-        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="metric-label">빠른 기록</p>
-            <h2 className="mt-2 text-2xl font-bold tracking-normal">새 경기</h2>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="outline" className="w-fit bg-transparent">
-              {defaultAccount ? getPlayerAccountLabel(defaultAccount) : '계정 미지정'}
-            </Badge>
-            <Badge variant="outline" className="w-fit bg-transparent">
-              {getOptionLabel(queueOptions, defaultQueueType)}
-            </Badge>
-          </div>
+    <div className="w-full">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <p className="metric-label">빠른 기록</p>
+          <h2 className="mt-1 truncate text-lg font-bold tracking-normal">새 경기</h2>
         </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="outline" className="w-fit bg-transparent">
+            {defaultAccount ? getPlayerAccountLabel(defaultAccount) : '계정 미지정'}
+          </Badge>
+          <Badge variant="outline" className="w-fit bg-transparent">
+            {getOptionLabel(queueOptions, defaultQueueType)}
+          </Badge>
+        </div>
+      </div>
 
-        <div className="rounded-lg border border-border bg-card p-3 sm:p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <p className="metric-label">맵</p>
-              <p className="mt-1 truncate text-lg font-bold">
-                {selectedMap ? selectedMap.label : '선택'}
-              </p>
-            </div>
-            {selectedMap ? (
-              <Badge variant="outline" className="w-fit bg-transparent">
-                {getModeLabel(selectedMap.modeId)}
-              </Badge>
-            ) : null}
-          </div>
-
-          <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_310px] lg:items-start lg:gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0">
+          <div className="grid gap-2 lg:grid-cols-[minmax(220px,300px)_minmax(0,1fr)] lg:items-center">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
+                aria-label="맵 검색"
                 className="h-9 pl-9 text-sm font-semibold"
                 placeholder="맵 검색"
                 value={mapQuery}
                 onChange={(event) => setMapQuery(event.target.value)}
               />
             </div>
-            <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1 lg:max-w-[440px]">
+            <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1">
               <ModeButton active={modeFilter === 'all'} onClick={() => setModeFilter('all')}>
                 전체
               </ModeButton>
@@ -238,9 +227,9 @@ const QuickMatchEntry = ({
             </div>
           </div>
 
-          <div className="mobile-scroll mt-3 h-[212px] overflow-x-auto pb-2 sm:h-[228px]">
+          <div className="mobile-scroll mt-3 h-[212px] overflow-x-auto pb-2 sm:h-[228px] lg:h-[244px]">
             {visibleMaps.length > 0 ? (
-              <div className="grid h-full auto-cols-[132px] grid-flow-col grid-rows-2 gap-2 sm:auto-cols-[148px]">
+              <div className="grid h-full auto-cols-[132px] grid-flow-col grid-rows-2 gap-2 sm:auto-cols-[148px] lg:auto-cols-[164px]">
                 {visibleMaps.map((map) => {
                   const selected = map.value === mapId;
 
@@ -254,7 +243,7 @@ const QuickMatchEntry = ({
                       )}
                       onClick={() => selectMap(map.value)}
                     >
-                      <span className="block h-14 overflow-hidden bg-secondary sm:h-16">
+                      <span className="block h-14 overflow-hidden bg-secondary sm:h-16 lg:h-[72px]">
                         <img
                           alt={map.label}
                           className="h-full w-full object-cover"
@@ -283,8 +272,24 @@ const QuickMatchEntry = ({
               </div>
             )}
           </div>
+        </div>
 
-          <div className="mt-4 grid gap-4 lg:grid-cols-[230px_minmax(0,1fr)_140px] lg:items-end">
+        <div className="border-t border-border pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+          <div className="mb-3 flex min-h-10 items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="metric-label">맵</p>
+              <p className="mt-1 truncate text-base font-bold">
+                {selectedMap ? selectedMap.label : '선택'}
+              </p>
+            </div>
+            {selectedMap ? (
+              <Badge variant="outline" className="w-fit shrink-0 bg-transparent">
+                {getModeLabel(selectedMap.modeId)}
+              </Badge>
+            ) : null}
+          </div>
+
+          <div className="grid gap-3">
             <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
               <ScoreField
                 label="우리"
@@ -329,7 +334,7 @@ const QuickMatchEntry = ({
           {error ? <p className="mt-3 text-sm font-semibold text-destructive">{error}</p> : null}
         </div>
       </div>
-    </>
+    </div>
   );
 };
 
