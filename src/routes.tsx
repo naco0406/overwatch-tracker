@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode } from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { AppLayout } from '@/components/common/AppLayout';
 import { RequireAuth } from '@/components/common/RequireAuth';
@@ -40,8 +40,9 @@ const AppRoutes = () => (
           }
         />
         <Route path="/sessions" element={<SessionsPage />} />
+        <Route path="/stats" element={<Navigate to="/stats/maps" replace />} />
         <Route
-          path="/stats"
+          path="/stats/:section"
           element={
             <LazyPage>
               <StatsPage />
