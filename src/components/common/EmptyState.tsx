@@ -14,7 +14,7 @@ interface EmptyStateProps {
 const EmptyState = ({ action, className, description, icon: Icon, title }: EmptyStateProps) => (
   <div
     className={cn(
-      'flex min-h-[180px] flex-col justify-center rounded-lg border border-dashed border-border/90 bg-[hsl(var(--surface-2))] p-4',
+      'flex min-h-[180px] flex-col justify-center rounded-lg border border-dashed border-border/70 bg-[hsl(var(--surface-2))] p-4',
       className,
     )}
   >

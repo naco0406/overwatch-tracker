@@ -373,7 +373,7 @@ const HomePage = () => {
   };
 
   return (
-    <div className="flex flex-1 flex-col gap-5 lg:gap-6" onPaste={handlePaste}>
+    <div className="page-stack" onPaste={handlePaste}>
       <PageHeader
         eyebrow="오늘"
         title="경기 기록"
@@ -397,12 +397,12 @@ const HomePage = () => {
         onChange={handleFileChange}
       />
 
-      <section className="overflow-hidden rounded-lg border border-border bg-card">
-        <div className="grid border-b border-border bg-[hsl(var(--surface-2))] sm:grid-cols-3 sm:divide-x sm:divide-border">
+      <section className="workspace-panel overflow-hidden">
+        <div className="metric-strip sm:grid-cols-3 sm:divide-x sm:divide-border/70">
           {summaryMetrics.map((metric) => (
             <div
               key={metric.label}
-              className="flex min-h-[74px] items-end justify-between gap-3 border-b border-border px-4 py-3 last:border-b-0 sm:border-b-0 sm:px-5 sm:py-4"
+              className="flex min-h-[74px] items-end justify-between gap-3 border-b border-border/70 px-4 py-3 last:border-b-0 sm:border-b-0 sm:px-5 sm:py-4"
             >
               <div className="min-w-0">
                 <p className="metric-label">{metric.label}</p>
@@ -417,7 +417,7 @@ const HomePage = () => {
           ))}
         </div>
 
-        <div className="p-3 sm:p-4 lg:p-5">
+        <div className="section-pad">
           <QuickMatchEntry
             accounts={activePlayerAccounts}
             defaultSettings={userSettings}
@@ -474,7 +474,7 @@ const HomePage = () => {
           {isLoading ? (
             <TodayMatchRowsSkeleton />
           ) : todayMatches.length > 0 ? (
-            <div className="overflow-hidden rounded-lg border border-border bg-card">
+            <div className="subpanel">
               {sortedTodayMatches.slice(0, 6).map((match) => (
                 <div
                   key={match.id}
@@ -524,7 +524,7 @@ const HomePage = () => {
               ))}
             </div>
           ) : (
-            <div className="overflow-hidden rounded-lg border border-border bg-card">
+            <div className="subpanel">
               <div className="flat-row p-3">
                 <InlineEmptyState
                   title="저장된 경기 없음"
@@ -558,7 +558,7 @@ const HomePage = () => {
 
       <Dialog open={toolsOpen} onOpenChange={setToolsOpen}>
         <DialogContent className="flex h-[calc(100dvh-1rem)] max-w-2xl flex-col gap-0 p-0 sm:h-[680px] sm:max-h-[calc(100dvh-3rem)]">
-          <DialogHeader className="border-b border-border bg-card px-4 py-4 pr-12 sm:px-5">
+          <DialogHeader className="border-b border-border/70 bg-card px-4 py-4 pr-12 sm:px-5">
             <DialogTitle>보조 입력</DialogTitle>
             <DialogDescription>상세 기록과 이미지 분석은 필요할 때만 사용합니다.</DialogDescription>
           </DialogHeader>
@@ -571,7 +571,7 @@ const HomePage = () => {
             <div className="grid gap-3 sm:grid-cols-2">
               <button
                 type="button"
-                className="rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-secondary"
+                className="rounded-lg border border-border/70 bg-card p-4 text-left transition-colors hover:bg-secondary"
                 onClick={openDirectEntry}
               >
                 <p className="metric-label">수기</p>
@@ -583,7 +583,7 @@ const HomePage = () => {
 
               <button
                 type="button"
-                className="rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-secondary"
+                className="rounded-lg border border-border/70 bg-card p-4 text-left transition-colors hover:bg-secondary"
                 onClick={() => fileInputRef.current?.click()}
               >
                 <p className="metric-label">이미지</p>
@@ -594,7 +594,7 @@ const HomePage = () => {
               </button>
             </div>
 
-            <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-card p-3">
+            <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-lg border border-border/70 bg-card p-3">
               {screenshotPreview ? (
                 <div className="grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
                   <div className="aspect-video overflow-hidden rounded-md bg-secondary">
@@ -630,7 +630,7 @@ const HomePage = () => {
                     </div>
 
                     {visionProgress ? (
-                      <div className="mt-3 rounded-md border border-border bg-background p-3">
+                      <div className="mt-3 rounded-md border border-border/70 bg-background p-3">
                         <div className="flex items-center justify-between gap-3">
                           <p className="truncate text-xs font-bold">{visionProgress.message}</p>
                           {typeof visionProgress.progress === 'number' ? (
@@ -653,7 +653,7 @@ const HomePage = () => {
                     ) : null}
 
                     {visionResult ? (
-                      <div className="mt-3 rounded-md border border-border bg-background p-3">
+                      <div className="mt-3 rounded-md border border-border/70 bg-background p-3">
                         <p className="metric-label">분석 결과</p>
                         <p className="mt-2 truncate text-sm font-bold">
                           {visionResult.draft.mapId
@@ -738,7 +738,7 @@ const HomePage = () => {
 };
 
 const TodayMatchRowsSkeleton = () => (
-  <div className="overflow-hidden rounded-lg border border-border bg-card">
+  <div className="subpanel">
     {Array.from({ length: 4 }, (_, index) => (
       <div
         key={index}

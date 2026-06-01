@@ -339,17 +339,17 @@ const RecordsPage = () => {
   };
 
   return (
-    <div className="flex flex-1 flex-col gap-6">
+    <div className="page-stack">
       <PageHeader eyebrow="데이터" title="기록" />
 
       <section className="workspace-panel overflow-hidden">
-        <div className="grid border-b border-border md:grid-cols-3">
+        <div className="metric-strip md:grid-cols-3">
           <MetricCell label="표시 기록" value={filteredMatches.length.toLocaleString('ko-KR')} />
           <MetricCell label="승률" value={formatWinRate(summary.winRate)} />
           <MetricCell label="선택" value={selectedMatches.length.toLocaleString('ko-KR')} />
         </div>
 
-        <div className="border-b border-border p-4 sm:p-5">
+        <div className="section-divider section-pad">
           <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -397,15 +397,15 @@ const RecordsPage = () => {
           ) : null}
         </div>
 
-        <div className="p-4 sm:p-5">
+        <div className="section-pad">
           {isLoading ? (
             <RecordsSkeleton />
           ) : filteredMatches.length > 0 ? (
             <>
-              <div className="hidden overflow-hidden rounded-lg border border-border bg-card md:block">
+              <div className="subpanel hidden md:block">
                 <table className="w-full table-fixed border-collapse text-left text-sm">
                   <thead className="bg-[hsl(var(--surface-2))]">
-                    <tr className="border-b border-border">
+                    <tr className="border-b border-border/70">
                       <th className="w-12 px-3 py-3">
                         <input
                           type="checkbox"
@@ -442,7 +442,7 @@ const RecordsPage = () => {
               </div>
 
               <div className="space-y-3 md:hidden">
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-3">
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-card p-3">
                   <span className="text-sm font-bold">표시 기록</span>
                   <Button
                     type="button"
@@ -469,7 +469,7 @@ const RecordsPage = () => {
               </div>
             </>
           ) : (
-            <div className="overflow-hidden rounded-lg border border-border bg-card">
+            <div className="subpanel">
               <div className="flat-row p-3">
                 <InlineEmptyState
                   title="기록 없음"
@@ -491,7 +491,7 @@ const RecordsPage = () => {
 
       <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
         <DialogContent className="flex h-[calc(100dvh-1rem)] max-w-2xl flex-col gap-0 p-0 sm:h-[460px] sm:max-h-[calc(100dvh-3rem)]">
-          <DialogHeader className="border-b border-border px-4 py-4 pr-12 sm:px-5">
+          <DialogHeader className="border-b border-border/70 px-4 py-4 pr-12 sm:px-5">
             <DialogTitle>필터</DialogTitle>
             <DialogDescription>필요한 조건만 켜서 기록을 좁힙니다.</DialogDescription>
           </DialogHeader>
@@ -564,7 +564,7 @@ const RecordsPage = () => {
               </Select>
             </div>
           </div>
-          <DialogFooter className="border-t border-border px-4 py-4 sm:px-5">
+          <DialogFooter className="border-t border-border/70 px-4 py-4 sm:px-5">
             <Button
               type="button"
               variant="outline"
@@ -584,7 +584,7 @@ const RecordsPage = () => {
 
       <Dialog open={bulkActionsOpen} onOpenChange={setBulkActionsOpen}>
         <DialogContent className="flex h-[calc(100dvh-1rem)] max-w-3xl flex-col gap-0 p-0 sm:h-[430px] sm:max-h-[calc(100dvh-3rem)]">
-          <DialogHeader className="border-b border-border px-4 py-4 pr-12 sm:px-5">
+          <DialogHeader className="border-b border-border/70 px-4 py-4 pr-12 sm:px-5">
             <DialogTitle>선택 작업</DialogTitle>
             <DialogDescription>
               {selectedMatches.length.toLocaleString('ko-KR')}개 기록을 수정합니다.
@@ -637,13 +637,13 @@ const RecordsPage = () => {
 
       <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
         <DialogContent>
-          <DialogHeader className="border-b border-border px-4 py-4 pr-12 sm:px-5">
+          <DialogHeader className="border-b border-border/70 px-4 py-4 pr-12 sm:px-5">
             <DialogTitle>선택 기록 삭제</DialogTitle>
             <DialogDescription>
               {selectedMatches.length.toLocaleString('ko-KR')}개 기록을 삭제합니다.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="border-t border-border px-4 py-4 sm:px-5">
+          <DialogFooter className="border-t border-border/70 px-4 py-4 sm:px-5">
             <Button
               type="button"
               variant="outline"
@@ -674,7 +674,7 @@ interface MetricCellProps {
 }
 
 const MetricCell = ({ label, value }: MetricCellProps) => (
-  <div className="flex min-h-[96px] items-start justify-between gap-4 border-b border-border p-4 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0 sm:p-5">
+  <div className="metric-cell">
     <div>
       <p className="metric-label">{label}</p>
       <p className="mt-3 text-2xl font-bold">{value}</p>
@@ -737,7 +737,7 @@ const BulkActionBar = ({
   onClearSelection,
   selectedCount,
 }: BulkActionBarProps) => (
-  <div className="border-b border-border bg-[hsl(var(--surface-2))] p-4 sm:p-5">
+  <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] p-4 sm:p-5">
     <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <p className="metric-label">선택 수정</p>
@@ -836,7 +836,7 @@ const RecordTableRow = ({
   onSelect,
   selected,
 }: RecordRowProps) => (
-  <tr className={cn('border-b border-border last:border-b-0', selected && 'bg-primary/5')}>
+  <tr className={cn('border-b border-border/70 last:border-b-0', selected && 'bg-primary/5')}>
     <td className="px-3 py-3 align-middle">
       <input
         type="checkbox"
@@ -905,7 +905,7 @@ const RecordTableRow = ({
 const RecordCard = ({ account, match, onDelete, onEdit, onSelect, selected }: RecordRowProps) => (
   <article
     className={cn(
-      'rounded-lg border border-border bg-card p-3',
+      'rounded-lg border border-border/70 bg-card p-3',
       selected && 'border-primary bg-primary/5',
     )}
   >
@@ -934,7 +934,7 @@ const RecordCard = ({ account, match, onDelete, onEdit, onSelect, selected }: Re
       </span>
     </div>
 
-    <div className="mt-3 grid grid-cols-2 gap-2 rounded-md border border-border bg-[hsl(var(--surface-2))] p-3">
+    <div className="mt-3 grid grid-cols-2 gap-2 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3">
       <InfoCell label="모드" value={getModeLabel(match.modeId)} />
       <InfoCell label="결과" value={getResultLabel(match.result)} />
       <InfoCell label="계정" value={getPlayerAccountLabel(account)} />
@@ -974,7 +974,7 @@ const InfoCell = ({ label, value }: InfoCellProps) => (
 );
 
 const RecordsSkeleton = () => (
-  <div className="overflow-hidden rounded-lg border border-border bg-card">
+  <div className="subpanel">
     {Array.from({ length: 8 }, (_, index) => (
       <div
         key={index}

@@ -135,14 +135,14 @@ const SettingsPage = () => {
   };
 
   return (
-    <div className="flex flex-1 flex-col gap-6">
+    <div className="page-stack">
       <PageHeader eyebrow="설정" title="설정" />
 
       <section className="workspace-panel overflow-hidden">
         <div className="flat-row grid gap-4 p-4 sm:grid-cols-[220px_minmax(0,1fr)] sm:p-5">
           <SectionLead icon={ShieldCheck} label="계정" title="계정" />
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div className="min-w-0 rounded-md border border-border bg-secondary p-3 sm:min-w-[320px]">
+            <div className="min-w-0 rounded-md border border-border/70 bg-secondary p-3 sm:min-w-[320px]">
               <p className="metric-label">이메일</p>
               <p className="mt-1 truncate text-sm font-semibold">{user?.email}</p>
             </div>
@@ -176,7 +176,7 @@ const SettingsPage = () => {
               </Button>
             </div>
 
-            <div className="overflow-hidden rounded-lg border border-border bg-card">
+            <div className="subpanel">
               {activeAccounts.length > 0 ? (
                 activeAccounts.map((account) => (
                   <div
@@ -229,8 +229,8 @@ const SettingsPage = () => {
             </div>
 
             {inactiveAccounts.length > 0 ? (
-              <div className="overflow-hidden rounded-lg border border-border bg-card">
-                <div className="border-b border-border bg-[hsl(var(--surface-2))] p-3">
+              <div className="subpanel">
+                <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] p-3">
                   <p className="metric-label">비활성 계정</p>
                 </div>
                 {inactiveAccounts.map((account) => (
@@ -284,7 +284,7 @@ const SettingsPage = () => {
               { label: '전장', value: '이미지 매칭' },
               { label: '영웅', value: '내 행' },
             ].map((item) => (
-              <div key={item.label} className="rounded-md border border-border bg-card p-3">
+              <div key={item.label} className="rounded-md border border-border/70 bg-card p-3">
                 <p className="metric-label">{item.label}</p>
                 <p className="mt-2 text-sm font-bold">{item.value}</p>
               </div>

@@ -38,8 +38,8 @@ const AppLayout = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <aside className="fixed inset-y-0 left-0 hidden w-72 border-r border-border/80 bg-card/95 backdrop-blur-xl xl:flex xl:flex-col">
-        <div className="flex h-16 items-center border-b border-border/80 px-5">
+      <aside className="fixed inset-y-0 left-0 hidden w-72 border-r border-border/70 bg-card/95 backdrop-blur-xl xl:flex xl:flex-col">
+        <div className="flex h-16 items-center border-b border-border/70 px-5">
           <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
             <Command className="h-5 w-5" />
           </div>
@@ -81,7 +81,7 @@ const AppLayout = () => {
             <span className="status-chip">OCR</span>
           </div>
         </div>
-        <div className="border-t border-border/80 p-3">
+        <div className="border-t border-border/70 p-3">
           <div className="mb-3 rounded-md border border-border/70 bg-secondary/70 px-3 py-2">
             <p className="metric-label">계정</p>
             <p className="mt-1 truncate text-sm">{user?.email}</p>
@@ -98,7 +98,7 @@ const AppLayout = () => {
       </aside>
 
       <div className="xl:pl-72">
-        <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-2 border-b border-border/80 bg-card/90 px-3 backdrop-blur-xl xl:hidden">
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-2 border-b border-border/70 bg-card/90 px-3 backdrop-blur-xl xl:hidden">
           <div className="flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <Command className="h-4 w-4" />
@@ -110,7 +110,7 @@ const AppLayout = () => {
         <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-24 pt-5 sm:px-6 xl:px-8 xl:py-8">
           <Outlet />
         </main>
-        <nav className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-5 rounded-lg border border-border/80 bg-card/95 p-1 backdrop-blur-xl xl:hidden">
+        <nav className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-5 rounded-lg border border-border/70 bg-card/95 p-1 backdrop-blur-xl xl:hidden">
           {navItems.map((item) => (
             <NavLink
               key={item.to}

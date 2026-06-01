@@ -63,7 +63,7 @@ const LoginPage = () => {
 
   return (
     <main className="grid min-h-screen bg-background px-4 py-8 xl:grid-cols-[minmax(0,1fr)_500px] xl:p-0">
-      <section className="arena-surface data-grid hidden min-h-screen flex-col justify-between border-r border-border/80 p-8 xl:flex">
+      <section className="arena-surface data-grid hidden min-h-screen flex-col justify-between border-r border-border/70 p-8 xl:flex">
         <div className="flex items-center gap-3">
           <div className="relative z-10 flex h-11 w-11 items-center justify-center rounded-md bg-primary text-primary-foreground">
             <Swords className="h-5 w-5" />
@@ -80,17 +80,17 @@ const LoginPage = () => {
             입력은 빠르게, 판단은 선명하게.
           </h1>
           <div className="mt-8 grid max-w-2xl gap-3 sm:grid-cols-3">
-            <div className="surface-panel-strong interactive-lift p-4">
+            <div className="surface-panel interactive-lift p-4">
               <Target className="h-5 w-5 text-primary" />
               <p className="mt-5 text-2xl font-semibold">--</p>
               <p className="metric-label mt-2">승률</p>
             </div>
-            <div className="surface-panel-strong interactive-lift p-4">
+            <div className="surface-panel interactive-lift p-4">
               <BarChart3 className="h-5 w-5 text-[hsl(var(--warning))]" />
               <p className="mt-5 text-2xl font-semibold">0</p>
               <p className="metric-label mt-2">경기</p>
             </div>
-            <div className="surface-panel-strong interactive-lift p-4">
+            <div className="surface-panel interactive-lift p-4">
               <Shield className="h-5 w-5 text-[hsl(var(--success))]" />
               <p className="mt-5 text-2xl font-semibold">Solo</p>
               <p className="metric-label mt-2">기본 큐</p>
@@ -115,7 +115,7 @@ const LoginPage = () => {
             </div>
           </div>
           <div className="workspace-panel overflow-hidden">
-            <div className="border-b border-border bg-card p-6">
+            <div className="border-b border-border/70 bg-card p-6">
               <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-md bg-primary text-primary-foreground">
                 <LockKeyhole className="h-5 w-5" />
               </div>
@@ -125,7 +125,7 @@ const LoginPage = () => {
               <p className="mt-1.5 text-sm text-muted-foreground">개인 계정</p>
             </div>
             <div className="p-5 sm:p-6">
-              <div className="mb-5 grid grid-cols-2 rounded-lg border border-border bg-secondary p-1">
+              <div className="mb-5 grid grid-cols-2 rounded-lg border border-border/70 bg-secondary p-1">
                 {[
                   ['signin', '로그인'],
                   ['signup', '회원가입'],

@@ -346,7 +346,7 @@ const StatsPage = () => {
   ];
 
   return (
-    <div className="flex flex-1 flex-col gap-6">
+    <div className="page-stack">
       <PageHeader
         eyebrow="분석"
         title="통계"
@@ -364,13 +364,13 @@ const StatsPage = () => {
       />
 
       <section className="workspace-panel overflow-hidden">
-        <div className="grid border-b border-border md:grid-cols-4">
+        <div className="metric-strip md:grid-cols-4">
           {metrics.map((metric) => (
             <MetricCell key={metric.label} {...metric} />
           ))}
         </div>
 
-        <div className="border-b border-border p-4 sm:p-5">
+        <div className="section-divider section-pad">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-primary" />
@@ -463,7 +463,7 @@ const StatsPage = () => {
           </div>
         </div>
 
-        <div className="p-4 sm:p-5">
+        <div className="section-pad">
           <Tabs defaultValue="mode" className="w-full">
             <TabsList className="mobile-scroll flex w-full justify-start overflow-x-auto xl:inline-flex xl:w-auto">
               <TabsTrigger value="mode">모드</TabsTrigger>
@@ -788,7 +788,7 @@ interface MetricCellProps {
 }
 
 const MetricCell = ({ detail, icon: Icon, label, value }: MetricCellProps) => (
-  <div className="flex min-h-[112px] items-start justify-between gap-4 border-b border-border p-4 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0 sm:p-5">
+  <div className="metric-cell">
     <div className="min-w-0">
       <p className="metric-label">{label}</p>
       <p className="mt-3 truncate text-2xl font-bold">{value}</p>
@@ -848,8 +848,8 @@ interface AnalysisPanelProps {
 }
 
 const AnalysisPanel = ({ children, icon: Icon, label, title }: AnalysisPanelProps) => (
-  <div className="overflow-hidden rounded-lg border border-border bg-card">
-    <div className="flex items-center justify-between gap-3 border-b border-border bg-[hsl(var(--surface-2))] p-4">
+  <div className="subpanel">
+    <div className="flex items-center justify-between gap-3 border-b border-border/70 bg-[hsl(var(--surface-2))] p-4">
       <div className="min-w-0">
         <p className="metric-label">{label}</p>
         <h2 className="mt-2 truncate text-lg font-bold">{title}</h2>
@@ -858,7 +858,7 @@ const AnalysisPanel = ({ children, icon: Icon, label, title }: AnalysisPanelProp
         <Icon className="h-5 w-5" />
       </div>
     </div>
-    <div className="p-4 sm:p-5">{children}</div>
+    <div className="section-pad">{children}</div>
   </div>
 );
 
@@ -870,7 +870,7 @@ interface ChartShellProps {
 const ChartShell = ({ children, className }: ChartShellProps) => (
   <div
     className={cn(
-      'h-[320px] min-w-0 rounded-lg border border-border bg-[hsl(var(--surface-2))] p-3',
+      'h-[320px] min-w-0 rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] p-3',
       className,
     )}
   >
@@ -889,7 +889,7 @@ interface StatRowProps {
 }
 
 const StatRow = ({ count, detail, label, maxCount, winRate }: StatRowProps) => (
-  <div className="grid gap-3 rounded-md border border-border bg-[hsl(var(--surface-2))] p-3 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-center">
+  <div className="grid gap-3 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-center">
     <div className="min-w-0">
       <div className="flex items-center justify-between gap-3">
         <p className="truncate text-sm font-bold">{label}</p>
@@ -926,7 +926,7 @@ const MediaStatRow = ({
   maxCount,
   winRate,
 }: MediaStatRowProps) => (
-  <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-md border border-border bg-[hsl(var(--surface-2))] p-2">
+  <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-2">
     <div className="aspect-[4/3] overflow-hidden rounded-md bg-secondary">
       <img
         alt={label}
@@ -980,7 +980,7 @@ const TabEmpty = ({ icon: Icon, isLoading, title }: TabEmptyProps) =>
 
 const TabLoadingSkeleton = () => (
   <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-    <div className="h-[260px] rounded-lg border border-border bg-[hsl(var(--surface-2))] p-4">
+    <div className="h-[260px] rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] p-4">
       <div className="flex h-full items-center justify-center">
         <div className="relative h-32 w-32 rounded-full border-[18px] border-secondary">
           <SkeletonBlock className="absolute inset-5 rounded-full bg-card" />
@@ -991,7 +991,7 @@ const TabLoadingSkeleton = () => (
       {Array.from({ length: 5 }, (_, index) => (
         <div
           key={index}
-          className="grid gap-3 rounded-md border border-border bg-[hsl(var(--surface-2))] p-3 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-center"
+          className="grid gap-3 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-center"
         >
           <div className="min-w-0">
             <div className="flex items-center justify-between gap-3">

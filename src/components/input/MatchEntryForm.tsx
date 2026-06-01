@@ -364,7 +364,7 @@ const MatchEntryForm = ({
               {selectedModeId ? getModeLabel(selectedModeId) : '모드 미선택'}
             </span>
           </div>
-          <div className="grid max-h-52 gap-2 overflow-y-auto rounded-lg border border-border bg-card p-2 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid max-h-52 gap-2 overflow-y-auto rounded-lg border border-border/70 bg-card p-2 sm:grid-cols-2 lg:grid-cols-3">
             {filteredMaps.map((map) => (
               <button
                 key={map.value}
@@ -503,7 +503,7 @@ const MatchEntryForm = ({
             />
           </div>
 
-          <div className="grid max-h-52 gap-2 overflow-y-auto rounded-lg border border-border bg-card p-2 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid max-h-52 gap-2 overflow-y-auto rounded-lg border border-border/70 bg-card p-2 sm:grid-cols-2 lg:grid-cols-3">
             {filteredHeroes.map((hero) => {
               const selected = selectedHeroes.includes(hero.value);
 
@@ -585,7 +585,7 @@ const MatchEntryForm = ({
           />
         </div>
 
-        <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-end">
+        <div className="flex flex-col-reverse gap-2 border-t border-border/70 pt-4 sm:flex-row sm:items-center sm:justify-end">
           <Button type="button" variant="outline" onClick={resetForm}>
             <RotateCcw className="h-4 w-4" />
             초기화

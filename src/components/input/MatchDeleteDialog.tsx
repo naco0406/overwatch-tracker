@@ -36,13 +36,13 @@ const MatchDeleteDialog = ({
 }: MatchDeleteDialogProps) => (
   <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="max-w-md p-0">
-      <DialogHeader className="border-b border-border px-4 py-4 pr-14 sm:px-5 sm:py-5">
+      <DialogHeader className="border-b border-border/70 px-4 py-4 pr-14 sm:px-5 sm:py-5">
         <DialogTitle>경기 삭제</DialogTitle>
         <DialogDescription>삭제한 경기는 통계와 세션에서 제외됩니다.</DialogDescription>
       </DialogHeader>
       <div className="space-y-4 p-4 sm:p-5">
         {match ? (
-          <div className="rounded-lg border border-border bg-[hsl(var(--surface-2))] p-3">
+          <div className="rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] p-3">
             <p className="text-sm font-bold">{getMapLabel(match.mapId)}</p>
             <p className="mt-1 text-xs font-semibold text-muted-foreground">
               {formatPlayedAt(match.playedAt)} · {getResultLabel(match.result)} · {match.teamScore}:

@@ -168,7 +168,7 @@ const SessionsPage = () => {
   ];
 
   return (
-    <div className="flex flex-1 flex-col gap-6">
+    <div className="page-stack">
       <PageHeader
         eyebrow="기록"
         title="세션"
@@ -180,14 +180,14 @@ const SessionsPage = () => {
       />
 
       <section className="workspace-panel overflow-hidden">
-        <div className="grid border-b border-border md:grid-cols-3">
+        <div className="metric-strip md:grid-cols-3">
           {metrics.map((metric) => (
             <MetricCell key={metric.label} {...metric} isLoading={isLoading} />
           ))}
         </div>
 
         <div className="grid 2xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="p-4 sm:p-5">
+          <div className="section-pad">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <p className="metric-label">타임라인</p>
@@ -201,7 +201,7 @@ const SessionsPage = () => {
             {isLoading ? (
               <SessionTimelineSkeleton />
             ) : sessions.length > 0 ? (
-              <div className="overflow-hidden rounded-lg border border-border">
+              <div className="subpanel">
                 {sessions.map((session) => (
                   <SessionBlock
                     key={session.sessionId}
@@ -217,7 +217,7 @@ const SessionsPage = () => {
             )}
           </div>
 
-          <aside className="border-t border-border bg-[hsl(var(--surface-2))] p-4 sm:p-5 2xl:border-l 2xl:border-t-0">
+          <aside className="border-t border-border/70 bg-[hsl(var(--surface-2))] p-4 sm:p-5 2xl:border-l 2xl:border-t-0">
             <div className="mb-4">
               <p className="metric-label">요약</p>
               <h3 className="mt-2 text-lg font-bold">최근 세션</h3>
@@ -226,7 +226,7 @@ const SessionsPage = () => {
             {isLoading ? (
               <RecentSessionsSkeleton />
             ) : sessions.length > 0 ? (
-              <div className="overflow-hidden rounded-lg border border-border bg-card">
+              <div className="subpanel">
                 {sessions.slice(0, 8).map((session) => {
                   const summary = summarizeResults(session.matches);
 
@@ -251,7 +251,7 @@ const SessionsPage = () => {
                 })}
               </div>
             ) : (
-              <div className="overflow-hidden rounded-lg border border-border bg-card">
+              <div className="subpanel">
                 <div className="flat-row p-3">
                   <InlineEmptyState
                     title="저장된 세션 없음"
@@ -304,7 +304,7 @@ interface MetricCellProps {
 }
 
 const MetricCell = ({ detail, icon: Icon, isLoading = false, label, value }: MetricCellProps) => (
-  <div className="flex min-h-[112px] items-start justify-between gap-4 border-b border-border p-4 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0 sm:p-5">
+  <div className="metric-cell">
     <div className="min-w-0">
       <p className="metric-label">{label}</p>
       {isLoading ? (
@@ -326,11 +326,11 @@ const MetricCell = ({ detail, icon: Icon, isLoading = false, label, value }: Met
 );
 
 const SessionTimelineSkeleton = () => (
-  <div className="overflow-hidden rounded-lg border border-border">
+  <div className="subpanel">
     {Array.from({ length: 3 }, (_, index) => (
       <article
         key={index}
-        className="grid gap-4 border-b border-border bg-card p-4 last:border-b-0 lg:grid-cols-[180px_minmax(0,1fr)]"
+        className="grid gap-4 border-b border-border/70 bg-card p-4 last:border-b-0 lg:grid-cols-[180px_minmax(0,1fr)]"
       >
         <div>
           <SkeletonBlock className="h-3 w-20" />
@@ -354,7 +354,7 @@ const SessionTimelineSkeleton = () => (
 );
 
 const SessionTimelineEmpty = () => (
-  <div className="overflow-hidden rounded-lg border border-border">
+  <div className="subpanel">
     <article className="grid gap-4 bg-card p-4 lg:grid-cols-[180px_minmax(0,1fr)]">
       <div>
         <p className="metric-label">세션 없음</p>
@@ -382,7 +382,7 @@ const SessionTimelineEmpty = () => (
 );
 
 const MatchRowSkeleton = () => (
-  <div className="grid gap-3 rounded-md border border-border bg-[hsl(var(--surface-2))] p-3 sm:grid-cols-[56px_minmax(0,1fr)_80px_auto] sm:items-center">
+  <div className="grid gap-3 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3 sm:grid-cols-[56px_minmax(0,1fr)_80px_auto] sm:items-center">
     <div>
       <SkeletonBlock className="h-8 w-8" />
       <SkeletonBlock className="mt-2 h-3 w-12" />
@@ -403,7 +403,7 @@ const MatchRowSkeleton = () => (
 );
 
 const EmptyMatchRowPlaceholder = () => (
-  <div className="grid gap-3 rounded-md border border-dashed border-border bg-[hsl(var(--surface-2))] p-3 opacity-60 sm:grid-cols-[56px_minmax(0,1fr)_80px_auto] sm:items-center">
+  <div className="grid gap-3 rounded-md border border-dashed border-border/70 bg-[hsl(var(--surface-2))] p-3 opacity-60 sm:grid-cols-[56px_minmax(0,1fr)_80px_auto] sm:items-center">
     <div>
       <div className="h-8 w-8 rounded-md bg-card" />
       <div className="mt-2 h-3 w-12 rounded-md bg-card" />
@@ -424,7 +424,7 @@ const EmptyMatchRowPlaceholder = () => (
 );
 
 const RecentSessionsSkeleton = () => (
-  <div className="overflow-hidden rounded-lg border border-border bg-card">
+  <div className="subpanel">
     {Array.from({ length: 5 }, (_, index) => (
       <div key={index} className="flat-row p-3">
         <div className="flex items-center justify-between gap-3">
@@ -468,7 +468,7 @@ const SessionBlock = ({ accountById, onDeleteMatch, onEditMatch, session }: Sess
   const summary = summarizeResults(session.matches);
 
   return (
-    <article className="grid gap-4 border-b border-border bg-card p-4 last:border-b-0 lg:grid-cols-[180px_minmax(0,1fr)]">
+    <article className="grid gap-4 border-b border-border/70 bg-card p-4 last:border-b-0 lg:grid-cols-[180px_minmax(0,1fr)]">
       <div>
         <p className="metric-label">{formatDate(session.startedAt)}</p>
         <h3 className="mt-2 text-lg font-bold">
@@ -511,7 +511,7 @@ interface MatchRowProps {
 }
 
 const MatchRow = ({ accountLabel, index, match, onDelete, onEdit }: MatchRowProps) => (
-  <div className="grid gap-3 rounded-md border border-border bg-[hsl(var(--surface-2))] p-3 sm:grid-cols-[56px_minmax(0,1fr)_80px_auto] sm:items-center">
+  <div className="grid gap-3 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3 sm:grid-cols-[56px_minmax(0,1fr)_80px_auto] sm:items-center">
     <div className="flex items-center gap-2 sm:block">
       <div className="flex h-8 w-8 items-center justify-center rounded-md bg-card text-xs font-bold text-muted-foreground">
         {index + 1}

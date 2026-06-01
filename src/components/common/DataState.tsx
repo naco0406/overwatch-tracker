@@ -20,7 +20,7 @@ interface InlineEmptyStateProps {
 const InlineEmptyState = ({ action, className, description, title }: InlineEmptyStateProps) => (
   <div
     className={cn(
-      'rounded-md border border-dashed border-border bg-[hsl(var(--surface-2))] p-4',
+      'rounded-md border border-dashed border-border/70 bg-[hsl(var(--surface-2))] p-4',
       className,
     )}
   >

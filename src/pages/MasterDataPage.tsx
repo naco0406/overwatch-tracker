@@ -67,11 +67,11 @@ const MasterDataPage = () => {
   }, [mapQuery, modeFilter]);
 
   return (
-    <div className="flex flex-1 flex-col gap-6">
+    <div className="page-stack">
       <PageHeader eyebrow="마스터" title="마스터 데이터" />
 
       <section className="workspace-panel overflow-hidden">
-        <Tabs defaultValue="heroes" className="p-4 sm:p-5">
+        <Tabs defaultValue="heroes" className="section-pad">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <TabsList className="grid w-full grid-cols-2 lg:w-auto">
               <TabsTrigger value="heroes">영웅</TabsTrigger>
@@ -81,7 +81,7 @@ const MasterDataPage = () => {
               {roleSummary.map((role) => (
                 <div
                   key={role.value}
-                  className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3 text-xs font-bold"
+                  className="inline-flex h-9 items-center gap-2 rounded-md border border-border/70 bg-card px-3 text-xs font-bold"
                 >
                   <AssetIcon size="sm" src={getRoleIconPath(role.value)} />
                   {role.label}
@@ -132,7 +132,7 @@ const MasterDataPage = () => {
               {filteredHeroes.map((hero) => (
                 <article
                   key={hero.value}
-                  className="group overflow-hidden rounded-lg border border-border bg-card transition-[border-color,background-color] hover:border-primary/35"
+                  className="group overflow-hidden rounded-lg border border-border/70 bg-card transition-[border-color,background-color] hover:border-primary/35"
                 >
                   <div className="relative aspect-[16/11] overflow-hidden bg-[hsl(var(--surface-2))]">
                     <img
@@ -142,7 +142,7 @@ const MasterDataPage = () => {
                       loading="lazy"
                     />
                   </div>
-                  <div className="flex items-center justify-between gap-3 border-t border-border p-3">
+                  <div className="flex items-center justify-between gap-3 border-t border-border/70 p-3">
                     <div className="min-w-0">
                       <h2 className="truncate text-base font-bold">{hero.label}</h2>
                       <p className="mt-1 text-xs font-semibold text-muted-foreground">
@@ -207,7 +207,7 @@ const MasterDataPage = () => {
               {filteredMaps.map((map) => (
                 <article
                   key={map.value}
-                  className="group overflow-hidden rounded-lg border border-border bg-card transition-[border-color,background-color] hover:border-primary/35"
+                  className="group overflow-hidden rounded-lg border border-border/70 bg-card transition-[border-color,background-color] hover:border-primary/35"
                 >
                   <div className="aspect-[16/8.5] overflow-hidden bg-[hsl(var(--surface-2))]">
                     <img
@@ -217,7 +217,7 @@ const MasterDataPage = () => {
                       loading="lazy"
                     />
                   </div>
-                  <div className="grid gap-3 border-t border-border p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                  <div className="grid gap-3 border-t border-border/70 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                     <div className="min-w-0">
                       <h2 className="truncate text-base font-bold">{getMapLabel(map.value)}</h2>
                       <p className="mt-1 text-xs font-semibold text-muted-foreground">

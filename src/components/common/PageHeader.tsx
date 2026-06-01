@@ -11,9 +11,9 @@ interface PageHeaderProps {
 }
 
 const PageHeader = ({ actions, className, description, eyebrow, title }: PageHeaderProps) => (
-  <div className={cn('flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between', className)}>
+  <div className={cn('flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between', className)}>
     <div className="min-w-0">
-      {eyebrow && <p className="metric-label mb-2">{eyebrow}</p>}
+      {eyebrow && <p className="metric-label mb-1.5">{eyebrow}</p>}
       <h1 className="truncate text-[28px] font-bold leading-tight tracking-normal text-foreground sm:text-3xl">
         {title}
       </h1>

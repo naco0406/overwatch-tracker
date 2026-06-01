@@ -274,7 +274,7 @@ const QuickMatchEntry = ({
           </div>
         </div>
 
-        <div className="border-t border-border pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+        <div className="border-t border-border/70 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
           <div className="mb-3 flex min-h-10 items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="metric-label">맵</p>
@@ -372,7 +372,7 @@ const ScoreField = ({ label, onAdjust, onChange, value }: ScoreFieldProps) => (
     <div className="grid grid-cols-[34px_minmax(0,1fr)_34px] overflow-hidden rounded-md border border-input bg-card">
       <button
         type="button"
-        className="flex h-11 items-center justify-center border-r border-border text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        className="flex h-11 items-center justify-center border-r border-border/70 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
         aria-label={`${label} 점수 감소`}
         onClick={() => onAdjust(-1)}
       >
@@ -389,7 +389,7 @@ const ScoreField = ({ label, onAdjust, onChange, value }: ScoreFieldProps) => (
       />
       <button
         type="button"
-        className="flex h-11 items-center justify-center border-l border-border text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        className="flex h-11 items-center justify-center border-l border-border/70 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
         aria-label={`${label} 점수 증가`}
         onClick={() => onAdjust(1)}
       >
