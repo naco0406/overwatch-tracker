@@ -14,6 +14,7 @@ import {
   queueOptions,
   resultOptions,
 } from '@/data/matchOptions';
+import { getMapScreenshotPath } from '@/data/masterAssets';
 import { cn } from '@/lib/utils';
 import type { MatchCreateInput, MatchResult, ModeId } from '@/types/match';
 import type { PlayerAccount } from '@/types/playerAccount';
@@ -211,21 +212,39 @@ const QuickMatchEntry = ({
           <button
             type="button"
             className={cn(
-              'flex min-h-16 w-full items-center justify-between gap-3 rounded-md border px-4 text-left transition-[background-color,border-color,color]',
+              'grid w-full overflow-hidden rounded-md border text-left transition-[background-color,border-color,color] sm:grid-cols-[148px_minmax(0,1fr)_auto]',
               selectedMap
                 ? 'border-primary/30 bg-primary/[0.06]'
                 : 'border-input bg-[hsl(var(--surface-2))] hover:border-primary/35',
             )}
             onClick={() => setPickerOpen(true)}
           >
-            <span className="min-w-0">
+            <div className="hidden aspect-video h-full min-h-20 overflow-hidden bg-secondary sm:block">
+              {selectedMap ? (
+                <img
+                  alt={selectedMap.label}
+                  className="h-full w-full object-cover"
+                  src={getMapScreenshotPath(selectedMap.value)}
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-xs font-bold text-muted-foreground">
+                  MAP
+                </div>
+              )}
+            </div>
+            <span className="min-w-0 self-center px-4 py-3">
               <span className="block text-xs font-semibold text-muted-foreground">맵</span>
               <span className="mt-1 block truncate text-lg font-bold">
                 {selectedMap ? selectedMap.label : '선택'}
               </span>
+              {selectedMap ? (
+                <span className="mt-1 block text-xs font-semibold text-muted-foreground">
+                  {getModeLabel(selectedMap.modeId)}
+                </span>
+              ) : null}
             </span>
-            <span className="flex shrink-0 items-center gap-2 text-sm font-semibold text-muted-foreground">
-              {selectedMap ? getModeLabel(selectedMap.modeId) : '목록'}
+            <span className="flex shrink-0 items-center gap-2 self-center px-4 py-3 text-sm font-semibold text-muted-foreground">
+              목록
               <ChevronDown className="h-4 w-4" />
             </span>
           </button>
@@ -302,26 +321,36 @@ const QuickMatchEntry = ({
                 </ModeButton>
               ))}
             </div>
-            <div className="mt-4 max-h-[54dvh] overflow-y-auto rounded-lg border border-border">
+            <div className="mt-4 grid max-h-[58dvh] gap-3 overflow-y-auto rounded-lg border border-border bg-[hsl(var(--surface-2))] p-2 sm:grid-cols-2">
               {filteredMaps.map((map) => (
                 <button
                   key={map.value}
                   type="button"
                   className={cn(
-                    'flat-row flex min-h-12 w-full items-center justify-between gap-3 bg-card px-3 py-2 text-left transition-colors hover:bg-secondary',
-                    map.value === mapId && 'bg-primary/5 text-primary',
+                    'overflow-hidden rounded-md border bg-card text-left transition-[background-color,border-color,color] hover:border-primary/35 hover:bg-secondary',
+                    map.value === mapId && 'border-primary bg-primary/[0.06]',
                   )}
                   onClick={() => selectMap(map.value)}
                 >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-bold">{map.label}</span>
-                    <span className="mt-1 block text-xs font-semibold text-muted-foreground">
-                      {getModeLabel(map.modeId)}
-                    </span>
+                  <span className="block aspect-[16/9] overflow-hidden bg-secondary">
+                    <img
+                      alt={map.label}
+                      className="h-full w-full object-cover"
+                      src={getMapScreenshotPath(map.value)}
+                      loading="lazy"
+                    />
                   </span>
-                  {map.value === mapId ? (
-                    <span className="text-xs font-bold text-primary">선택됨</span>
-                  ) : null}
+                  <span className="flex items-center justify-between gap-3 px-3 py-2">
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-bold">{map.label}</span>
+                      <span className="mt-1 block text-xs font-semibold text-muted-foreground">
+                        {getModeLabel(map.modeId)}
+                      </span>
+                    </span>
+                    {map.value === mapId ? (
+                      <span className="shrink-0 text-xs font-bold text-primary">선택됨</span>
+                    ) : null}
+                  </span>
                 </button>
               ))}
               {filteredMaps.length === 0 ? (
