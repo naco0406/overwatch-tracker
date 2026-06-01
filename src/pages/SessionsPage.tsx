@@ -8,7 +8,8 @@ import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
 import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { getMapLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
+import { getHeroLabel, getMapLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
+import { getMapScreenshotPath } from '@/data/masterAssets';
 import { toast } from '@/hooks/use-toast';
 import { useDeleteMatch, useMatches, useUpdateMatch } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
@@ -73,6 +74,7 @@ const getResultTone = (result: Match['result']) => {
 const SessionsPage = () => {
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Match | null>(null);
+  const [focusedSessionId, setFocusedSessionId] = useState<string | null>(null);
   const { data: matches = [], isLoading } = useMatches();
   const { data: playerAccounts = [] } = usePlayerAccounts();
   const { data: userSettings } = useUserSettings();
@@ -88,6 +90,11 @@ const SessionsPage = () => {
     () => sessions.filter((session) => new Date(session.startedAt).getTime() >= weekStart),
     [sessions, weekStart],
   );
+  const focusedSession = useMemo(
+    () => sessions.find((session) => session.sessionId === focusedSessionId) ?? null,
+    [focusedSessionId, sessions],
+  );
+  const visibleSessions = focusedSession ? [focusedSession] : sessions;
   const longestStreak = useMemo(() => getLongestStreak(matches), [matches]);
   const averageMatches =
     sessions.length === 0
@@ -191,18 +198,33 @@ const SessionsPage = () => {
             <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="metric-label">타임라인</p>
-                <h2 className="mt-1 text-xl font-bold">세션 흐름</h2>
+                <h2 className="mt-1 text-xl font-bold">
+                  {focusedSession ? formatDate(focusedSession.startedAt) : '세션 흐름'}
+                </h2>
               </div>
-              <Badge variant="outline" className="w-fit bg-transparent">
-                {sessions.length} sessions
-              </Badge>
+              <div className="flex flex-wrap gap-2">
+                {focusedSession ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="bg-transparent"
+                    onClick={() => setFocusedSessionId(null)}
+                  >
+                    전체 보기
+                  </Button>
+                ) : null}
+                <Badge variant="outline" className="w-fit bg-transparent">
+                  {visibleSessions.length} sessions
+                </Badge>
+              </div>
             </div>
 
             {isLoading ? (
               <SessionTimelineSkeleton />
-            ) : sessions.length > 0 ? (
+            ) : visibleSessions.length > 0 ? (
               <div className="subpanel">
-                {sessions.map((session) => (
+                {visibleSessions.map((session) => (
                   <SessionBlock
                     key={session.sessionId}
                     accountById={accountById}
@@ -219,9 +241,22 @@ const SessionsPage = () => {
         </div>
 
         <aside className="workspace-panel overflow-hidden">
-          <div className="section-header">
-            <p className="metric-label">요약</p>
-            <h3 className="mt-1 text-lg font-bold">최근 세션</h3>
+          <div className="section-header flex items-center justify-between gap-3">
+            <div>
+              <p className="metric-label">요약</p>
+              <h3 className="mt-1 text-lg font-bold">최근 세션</h3>
+            </div>
+            {focusedSession ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 px-2"
+                onClick={() => setFocusedSessionId(null)}
+              >
+                전체
+              </Button>
+            ) : null}
           </div>
 
           <div className="section-pad">
@@ -231,9 +266,18 @@ const SessionsPage = () => {
               <div className="subpanel">
                 {sessions.slice(0, 8).map((session) => {
                   const summary = summarizeResults(session.matches);
+                  const selected = session.sessionId === focusedSessionId;
 
                   return (
-                    <div key={session.sessionId} className="flat-row p-3">
+                    <button
+                      key={session.sessionId}
+                      type="button"
+                      className={cn(
+                        'flat-row w-full p-3 text-left transition-colors hover:bg-secondary/70',
+                        selected && 'bg-primary/[0.06]',
+                      )}
+                      onClick={() => setFocusedSessionId(session.sessionId)}
+                    >
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-bold">
@@ -248,7 +292,7 @@ const SessionsPage = () => {
                         </Badge>
                       </div>
                       <ResultBar summary={summary} className="mt-3" />
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -384,11 +428,12 @@ const SessionTimelineEmpty = () => (
 );
 
 const MatchRowSkeleton = () => (
-  <div className="grid gap-3 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3 sm:grid-cols-[56px_minmax(0,1fr)_80px_auto] sm:items-center">
+  <div className="grid gap-3 bg-card p-3 sm:grid-cols-[48px_88px_minmax(0,1fr)_88px_auto] sm:items-center">
     <div>
       <SkeletonBlock className="h-8 w-8" />
       <SkeletonBlock className="mt-2 h-3 w-12" />
     </div>
+    <SkeletonBlock className="aspect-[16/10] w-full" />
     <div className="min-w-0">
       <SkeletonBlock className="h-4 w-48 max-w-full" />
       <SkeletonBlock className="mt-2 h-3 w-64 max-w-full" />
@@ -405,22 +450,23 @@ const MatchRowSkeleton = () => (
 );
 
 const EmptyMatchRowPlaceholder = () => (
-  <div className="grid gap-3 rounded-md border border-dashed border-border/70 bg-[hsl(var(--surface-2))] p-3 opacity-60 sm:grid-cols-[56px_minmax(0,1fr)_80px_auto] sm:items-center">
+  <div className="grid gap-3 bg-card p-3 opacity-60 sm:grid-cols-[48px_88px_minmax(0,1fr)_88px_auto] sm:items-center">
     <div>
-      <div className="h-8 w-8 rounded-md bg-card" />
-      <div className="mt-2 h-3 w-12 rounded-md bg-card" />
+      <div className="h-8 w-8 rounded-md bg-secondary" />
+      <div className="mt-2 h-3 w-12 rounded-md bg-secondary" />
     </div>
+    <div className="aspect-[16/10] rounded-md bg-secondary" />
     <div className="min-w-0">
-      <div className="h-4 w-48 max-w-full rounded-md bg-card" />
-      <div className="mt-2 h-3 w-64 max-w-full rounded-md bg-card" />
+      <div className="h-4 w-48 max-w-full rounded-md bg-secondary" />
+      <div className="mt-2 h-3 w-64 max-w-full rounded-md bg-secondary" />
     </div>
     <div>
-      <div className="h-8 w-16 rounded-md bg-card" />
-      <div className="mt-2 h-4 w-10 rounded-md bg-card" />
+      <div className="h-8 w-16 rounded-md bg-secondary" />
+      <div className="mt-2 h-4 w-10 rounded-md bg-secondary" />
     </div>
     <div className="hidden justify-end gap-1 sm:flex">
-      <div className="h-9 w-9 rounded-md bg-card" />
-      <div className="h-9 w-9 rounded-md bg-card" />
+      <div className="h-9 w-9 rounded-md bg-secondary" />
+      <div className="h-9 w-9 rounded-md bg-secondary" />
     </div>
   </div>
 );
@@ -470,25 +516,35 @@ const SessionBlock = ({ accountById, onDeleteMatch, onEditMatch, session }: Sess
   const summary = summarizeResults(session.matches);
 
   return (
-    <article className="grid gap-4 border-b border-border/70 bg-card p-4 last:border-b-0 lg:grid-cols-[190px_minmax(0,1fr)]">
-      <div className="lg:border-r lg:border-border/70 lg:pr-4">
-        <p className="metric-label">{formatDate(session.startedAt)}</p>
-        <h3 className="mt-1 text-lg font-bold">
-          {formatTime(session.startedAt)} - {formatTime(session.endedAt)}
-        </h3>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Badge variant="secondary">{session.matches.length}경기</Badge>
-          <Badge variant="outline" className="bg-transparent">
-            {formatDuration(session.startedAt, session.endedAt)}
-          </Badge>
+    <article className="border-b border-border/70 bg-card last:border-b-0">
+      <div className="grid gap-4 border-b border-border/70 bg-[hsl(var(--surface-2))] p-4 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-center">
+        <div className="min-w-0">
+          <p className="metric-label">{formatDate(session.startedAt)}</p>
+          <h3 className="mt-1 text-lg font-bold">
+            {formatTime(session.startedAt)} - {formatTime(session.endedAt)}
+          </h3>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Badge variant="secondary">{session.matches.length}경기</Badge>
+            <Badge variant="outline" className="bg-transparent">
+              {formatDuration(session.startedAt, session.endedAt)}
+            </Badge>
+            <Badge variant="outline" className="bg-transparent">
+              승률 {formatWinRate(summary.winRate)}
+            </Badge>
+          </div>
         </div>
-        <ResultBar summary={summary} className="mt-4" />
-        <p className="mt-2 text-xs font-semibold text-muted-foreground">
-          승률 {formatWinRate(summary.winRate)}
-        </p>
+
+        <div>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <ResultCount label="승" value={summary.wins} />
+            <ResultCount label="패" value={summary.losses} />
+            <ResultCount label="무" value={summary.draws} />
+          </div>
+          <ResultBar summary={summary} className="mt-3" />
+        </div>
       </div>
 
-      <div className="space-y-2">
+      <div className="divide-y divide-border/70">
         {session.matches.map((match, index) => (
           <MatchRow
             key={match.id}
@@ -504,6 +560,18 @@ const SessionBlock = ({ accountById, onDeleteMatch, onEditMatch, session }: Sess
   );
 };
 
+interface ResultCountProps {
+  label: string;
+  value: number;
+}
+
+const ResultCount = ({ label, value }: ResultCountProps) => (
+  <div className="rounded-md border border-border/70 bg-card px-2 py-2">
+    <p className="metric-label">{label}</p>
+    <p className="mt-1 text-sm font-bold">{value}</p>
+  </div>
+);
+
 interface MatchRowProps {
   accountLabel: string;
   index: number;
@@ -512,62 +580,83 @@ interface MatchRowProps {
   onEdit: () => void;
 }
 
-const MatchRow = ({ accountLabel, index, match, onDelete, onEdit }: MatchRowProps) => (
-  <div className="grid gap-3 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3 sm:grid-cols-[56px_minmax(0,1fr)_80px_auto] sm:items-center">
-    <div className="flex items-center gap-2 sm:block">
-      <div className="flex h-8 w-8 items-center justify-center rounded-md bg-card text-xs font-bold text-muted-foreground">
-        {index + 1}
+const MatchRow = ({ accountLabel, index, match, onDelete, onEdit }: MatchRowProps) => {
+  const heroSummary =
+    match.myHeroes.length > 0
+      ? match.myHeroes
+          .slice(0, 3)
+          .map((heroId) => getHeroLabel(heroId))
+          .join(', ')
+      : '';
+
+  return (
+    <div className="grid gap-3 bg-card p-3 transition-colors hover:bg-[hsl(var(--surface-2))] sm:grid-cols-[48px_88px_minmax(0,1fr)_88px_auto] sm:items-center">
+      <div className="flex items-center gap-2 sm:block">
+        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary text-xs font-bold text-muted-foreground">
+          {index + 1}
+        </div>
+        <p className="text-xs font-semibold text-muted-foreground sm:mt-2">
+          {formatTime(match.playedAt)}
+        </p>
       </div>
-      <p className="text-xs font-semibold text-muted-foreground sm:mt-2">
-        {formatTime(match.playedAt)}
-      </p>
-    </div>
 
-    <div className="min-w-0">
-      <p className="truncate text-sm font-bold">
-        {getMapLabel(match.mapId)} · {getModeLabel(match.modeId)}
-      </p>
-      <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">{accountLabel}</p>
-    </div>
+      <div className="aspect-[16/10] overflow-hidden rounded-md border border-border/70 bg-secondary">
+        <img
+          alt={getMapLabel(match.mapId)}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          src={getMapScreenshotPath(match.mapId)}
+        />
+      </div>
 
-    <div className="flex items-center justify-between gap-2 sm:block">
-      <span
-        className={cn(
-          'inline-flex h-8 min-w-16 items-center justify-center rounded-md border px-2 text-xs font-bold',
-          getResultTone(match.result),
-        )}
-      >
-        {getResultLabel(match.result)}
-      </span>
-      <p className="text-right text-sm font-bold sm:mt-2">
-        {match.teamScore}:{match.enemyScore}
-      </p>
-    </div>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-bold">
+          {getMapLabel(match.mapId)} · {getModeLabel(match.modeId)}
+        </p>
+        <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+          {heroSummary ? `${accountLabel} · ${heroSummary}` : accountLabel}
+        </p>
+      </div>
 
-    <div className="flex justify-end gap-1">
-      <Button
-        type="button"
-        size="icon"
-        variant="ghost"
-        className="h-9 w-9"
-        aria-label="경기 수정"
-        onClick={onEdit}
-      >
-        <Pencil className="h-4 w-4" />
-      </Button>
-      <Button
-        type="button"
-        size="icon"
-        variant="ghost"
-        className="h-9 w-9 text-destructive hover:text-destructive"
-        aria-label="경기 삭제"
-        onClick={onDelete}
-      >
-        <Trash2 className="h-4 w-4" />
-      </Button>
+      <div className="flex items-center justify-between gap-2 sm:block">
+        <span
+          className={cn(
+            'inline-flex h-8 min-w-16 items-center justify-center rounded-md border px-2 text-xs font-bold',
+            getResultTone(match.result),
+          )}
+        >
+          {getResultLabel(match.result)}
+        </span>
+        <p className="text-right text-sm font-bold sm:mt-2">
+          {match.teamScore}:{match.enemyScore}
+        </p>
+      </div>
+
+      <div className="flex justify-end gap-1">
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-9 w-9"
+          aria-label="경기 수정"
+          onClick={onEdit}
+        >
+          <Pencil className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-9 w-9 text-destructive hover:text-destructive"
+          aria-label="경기 삭제"
+          onClick={onDelete}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 interface ResultBarProps {
   className?: string;
