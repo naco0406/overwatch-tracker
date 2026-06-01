@@ -1,14 +1,12 @@
-import { ChevronDown, Minus, Plus, Save } from 'lucide-react';
+import { Minus, Plus, Save, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
   getModeLabel,
   getOptionLabel,
-  getResultOptionsForMode,
   mapOptions,
   modeOptions,
   queueOptions,
@@ -80,7 +78,6 @@ const QuickMatchEntry = ({
   isSubmitting = false,
   onSubmit,
 }: QuickMatchEntryProps) => {
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [modeFilter, setModeFilter] = useState<ModeFilter>('all');
   const [mapQuery, setMapQuery] = useState('');
   const [mapId, setMapId] = useState('');
@@ -92,19 +89,17 @@ const QuickMatchEntry = ({
   const defaultAccount = mainAccount ?? accounts[0];
   const selectedMap = mapOptions.find((map) => map.value === mapId);
   const defaultQueueType = defaultSettings?.defaultQueueType ?? 'solo';
-  const availableResultOptions = selectedMap
-    ? getResultOptionsForMode(selectedMap.modeId)
-    : resultOptions;
-  const filteredMaps = useMemo(() => {
-    const query = mapQuery.trim().toLowerCase();
+
+  const visibleMaps = useMemo(() => {
+    const normalizedQuery = mapQuery.trim().toLowerCase();
 
     return mapOptions.filter((map) => {
       const modeMatches = modeFilter === 'all' || map.modeId === modeFilter;
       const queryMatches =
-        query.length === 0 ||
-        map.label.toLowerCase().includes(query) ||
-        map.value.toLowerCase().includes(query) ||
-        getModeLabel(map.modeId).toLowerCase().includes(query);
+        normalizedQuery.length === 0 ||
+        map.label.toLowerCase().includes(normalizedQuery) ||
+        map.value.toLowerCase().includes(normalizedQuery) ||
+        getModeLabel(map.modeId).toLowerCase().includes(normalizedQuery);
 
       return modeMatches && queryMatches;
     });
@@ -115,15 +110,8 @@ const QuickMatchEntry = ({
 
     if (!nextMap) return;
 
-    const nextResultOptions = getResultOptionsForMode(nextMap.modeId);
-
     setMapId(nextMap.value);
-    setModeFilter(nextMap.modeId);
-    if (result && !nextResultOptions.some((option) => option.value === result)) {
-      setResult('');
-    }
     setError('');
-    setPickerOpen(false);
   };
 
   const updateScore = (side: 'team' | 'enemy', value: string) => {
@@ -139,7 +127,7 @@ const QuickMatchEntry = ({
 
     const inferred = inferResult(nextTeamScore, nextEnemyScore);
     if (inferred) {
-      setResult(availableResultOptions.some((option) => option.value === inferred) ? inferred : '');
+      setResult(inferred);
     }
     setError('');
   };
@@ -187,6 +175,7 @@ const QuickMatchEntry = ({
     setTeamScore('');
     setEnemyScore('');
     setResult('');
+    setMapQuery('');
     setError('');
   };
 
@@ -209,45 +198,91 @@ const QuickMatchEntry = ({
         </div>
 
         <div className="rounded-lg border border-border bg-card p-3 sm:p-4">
-          <button
-            type="button"
-            className={cn(
-              'grid w-full overflow-hidden rounded-md border text-left transition-[background-color,border-color,color] sm:grid-cols-[148px_minmax(0,1fr)_auto]',
-              selectedMap
-                ? 'border-primary/30 bg-primary/[0.06]'
-                : 'border-input bg-[hsl(var(--surface-2))] hover:border-primary/35',
-            )}
-            onClick={() => setPickerOpen(true)}
-          >
-            <div className="hidden aspect-video h-full min-h-20 overflow-hidden bg-secondary sm:block">
-              {selectedMap ? (
-                <img
-                  alt={selectedMap.label}
-                  className="h-full w-full object-cover"
-                  src={getMapScreenshotPath(selectedMap.value)}
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center text-xs font-bold text-muted-foreground">
-                  MAP
-                </div>
-              )}
-            </div>
-            <span className="min-w-0 self-center px-4 py-3">
-              <span className="block text-xs font-semibold text-muted-foreground">맵</span>
-              <span className="mt-1 block truncate text-lg font-bold">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="metric-label">맵</p>
+              <p className="mt-1 truncate text-lg font-bold">
                 {selectedMap ? selectedMap.label : '선택'}
-              </span>
-              {selectedMap ? (
-                <span className="mt-1 block text-xs font-semibold text-muted-foreground">
-                  {getModeLabel(selectedMap.modeId)}
-                </span>
-              ) : null}
-            </span>
-            <span className="flex shrink-0 items-center gap-2 self-center px-4 py-3 text-sm font-semibold text-muted-foreground">
-              목록
-              <ChevronDown className="h-4 w-4" />
-            </span>
-          </button>
+              </p>
+            </div>
+            {selectedMap ? (
+              <Badge variant="outline" className="w-fit bg-transparent">
+                {getModeLabel(selectedMap.modeId)}
+              </Badge>
+            ) : null}
+          </div>
+
+          <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="h-9 pl-9 text-sm font-semibold"
+                placeholder="맵 검색"
+                value={mapQuery}
+                onChange={(event) => setMapQuery(event.target.value)}
+              />
+            </div>
+            <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1 lg:max-w-[440px]">
+              <ModeButton active={modeFilter === 'all'} onClick={() => setModeFilter('all')}>
+                전체
+              </ModeButton>
+              {modeOptions.map((mode) => (
+                <ModeButton
+                  key={mode.value}
+                  active={modeFilter === mode.value}
+                  onClick={() => setModeFilter(mode.value)}
+                >
+                  {mode.label}
+                </ModeButton>
+              ))}
+            </div>
+          </div>
+
+          <div className="mobile-scroll mt-3 h-[212px] overflow-x-auto pb-2 sm:h-[228px]">
+            {visibleMaps.length > 0 ? (
+              <div className="grid h-full auto-cols-[132px] grid-flow-col grid-rows-2 gap-2 sm:auto-cols-[148px]">
+                {visibleMaps.map((map) => {
+                  const selected = map.value === mapId;
+
+                  return (
+                    <button
+                      key={map.value}
+                      type="button"
+                      className={cn(
+                        'overflow-hidden rounded-md border bg-card text-left transition-[background-color,border-color,color] hover:border-primary/35 hover:bg-secondary',
+                        selected && 'border-primary bg-primary/[0.06] text-primary',
+                      )}
+                      onClick={() => selectMap(map.value)}
+                    >
+                      <span className="block h-14 overflow-hidden bg-secondary sm:h-16">
+                        <img
+                          alt={map.label}
+                          className="h-full w-full object-cover"
+                          src={getMapScreenshotPath(map.value)}
+                          loading="lazy"
+                        />
+                      </span>
+                      <span className="block min-w-0 px-2 py-1.5">
+                        <span className="block truncate text-xs font-bold">{map.label}</span>
+                        <span
+                          className={cn(
+                            'mt-0.5 block truncate text-[11px] font-semibold',
+                            selected ? 'text-primary/70' : 'text-muted-foreground',
+                          )}
+                        >
+                          {getModeLabel(map.modeId)}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex h-full items-center justify-center rounded-md border border-dashed border-border bg-[hsl(var(--surface-2))] px-4 text-center text-sm font-semibold text-muted-foreground">
+                검색 결과 없음
+              </div>
+            )}
+          </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-[230px_minmax(0,1fr)_140px] lg:items-end">
             <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
@@ -267,7 +302,7 @@ const QuickMatchEntry = ({
             </div>
 
             <div className="grid grid-cols-3 gap-2">
-              {availableResultOptions.map((option) => (
+              {resultOptions.map((option) => (
                 <button
                   key={option.value}
                   type="button"
@@ -294,77 +329,6 @@ const QuickMatchEntry = ({
           {error ? <p className="mt-3 text-sm font-semibold text-destructive">{error}</p> : null}
         </div>
       </div>
-
-      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
-        <DialogContent className="flex h-[calc(100dvh-1rem)] max-w-3xl flex-col gap-0 p-0 sm:h-[760px] sm:max-h-[calc(100dvh-3rem)]">
-          <DialogHeader className="border-b border-border bg-card px-4 py-4 pr-12 sm:px-5">
-            <DialogTitle>맵 선택</DialogTitle>
-          </DialogHeader>
-          <div className="flex min-h-0 flex-1 flex-col p-4 sm:p-5">
-            <Input
-              autoFocus
-              placeholder="맵 검색"
-              value={mapQuery}
-              onChange={(event) => setMapQuery(event.target.value)}
-            />
-            <div className="mobile-scroll mt-3 flex gap-2 overflow-x-auto pb-1">
-              <ModeButton active={modeFilter === 'all'} onClick={() => setModeFilter('all')}>
-                전체
-              </ModeButton>
-              {modeOptions.map((mode) => (
-                <ModeButton
-                  key={mode.value}
-                  active={modeFilter === mode.value}
-                  onClick={() => setModeFilter(mode.value)}
-                >
-                  {mode.label}
-                </ModeButton>
-              ))}
-            </div>
-            <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-[hsl(var(--surface-2))] p-2">
-              {filteredMaps.length > 0 ? (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {filteredMaps.map((map) => (
-                    <button
-                      key={map.value}
-                      type="button"
-                      className={cn(
-                        'overflow-hidden rounded-md border bg-card text-left transition-[background-color,border-color,color] hover:border-primary/35 hover:bg-secondary',
-                        map.value === mapId && 'border-primary bg-primary/[0.06]',
-                      )}
-                      onClick={() => selectMap(map.value)}
-                    >
-                      <span className="block aspect-[16/9] overflow-hidden bg-secondary">
-                        <img
-                          alt={map.label}
-                          className="h-full w-full object-cover"
-                          src={getMapScreenshotPath(map.value)}
-                          loading="lazy"
-                        />
-                      </span>
-                      <span className="flex items-center justify-between gap-3 px-3 py-2">
-                        <span className="min-w-0">
-                          <span className="block truncate text-sm font-bold">{map.label}</span>
-                          <span className="mt-1 block text-xs font-semibold text-muted-foreground">
-                            {getModeLabel(map.modeId)}
-                          </span>
-                        </span>
-                        {map.value === mapId ? (
-                          <span className="shrink-0 text-xs font-bold text-primary">선택됨</span>
-                        ) : null}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex h-full min-h-72 items-center justify-center rounded-md border border-dashed border-border bg-card text-center text-sm font-semibold text-muted-foreground">
-                  검색 결과 없음
-                </div>
-              )}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </>
   );
 };
