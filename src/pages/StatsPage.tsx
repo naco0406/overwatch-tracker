@@ -60,13 +60,13 @@ type PeriodFilter = (typeof periodOptions)[number]['value'];
 
 const statsSections = [
   {
-    description: '모드별 맵 선택률과 전장별 승률을 비교합니다.',
+    description: '전장별 승률을 먼저 보고, 모드 안에서의 선택 비중은 보조로 확인합니다.',
     eyebrow: '전장 분석',
     title: '전장 통계',
     value: 'maps',
   },
   {
-    description: '모드별 경기 수, 승률, 결과 분포를 봅니다.',
+    description: '모드별 승률을 먼저 보고, 승/패/무 분포와 경기 수를 함께 비교합니다.',
     eyebrow: '모드 분석',
     title: '모드 통계',
     value: 'modes',
@@ -209,6 +209,29 @@ const hasTooltipMode = (value: unknown): value is { mode: string } =>
   'mode' in value &&
   typeof (value as { mode?: unknown }).mode === 'string';
 
+const getTooltipExtraRows = (value: unknown, renderedNames: Set<string>) => {
+  if (typeof value !== 'object' || value === null) {
+    return [];
+  }
+
+  const datum = value as Record<string, unknown>;
+  const rows: Array<{ label: string; value: string }> = [];
+
+  if (!renderedNames.has('경기') && typeof datum.경기 === 'number') {
+    rows.push({ label: '경기', value: String(formatTooltipValue(datum.경기, '경기')) });
+  }
+
+  if (typeof datum.전적 === 'string') {
+    rows.push({ label: '전적', value: datum.전적 });
+  }
+
+  if (!renderedNames.has('선택률') && typeof datum.선택률 === 'number') {
+    rows.push({ label: '선택률', value: String(formatTooltipValue(datum.선택률, '선택률')) });
+  }
+
+  return rows;
+};
+
 const StatsPage = () => {
   const { section } = useParams();
   const activeSection = isStatsSection(section) ? section : 'maps';
@@ -295,7 +318,7 @@ const StatsPage = () => {
               };
             })
             .filter((map) => map.total > 0)
-            .sort((a, b) => b.total - a.total || (b.winRate ?? -1) - (a.winRate ?? -1));
+            .sort((a, b) => (b.winRate ?? -1) - (a.winRate ?? -1) || b.total - a.total);
 
           return {
             ...modeSummary,
@@ -321,7 +344,7 @@ const StatsPage = () => {
           };
         })
         .filter((map) => map.total > 0)
-        .sort((a, b) => b.total - a.total || (b.winRate ?? -1) - (a.winRate ?? -1)),
+        .sort((a, b) => (b.winRate ?? -1) - (a.winRate ?? -1) || b.total - a.total),
     [filteredMatches],
   );
 
@@ -400,33 +423,34 @@ const StatsPage = () => {
       .sort((a, b) => a.order - b.order);
   }, [sessions]);
 
+  const modeWinRateStats = useMemo(
+    () => [...modeStats].sort((a, b) => (b.winRate ?? -1) - (a.winRate ?? -1) || b.total - a.total),
+    [modeStats],
+  );
+
   const modeChartData = useMemo(
     () =>
-      modeStats.map((stat) => ({
+      modeWinRateStats.map((stat) => ({
         경기: stat.total,
         name: stat.label,
         무승부: stat.draws,
         승리: stat.wins,
         승률: stat.winRate ?? 0,
+        전적: `${stat.wins}승 ${stat.losses}패 ${stat.draws}무`,
         패배: stat.losses,
       })),
-    [modeStats],
+    [modeWinRateStats],
   );
-  const mapPickRateChartData = useMemo(
+  const mapWinRateChartData = useMemo(
     () =>
-      modeMapStats
-        .flatMap((mode) =>
-          mode.maps.map((map) => ({
-            name: map.label,
-            mode: mode.label,
-            경기: map.total,
-            선택률: map.pickRate,
-            승률: map.winRate ?? 0,
-          })),
-        )
-        .sort((a, b) => b.선택률 - a.선택률 || b.경기 - a.경기)
-        .slice(0, 10),
-    [modeMapStats],
+      mapStats.slice(0, 14).map((stat) => ({
+        name: stat.label,
+        mode: getModeLabel(stat.modeId),
+        경기: stat.total,
+        승률: stat.winRate ?? 0,
+        전적: `${stat.wins}승 ${stat.losses}패 ${stat.draws}무`,
+      })),
+    [mapStats],
   );
   const heroChartData = useMemo(
     () =>
@@ -468,7 +492,7 @@ const StatsPage = () => {
   const maxModeCount = Math.max(1, ...modeStats.map((stat) => stat.total));
   const maxHeroCount = Math.max(1, ...heroStats.map((stat) => stat.total));
   const maxOrderCount = Math.max(1, ...orderStats.map((stat) => stat.total));
-  const topMap = mapStats[0] ?? null;
+  const topMap = [...mapStats].sort((a, b) => b.total - a.total)[0] ?? null;
   const topMode = [...modeStats].sort((a, b) => b.total - a.total)[0] ?? null;
   const bestMap = getBestWinRate(mapStats, 2);
   const bestMode = getBestWinRate(modeStats, 2);
@@ -532,7 +556,7 @@ const StatsPage = () => {
       {
         detail: topMap ? `${topMap.total}경기 · ${getModeLabel(topMap.modeId)}` : '기록 대기',
         icon: BarChart3,
-        label: '최다 선택',
+        label: '최다 경기',
         value: topMap ? topMap.label : '--',
       },
       {
@@ -542,9 +566,9 @@ const StatsPage = () => {
         value: bestMap ? `${bestMap.label} ${formatWinRate(bestMap.winRate)}` : '--',
       },
       {
-        detail: '모드 안 맵 선택률',
+        detail: '기록이 있는 모드 수',
         icon: MapIcon,
-        label: '분석 대상',
+        label: '모드 범위',
         value: modeMapStats.length.toLocaleString('ko-KR'),
       },
     ],
@@ -666,20 +690,20 @@ const StatsPage = () => {
               periodFilter={periodFilter}
               playerAccounts={playerAccounts}
               queueFilter={queueFilter}
-              title="전장 선택률 기준"
+              title="맵별 승률 기준"
             />
             <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_340px]">
               <div className="space-y-4">
                 <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
                   <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-                    <p className="metric-label">맵 선택률</p>
-                    <h2 className="mt-1 text-lg font-bold">모드 안에서 많이 나온 전장</h2>
+                    <p className="metric-label">맵별 승률</p>
+                    <h2 className="mt-1 text-lg font-bold">승률이 높은 전장부터 비교</h2>
                   </div>
                   <div className="section-pad">
-                    {modeMapStats.length > 0 ? (
+                    {mapStats.length > 0 ? (
                       <ChartShell className="h-[420px]">
                         <BarChart
-                          data={mapPickRateChartData}
+                          data={mapWinRateChartData}
                           layout="vertical"
                           margin={{ bottom: 0, left: 8, right: 18, top: 8 }}
                         >
@@ -705,7 +729,7 @@ const StatsPage = () => {
                             axisLine={false}
                           />
                           <ChartTooltipLayer />
-                          <Bar dataKey="선택률" fill={chartColors.primary} radius={[0, 4, 4, 0]} />
+                          <Bar dataKey="승률" fill={chartColors.primary} radius={[0, 4, 4, 0]} />
                         </BarChart>
                       </ChartShell>
                     ) : (
@@ -737,12 +761,14 @@ const StatsPage = () => {
                         {mode.maps.map((stat) => (
                           <MediaStatRow
                             key={stat.value}
+                            barPercent={stat.winRate ?? 0}
                             count={stat.total}
-                            detail={`${stat.total}경기`}
+                            detail={`${stat.wins}승 ${stat.losses}패 ${stat.draws}무 · 기록 비중 ${formatShare(
+                              stat.pickRate,
+                            )}`}
                             imageSrc={getMapScreenshotPath(stat.value)}
                             label={getMapLabel(stat.value)}
                             maxCount={Math.max(1, mode.total)}
-                            share={stat.pickRate}
                             winRate={stat.winRate}
                           />
                         ))}
@@ -754,21 +780,21 @@ const StatsPage = () => {
 
               <aside className="space-y-4">
                 <SectionMetricStack metrics={sectionMetrics.maps} />
-                {topMap ? (
+                {bestMap ? (
                   <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
                     <div className="aspect-[16/10] bg-secondary">
                       <img
-                        alt={topMap.label}
+                        alt={bestMap.label}
                         className="h-full w-full object-cover"
-                        src={getMapScreenshotPath(topMap.value)}
+                        src={getMapScreenshotPath(bestMap.value)}
                       />
                     </div>
                     <div className="section-pad">
-                      <p className="metric-label">최다 선택 전장</p>
-                      <h3 className="mt-1 text-lg font-bold">{topMap.label}</h3>
+                      <p className="metric-label">최고 승률 전장</p>
+                      <h3 className="mt-1 text-lg font-bold">{bestMap.label}</h3>
                       <p className="mt-2 text-sm font-semibold text-muted-foreground">
-                        {topMap.total}경기 · {getModeLabel(topMap.modeId)} · 승률{' '}
-                        {formatWinRate(topMap.winRate)}
+                        {bestMap.total}경기 · {getModeLabel(bestMap.modeId)} · 승률{' '}
+                        {formatWinRate(bestMap.winRate)}
                       </p>
                     </div>
                   </div>
@@ -801,8 +827,8 @@ const StatsPage = () => {
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
                 <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
                   <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-                    <p className="metric-label">결과 분포</p>
-                    <h2 className="mt-1 text-lg font-bold">모드별 승/패/무 누적</h2>
+                    <p className="metric-label">모드별 승률</p>
+                    <h2 className="mt-1 text-lg font-bold">어떤 모드에서 승률이 좋은지</h2>
                   </div>
                   <div className="section-pad">
                     {modeStats.length > 0 ? (
@@ -824,26 +850,14 @@ const StatsPage = () => {
                             interval={0}
                           />
                           <YAxis
-                            allowDecimals={false}
+                            domain={[0, 100]}
                             tick={getAxisTick()}
+                            tickFormatter={(value) => `${value}%`}
                             tickLine={false}
                             axisLine={false}
                           />
                           <ChartTooltipLayer />
-                          <Legend wrapperStyle={legendStyle} />
-                          <Bar
-                            dataKey="승리"
-                            stackId="result"
-                            fill={chartColors.win}
-                            radius={[0, 0, 4, 4]}
-                          />
-                          <Bar dataKey="무승부" stackId="result" fill={chartColors.draw} />
-                          <Bar
-                            dataKey="패배"
-                            stackId="result"
-                            fill={chartColors.loss}
-                            radius={[4, 4, 0, 0]}
-                          />
+                          <Bar dataKey="승률" fill={chartColors.primary} radius={[4, 4, 0, 0]} />
                         </BarChart>
                       </ChartShell>
                     ) : (
@@ -862,13 +876,14 @@ const StatsPage = () => {
                     <h2 className="mt-1 text-lg font-bold">모드별 비교</h2>
                   </div>
                   <div className="px-4 py-1 sm:px-5">
-                    {modeStats.map((stat) => (
+                    {modeWinRateStats.map((stat) => (
                       <StatRow
                         key={stat.value}
                         count={stat.total}
                         detail={`${stat.wins}승 ${stat.losses}패 ${stat.draws}무`}
                         label={stat.label}
                         maxCount={maxModeCount}
+                        progressPercent={stat.winRate ?? 0}
                         winRate={stat.winRate}
                       />
                     ))}
@@ -878,15 +893,15 @@ const StatsPage = () => {
 
               <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
                 <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-                  <p className="metric-label">추세형 비교</p>
-                  <h2 className="mt-1 text-lg font-bold">경기 수와 승률</h2>
+                  <p className="metric-label">승/패/무 구성</p>
+                  <h2 className="mt-1 text-lg font-bold">모드별 결과 분포</h2>
                 </div>
                 <div className="section-pad">
                   {modeStats.length > 0 ? (
                     <ChartShell className="h-[320px]">
-                      <ComposedChart
+                      <BarChart
                         data={modeChartData}
-                        margin={{ bottom: 8, left: -18, right: 8, top: 12 }}
+                        margin={{ bottom: 0, left: -18, right: 8, top: 12 }}
                       >
                         <CartesianGrid
                           stroke={chartColors.grid}
@@ -901,38 +916,27 @@ const StatsPage = () => {
                           interval={0}
                         />
                         <YAxis
-                          yAxisId="left"
                           allowDecimals={false}
                           tick={getAxisTick()}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <YAxis
-                          yAxisId="right"
-                          orientation="right"
-                          domain={[0, 100]}
-                          tick={getAxisTick()}
-                          tickFormatter={(value) => `${value}%`}
                           tickLine={false}
                           axisLine={false}
                         />
                         <ChartTooltipLayer />
                         <Legend wrapperStyle={legendStyle} />
                         <Bar
-                          yAxisId="left"
-                          dataKey="경기"
-                          fill={chartColors.primary}
+                          dataKey="승리"
+                          stackId="result"
+                          fill={chartColors.win}
+                          radius={[0, 0, 4, 4]}
+                        />
+                        <Bar dataKey="무승부" stackId="result" fill={chartColors.draw} />
+                        <Bar
+                          dataKey="패배"
+                          stackId="result"
+                          fill={chartColors.loss}
                           radius={[4, 4, 0, 0]}
                         />
-                        <Line
-                          yAxisId="right"
-                          type="monotone"
-                          dataKey="승률"
-                          stroke="hsl(var(--success))"
-                          strokeWidth={2}
-                          dot={{ fill: 'hsl(var(--success))', r: 3 }}
-                        />
-                      </ComposedChart>
+                      </BarChart>
                     </ChartShell>
                   ) : (
                     <TabEmpty
@@ -1579,6 +1583,8 @@ const ChartTooltip = ({
 
   const contextPayload = rows[0]?.payload;
   const contextLabel = hasTooltipMode(contextPayload) ? contextPayload.mode : '데이터 포인트';
+  const renderedNames = new Set(rows.map((entry) => String(entry.name ?? entry.dataKey ?? '값')));
+  const extraRows = getTooltipExtraRows(contextPayload, renderedNames);
 
   return (
     <div className="max-w-[280px] rounded-lg border border-border/80 bg-card/95 px-3 py-2.5 text-foreground shadow-[0_18px_48px_-28px_hsl(var(--foreground)/0.55)] backdrop-blur-xl">
@@ -1606,6 +1612,21 @@ const ChartTooltip = ({
             </span>
           </div>
         ))}
+        {extraRows.length > 0 ? (
+          <div className="space-y-1.5 border-t border-border/50 pt-2">
+            {extraRows.map((row) => (
+              <div
+                key={row.label}
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3"
+              >
+                <span className="min-w-0 break-words text-xs font-semibold leading-snug text-muted-foreground">
+                  {row.label}
+                </span>
+                <span className="whitespace-nowrap text-right text-xs font-bold">{row.value}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -1629,10 +1650,11 @@ interface StatRowProps {
   detail: string;
   label: string;
   maxCount: number;
+  progressPercent?: number;
   winRate: number | null;
 }
 
-const StatRow = ({ count, detail, label, maxCount, winRate }: StatRowProps) => (
+const StatRow = ({ count, detail, label, maxCount, progressPercent, winRate }: StatRowProps) => (
   <div className="grid gap-3 border-b border-border/60 py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-center">
     <div className="min-w-0">
       <div className="flex items-center justify-between gap-3">
@@ -1642,7 +1664,7 @@ const StatRow = ({ count, detail, label, maxCount, winRate }: StatRowProps) => (
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-secondary">
         <div
           className="h-full rounded-full bg-primary"
-          style={{ width: `${Math.max(5, (count / maxCount) * 100)}%` }}
+          style={{ width: `${Math.max(5, progressPercent ?? (count / maxCount) * 100)}%` }}
         />
       </div>
     </div>
@@ -1658,6 +1680,7 @@ const StatRow = ({ count, detail, label, maxCount, winRate }: StatRowProps) => (
 );
 
 interface MediaStatRowProps extends Omit<StatRowProps, 'detail'> {
+  barPercent?: number;
   detail: string;
   imageClassName?: string;
   imageSrc: string;
@@ -1665,6 +1688,7 @@ interface MediaStatRowProps extends Omit<StatRowProps, 'detail'> {
 }
 
 const MediaStatRow = ({
+  barPercent,
   count,
   detail,
   imageClassName,
@@ -1699,7 +1723,7 @@ const MediaStatRow = ({
         <div className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
           <div
             className="h-full rounded-full bg-primary"
-            style={{ width: `${Math.max(5, (count / maxCount) * 100)}%` }}
+            style={{ width: `${Math.max(5, barPercent ?? (count / maxCount) * 100)}%` }}
           />
         </div>
         <span className="w-12 text-right text-xs font-semibold text-muted-foreground">
