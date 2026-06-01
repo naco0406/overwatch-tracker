@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { BarChart3, BookOpenCheck, Command, Home, LogOut, Settings, Swords } from 'lucide-react';
+import { BarChart3, Command, Home, LogOut, Settings, Swords, TableProperties } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
@@ -15,9 +15,9 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { to: '/', label: '홈', icon: Home },
+  { to: '/records', label: '기록', icon: TableProperties },
   { to: '/sessions', label: '세션', icon: Swords },
   { to: '/stats', label: '통계', icon: BarChart3 },
-  { to: '/master-data', label: '마스터', icon: BookOpenCheck },
   { to: '/settings', label: '설정', icon: Settings },
 ];
 
@@ -70,15 +70,15 @@ const AppLayout = () => {
           <div className="flex items-center justify-between gap-2 text-primary">
             <div className="flex min-w-0 items-center gap-2">
               <Command className="h-4 w-4 shrink-0" />
-              <p className="truncate text-sm font-semibold">이미지 분석</p>
+              <p className="truncate text-sm font-semibold">빠른 기록</p>
             </div>
             <span className="text-xs font-bold">Ready</span>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            <span className="status-chip">영역</span>
+            <span className="status-chip">맵</span>
+            <span className="status-chip">스코어</span>
+            <span className="status-chip">결과</span>
             <span className="status-chip">OCR</span>
-            <span className="status-chip">전장</span>
-            <span className="status-chip">영웅</span>
           </div>
         </div>
         <div className="border-t border-border/80 p-3">

@@ -9,6 +9,10 @@ import { MasterDataPage } from '@/pages/MasterDataPage';
 import { SessionsPage } from '@/pages/SessionsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 
+const RecordsPage = lazy(() =>
+  import('@/pages/RecordsPage').then((module) => ({ default: module.RecordsPage })),
+);
+
 const StatsPage = lazy(() =>
   import('@/pages/StatsPage').then((module) => ({ default: module.StatsPage })),
 );
@@ -27,6 +31,14 @@ const AppRoutes = () => (
     <Route element={<RequireAuth />}>
       <Route element={<AppLayout />}>
         <Route path="/" element={<HomePage />} />
+        <Route
+          path="/records"
+          element={
+            <LazyPage>
+              <RecordsPage />
+            </LazyPage>
+          }
+        />
         <Route path="/sessions" element={<SessionsPage />} />
         <Route
           path="/stats"
