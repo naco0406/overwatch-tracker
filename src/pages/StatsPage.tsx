@@ -172,14 +172,16 @@ const StatsPage = () => {
 
   const modeStats = useMemo(
     () =>
-      modeOptions.map((mode) => {
-        const modeMatches = filteredMatches.filter((match) => match.modeId === mode.value);
-        return {
-          ...summarizeResults(modeMatches),
-          label: mode.label,
-          value: mode.value,
-        };
-      }),
+      modeOptions
+        .map((mode) => {
+          const modeMatches = filteredMatches.filter((match) => match.modeId === mode.value);
+          return {
+            ...summarizeResults(modeMatches),
+            label: mode.label,
+            value: mode.value,
+          };
+        })
+        .filter((mode) => mode.total > 0),
     [filteredMatches],
   );
 
@@ -229,10 +231,12 @@ const StatsPage = () => {
       buckets[new Date(match.playedAt).getHours()].matches.push(match);
     }
 
-    return buckets.map((bucket) => ({
-      ...summarizeResults(bucket.matches),
-      hour: bucket.hour,
-    }));
+    return buckets
+      .map((bucket) => ({
+        ...summarizeResults(bucket.matches),
+        hour: bucket.hour,
+      }))
+      .filter((bucket) => bucket.total > 0);
   }, [filteredMatches]);
 
   const orderStats = useMemo(() => {
@@ -471,7 +475,7 @@ const StatsPage = () => {
 
             <TabsContent value="mode" className="mt-4">
               <AnalysisPanel icon={BarChart3} label="모드 분포" title="모드별 성과">
-                {filteredMatches.length > 0 ? (
+                {modeStats.length > 0 ? (
                   <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
                     <ChartShell>
                       <BarChart
