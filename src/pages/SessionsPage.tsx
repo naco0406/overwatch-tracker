@@ -8,7 +8,7 @@ import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
 import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { getHeroLabel, getMapLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
+import { getMapLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
 import { toast } from '@/hooks/use-toast';
 import { useDeleteMatch, useMatches, useUpdateMatch } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
@@ -525,10 +525,7 @@ const MatchRow = ({ accountLabel, index, match, onDelete, onEdit }: MatchRowProp
       <p className="truncate text-sm font-bold">
         {getMapLabel(match.mapId)} · {getModeLabel(match.modeId)}
       </p>
-      <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-        {accountLabel} ·{' '}
-        {match.myHeroes.map((heroId) => getHeroLabel(heroId)).join(', ') || '영웅 미지정'}
-      </p>
+      <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">{accountLabel}</p>
     </div>
 
     <div className="flex items-center justify-between gap-2 sm:block">

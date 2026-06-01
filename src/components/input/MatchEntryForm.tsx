@@ -49,7 +49,7 @@ const isValidModeValue = (value: string): boolean =>
 const isValidResultValue = (value: string): boolean =>
   resultValues.includes(value as MatchCreateInput['result']);
 
-const scoreSchema = z.string().refine((value) => {
+const isValidScoreValue = (value: string) => {
   if (!value.trim()) {
     return false;
   }
@@ -57,17 +57,28 @@ const scoreSchema = z.string().refine((value) => {
   const score = Number(value);
 
   return Number.isInteger(score) && score >= 0 && score <= 10;
-}, '0~10 사이의 정수를 입력하세요.');
+};
+
+const inferScoreResult = (teamScore: string, enemyScore: string) => {
+  if (!isValidScoreValue(teamScore) || !isValidScoreValue(enemyScore)) return null;
+
+  const team = Number(teamScore);
+  const enemy = Number(enemyScore);
+
+  if (team > enemy) return 'win';
+  if (team < enemy) return 'loss';
+  return 'draw';
+};
+
+const scoreSchema = z.string().refine(isValidScoreValue, '0~10 사이의 정수를 입력하세요.');
 
 const matchEntrySchema = z.object({
   enemyScore: scoreSchema,
   mapId: z.string().min(1, '맵을 선택하세요.'),
-  memo: z.string().max(500, '메모는 500자 이하로 입력하세요.'),
   modeId: z.string().refine(isValidModeValue, '모드를 선택하세요.'),
   playedAt: z.string().min(1, '플레이 시간을 입력하세요.'),
   queueType: z.enum(['solo', 'duo', 'trio', 'quad', 'five']),
   result: z.string().refine(isValidResultValue, '결과를 선택하세요.'),
-  tagsText: z.string(),
   teamScore: scoreSchema,
 });
 
@@ -90,12 +101,6 @@ const toDatetimeLocalValue = (date = new Date()) => {
 
   return new Date(date.getTime() - timezoneOffsetMs).toISOString().slice(0, 16);
 };
-
-const splitTags = (value: string) =>
-  value
-    .split(',')
-    .map((tag) => tag.trim())
-    .filter(Boolean);
 
 const getDraftDate = (initialMatch?: Match, initialDraft?: Partial<MatchCreateInput>) => {
   if (initialMatch) {
@@ -121,7 +126,6 @@ const getDefaultFormValues = (
         ? String(initialDraft.enemyScore)
         : '',
   mapId: initialMatch?.mapId ?? initialDraft?.mapId ?? '',
-  memo: initialMatch?.memo ?? initialDraft?.memo ?? '',
   modeId: initialMatch?.modeId ?? initialDraft?.modeId ?? '',
   playedAt: toDatetimeLocalValue(getDraftDate(initialMatch, initialDraft)),
   queueType:
@@ -130,7 +134,6 @@ const getDefaultFormValues = (
     defaultSettings?.defaultQueueType ??
     'solo',
   result: initialMatch?.result ?? initialDraft?.result ?? '',
-  tagsText: initialMatch?.tags.join(', ') ?? initialDraft?.tags?.join(', ') ?? '',
   teamScore:
     initialMatch?.teamScore !== undefined
       ? String(initialMatch.teamScore)
@@ -169,6 +172,8 @@ const MatchEntryForm = ({
   const watchedModeId = useWatch({ control: form.control, name: 'modeId' });
   const watchedResult = useWatch({ control: form.control, name: 'result' });
   const watchedMapId = useWatch({ control: form.control, name: 'mapId' });
+  const watchedTeamScore = useWatch({ control: form.control, name: 'teamScore' });
+  const watchedEnemyScore = useWatch({ control: form.control, name: 'enemyScore' });
   const selectedModeId = isModeValue(watchedModeId) ? watchedModeId : null;
 
   const filteredMaps = useMemo(
@@ -209,6 +214,31 @@ const MatchEntryForm = ({
   }, [form, selectedModeId, watchedResult]);
 
   useEffect(() => {
+    const inferred = inferScoreResult(watchedTeamScore, watchedEnemyScore);
+
+    if (!inferred) {
+      if (
+        watchedResult &&
+        (!isValidScoreValue(watchedTeamScore) || !isValidScoreValue(watchedEnemyScore))
+      ) {
+        form.setValue('result', '', { shouldValidate: true });
+      }
+      return;
+    }
+
+    if (inferred === 'draw' && selectedModeId && !modeAllowsDraw(selectedModeId)) {
+      if (watchedResult) {
+        form.setValue('result', '', { shouldValidate: true });
+      }
+      return;
+    }
+
+    if (watchedResult !== inferred) {
+      form.setValue('result', inferred, { shouldValidate: true });
+    }
+  }, [form, selectedModeId, watchedEnemyScore, watchedResult, watchedTeamScore]);
+
+  useEffect(() => {
     if (!initialMatch && !initialDraft?.queueType && defaultSettings?.defaultQueueType) {
       form.setValue('queueType', defaultSettings.defaultQueueType);
     }
@@ -238,14 +268,14 @@ const MatchEntryForm = ({
       accountId: selectedAccount?.id ?? null,
       enemyScore: Number(values.enemyScore),
       mapId: values.mapId,
-      memo: values.memo.trim(),
+      memo: '',
       modeId: values.modeId as MatchCreateInput['modeId'],
       myHeroes: selectedHeroes,
       playedAt: new Date(values.playedAt).toISOString(),
       queueType: values.queueType,
       result: values.result as MatchCreateInput['result'],
       source: source ?? initialMatch?.source ?? initialDraft?.source ?? 'manual',
-      tags: splitTags(values.tagsText),
+      tags: [],
       teamScore: Number(values.teamScore),
     });
 
@@ -550,40 +580,6 @@ const MatchEntryForm = ({
             </div>
           ) : null}
         </section>
-
-        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
-          <FormField
-            control={form.control}
-            name="memo"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>메모</FormLabel>
-                <FormControl>
-                  <textarea
-                    className="min-h-20 w-full resize-none rounded-md border border-input bg-card px-3 py-2 text-sm transition-[border-color,box-shadow] placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
-                    placeholder="짧게 기록"
-                    {...field}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="tagsText"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>태그</FormLabel>
-                <FormControl>
-                  <Input placeholder="멘탈, 리플레이" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
 
         <div className="flex flex-col-reverse gap-2 border-t border-border/70 pt-4 sm:flex-row sm:items-center sm:justify-end">
           <Button type="button" variant="outline" onClick={resetForm}>

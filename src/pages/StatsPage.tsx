@@ -124,7 +124,6 @@ const StatsPage = () => {
   const [modeFilter, setModeFilter] = useState<ModeId | 'all'>('all');
   const [queueFilter, setQueueFilter] = useState<QueueType | 'all'>('all');
   const [accountFilter, setAccountFilter] = useState('all');
-  const [heroFilter, setHeroFilter] = useState('all');
   const { data: matches = [], isLoading } = useMatches();
   const { data: playerAccounts = [] } = usePlayerAccounts();
 
@@ -158,13 +157,9 @@ const StatsPage = () => {
         return false;
       }
 
-      if (heroFilter !== 'all' && !match.myHeroes.includes(heroFilter)) {
-        return false;
-      }
-
       return true;
     });
-  }, [accountFilter, heroFilter, matches, modeFilter, periodFilter, queueFilter]);
+  }, [accountFilter, matches, modeFilter, periodFilter, queueFilter]);
 
   const summary = useMemo(() => summarizeResults(filteredMatches), [filteredMatches]);
   const peakHour = useMemo(() => getPeakHour(filteredMatches), [filteredMatches]);
@@ -307,7 +302,6 @@ const StatsPage = () => {
     modeFilter !== 'all',
     queueFilter !== 'all',
     accountFilter !== 'all',
-    heroFilter !== 'all',
   ].filter(Boolean).length;
 
   const resetFilters = () => {
@@ -315,7 +309,6 @@ const StatsPage = () => {
     setModeFilter('all');
     setQueueFilter('all');
     setAccountFilter('all');
-    setHeroFilter('all');
   };
 
   const metrics = [
@@ -381,7 +374,7 @@ const StatsPage = () => {
             </Badge>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px_260px]">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
             <FilterGroup label="기간">
               {periodOptions.map((period) => (
                 <FilterButton
@@ -407,22 +400,6 @@ const StatsPage = () => {
                       {getPlayerAccountLabel(account)}
                       {account.isMain ? ' · 본계' : ''}
                       {!account.isActive ? ' · 비활성' : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </FilterSelect>
-
-            <FilterSelect label="영웅">
-              <Select value={heroFilter} onValueChange={setHeroFilter}>
-                <SelectTrigger className="h-9 bg-card">
-                  <SelectValue placeholder="영웅 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체 영웅</SelectItem>
-                  {heroOptions.map((hero) => (
-                    <SelectItem key={hero.value} value={hero.value}>
-                      {hero.label} · {roleLabels[hero.role]}
                     </SelectItem>
                   ))}
                 </SelectContent>

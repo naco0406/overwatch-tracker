@@ -32,12 +32,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  getHeroLabel,
   getMapLabel,
   getModeLabel,
+  getOptionLabel,
   getResultLabel,
   mapOptions,
   modeOptions,
+  queueOptions,
   resultOptions,
 } from '@/data/matchOptions';
 import { toast } from '@/hooks/use-toast';
@@ -141,9 +142,8 @@ const RecordsPage = () => {
         accountLabel,
         getMapLabel(match.mapId),
         getModeLabel(match.modeId),
+        getOptionLabel(queueOptions, match.queueType),
         getResultLabel(match.result),
-        match.memo,
-        match.myHeroes.map((heroId) => getHeroLabel(heroId)).join(' '),
         `${match.teamScore}:${match.enemyScore}`,
       ]
         .join(' ')
@@ -419,7 +419,6 @@ const RecordsPage = () => {
                       <th className="px-3 py-3 font-semibold text-muted-foreground">맵</th>
                       <th className="w-28 px-3 py-3 font-semibold text-muted-foreground">결과</th>
                       <th className="w-32 px-3 py-3 font-semibold text-muted-foreground">계정</th>
-                      <th className="w-48 px-3 py-3 font-semibold text-muted-foreground">메모</th>
                       <th className="w-24 px-3 py-3 text-right font-semibold text-muted-foreground">
                         액션
                       </th>
@@ -873,14 +872,8 @@ const RecordTableRow = ({
     </td>
     <td className="px-3 py-3 align-middle">
       <p className="truncate text-sm font-semibold">{getPlayerAccountLabel(account)}</p>
-      <p className="mt-1 text-xs font-semibold text-muted-foreground">{match.source}</p>
-    </td>
-    <td className="min-w-0 px-3 py-3 align-middle">
-      <p className="truncate text-sm font-semibold">
-        {match.myHeroes.map((heroId) => getHeroLabel(heroId)).join(', ') || '영웅 미지정'}
-      </p>
       <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-        {match.memo || '-'}
+        {getOptionLabel(queueOptions, match.queueType)}
       </p>
     </td>
     <td className="px-3 py-3 align-middle">
@@ -938,10 +931,7 @@ const RecordCard = ({ account, match, onDelete, onEdit, onSelect, selected }: Re
       <InfoCell label="모드" value={getModeLabel(match.modeId)} />
       <InfoCell label="결과" value={getResultLabel(match.result)} />
       <InfoCell label="계정" value={getPlayerAccountLabel(account)} />
-      <InfoCell
-        label="영웅"
-        value={match.myHeroes.map((heroId) => getHeroLabel(heroId)).join(', ') || '미지정'}
-      />
+      <InfoCell label="큐" value={getOptionLabel(queueOptions, match.queueType)} />
     </div>
 
     <div className="mt-3 flex justify-end gap-1">
@@ -978,7 +968,7 @@ const RecordsSkeleton = () => (
     {Array.from({ length: 8 }, (_, index) => (
       <div
         key={index}
-        className="flat-row grid gap-3 p-3 md:grid-cols-[32px_120px_minmax(0,1fr)_80px_120px_160px_80px]"
+        className="flat-row grid gap-3 p-3 md:grid-cols-[32px_120px_minmax(0,1fr)_80px_120px_80px]"
       >
         <SkeletonBlock className="h-4 w-4" />
         <div>
@@ -991,7 +981,6 @@ const RecordsSkeleton = () => (
         </div>
         <SkeletonBlock className="h-8 w-16" />
         <SkeletonBlock className="h-4 w-24" />
-        <SkeletonBlock className="h-4 w-36" />
         <SkeletonBlock className="h-9 w-20" />
       </div>
     ))}

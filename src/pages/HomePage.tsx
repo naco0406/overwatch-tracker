@@ -27,7 +27,7 @@ import { toast } from '@/hooks/use-toast';
 import { useCreateMatch, useDeleteMatch, useMatches, useUpdateMatch } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useUserSettings } from '@/hooks/useUserSettings';
-import { getHeroLabel, getMapLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
+import { getMapLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
 import { calculateWinRate, getCurrentStreak, getTodayRange } from '@/lib/matchStats';
 import {
   extractMatchFromScreenshot,
@@ -486,9 +486,7 @@ const HomePage = () => {
                       {getMapLabel(match.mapId)} · {getModeLabel(match.modeId)}
                     </p>
                     <p className="mt-1 truncate text-xs text-muted-foreground">
-                      {getPlayerAccountLabel(accountById.get(match.accountId ?? ''))} ·{' '}
-                      {match.myHeroes.map((heroId) => getHeroLabel(heroId)).join(', ') ||
-                        '영웅 미지정'}
+                      {getPlayerAccountLabel(accountById.get(match.accountId ?? ''))}
                     </p>
                   </div>
                   <div
@@ -577,7 +575,7 @@ const HomePage = () => {
                 <p className="metric-label">수기</p>
                 <p className="mt-2 text-base font-bold">상세 입력</p>
                 <p className="mt-2 text-xs font-semibold leading-5 text-muted-foreground">
-                  계정, 시간, 영웅, 메모까지 수정합니다.
+                  계정, 시간, 영웅까지 수정합니다.
                 </p>
               </button>
 
