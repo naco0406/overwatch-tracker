@@ -2,11 +2,8 @@ import {
   Activity,
   CalendarDays,
   Clipboard,
-  Clock3,
-  Flag,
   ImagePlus,
   Loader2,
-  MapIcon,
   Pencil,
   Plus,
   Trash2,
@@ -31,19 +28,18 @@ import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
 import { QuickMatchEntry } from '@/components/input/QuickMatchEntry';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import { useCreateMatch, useDeleteMatch, useMatches, useUpdateMatch } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useUserSettings } from '@/hooks/useUserSettings';
-import {
-  getHeroLabel,
-  getMapLabel,
-  getModeLabel,
-  getResultLabel,
-  queueOptions,
-  getOptionLabel,
-} from '@/data/matchOptions';
-import { groupMatchesBySession } from '@/lib/session';
+import { getHeroLabel, getMapLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
 import { calculateWinRate, getCurrentStreak, getTodayRange } from '@/lib/matchStats';
 import {
   extractMatchFromScreenshot,
@@ -125,6 +121,7 @@ const getSummaryMetrics = (matches: Match[]) => {
 const HomePage = () => {
   const [entryDialogOpen, setEntryDialogOpen] = useState(false);
   const [entrySource, setEntrySource] = useState<MatchCreateInput['source']>('manual');
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Match | null>(null);
   const [screenshotPreview, setScreenshotPreview] = useState<ScreenshotPreview | null>(null);
@@ -150,14 +147,11 @@ const HomePage = () => {
       ),
     [todayMatches],
   );
-  const latestMatch = sortedTodayMatches[0];
-  const todaySessions = useMemo(() => groupMatchesBySession(todayMatches), [todayMatches]);
   const summaryMetrics = useMemo(() => getSummaryMetrics(todayMatches), [todayMatches]);
   const activePlayerAccounts = useMemo(
     () => playerAccounts.filter((account) => account.isActive),
     [playerAccounts],
   );
-  const mainAccount = activePlayerAccounts.find((account) => account.isMain);
   const accountById = useMemo(
     () => new Map(playerAccounts.map((account) => [account.id, account])),
     [playerAccounts],
@@ -170,31 +164,6 @@ const HomePage = () => {
     },
     [screenshotPreview?.imageUrl],
   );
-
-  const reviewFields = latestMatch
-    ? [
-        {
-          label: '계정',
-          value: getPlayerAccountLabel(accountById.get(latestMatch.accountId ?? '')),
-        },
-        { label: '모드', value: getModeLabel(latestMatch.modeId) },
-        { label: '맵', value: getMapLabel(latestMatch.mapId) },
-        { label: '결과', value: getResultLabel(latestMatch.result) },
-        { label: '스코어', value: `${latestMatch.teamScore} : ${latestMatch.enemyScore}` },
-        {
-          label: '영웅',
-          value:
-            latestMatch.myHeroes.map((heroId) => getHeroLabel(heroId)).join(', ') || '영웅 미지정',
-        },
-      ]
-    : [
-        { label: '계정', value: '미지정' },
-        { label: '모드', value: '미선택' },
-        { label: '맵', value: '미선택' },
-        { label: '결과', value: '미선택' },
-        { label: '스코어', value: '-- : --' },
-        { label: '영웅', value: '미선택' },
-      ];
 
   const handleCreateMatch = async (input: MatchCreateInput) => {
     try {
@@ -320,6 +289,7 @@ const HomePage = () => {
 
   const openDirectEntry = () => {
     setEntrySource('manual');
+    setToolsOpen(false);
     setEditingMatch(null);
     setScreenshotPreview(null);
     setVisionProgress(null);
@@ -368,6 +338,7 @@ const HomePage = () => {
       setVisionResult(result);
       setEntrySource('mixed');
       setEditingMatch(null);
+      setToolsOpen(false);
       setEntryDialogOpen(true);
       toast({
         description: result.warnings[0] ?? '인식한 값을 입력폼에 채웠습니다. 저장 전 확인하세요.',
@@ -400,6 +371,7 @@ const HomePage = () => {
 
     setEntrySource(screenshotPreview ? 'mixed' : 'manual');
     setEditingMatch(null);
+    setToolsOpen(false);
     setEntryDialogOpen(true);
   };
 
@@ -424,21 +396,15 @@ const HomePage = () => {
         eyebrow="오늘"
         title="경기 기록"
         actions={
-          <>
-            <Button
-              variant="outline"
-              className="hidden bg-transparent sm:inline-flex"
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <ImagePlus className="h-4 w-4" />
-              이미지 선택
-            </Button>
-            <Button type="button" onClick={openDirectEntry}>
-              <Plus className="h-4 w-4" />
-              직접 입력
-            </Button>
-          </>
+          <Button
+            variant="outline"
+            className="bg-transparent"
+            type="button"
+            onClick={() => setToolsOpen(true)}
+          >
+            <Plus className="h-4 w-4" />
+            상세/이미지
+          </Button>
         }
       />
       <input
@@ -450,260 +416,33 @@ const HomePage = () => {
       />
 
       <section className="workspace-panel overflow-hidden">
-        <div className="grid border-b border-border 2xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="grid md:grid-cols-3">
-            {summaryMetrics.map((metric) => (
-              <div
-                key={metric.label}
-                className="flex min-h-[112px] items-start justify-between gap-4 border-b border-border p-4 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0 sm:p-5"
-              >
-                <div>
-                  <p className="metric-label">{metric.label}</p>
-                  <p className="mt-3 text-3xl font-bold leading-none">{metric.value}</p>
-                  <p className="mt-2 text-xs text-muted-foreground">{metric.detail}</p>
-                </div>
-                <div
-                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md ${metric.tone}`}
-                >
-                  <metric.icon className="h-5 w-5" />
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="border-t border-border bg-[hsl(var(--surface-2))] p-4 sm:p-5 2xl:border-l 2xl:border-t-0">
-            <div className="flex items-center justify-between">
+        <div className="grid border-b border-border md:grid-cols-3">
+          {summaryMetrics.map((metric) => (
+            <div
+              key={metric.label}
+              className="flex min-h-[96px] items-start justify-between gap-4 border-b border-border p-4 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0 sm:p-5"
+            >
               <div>
-                <p className="metric-label">기본값</p>
-                <p className="mt-2 text-lg font-bold">
-                  {mainAccount ? getPlayerAccountLabel(mainAccount) : '계정 미지정'}
-                </p>
+                <p className="metric-label">{metric.label}</p>
+                <p className="mt-3 text-2xl font-bold leading-none">{metric.value}</p>
+                <p className="mt-2 text-xs text-muted-foreground">{metric.detail}</p>
               </div>
-              <span className="status-chip">
-                <span className="status-dot" />
-                {getOptionLabel(queueOptions, userSettings?.defaultQueueType ?? 'solo')}
-              </span>
-            </div>
-            <div className="mt-4 grid grid-cols-2 overflow-hidden rounded-lg border border-border bg-card">
-              <div className="border-r border-border p-3">
-                <p className="metric-label">계정</p>
-                <p className="mt-2 text-sm font-semibold">
-                  {mainAccount ? '본계 설정됨' : '설정 필요'}
-                </p>
-              </div>
-              <div className="p-3">
-                <p className="metric-label">입력</p>
-                <p className="mt-2 text-sm font-semibold">수기 우선</p>
+              <div
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md ${metric.tone}`}
+              >
+                <metric.icon className="h-5 w-5" />
               </div>
             </div>
-          </div>
+          ))}
         </div>
 
-        <div className="grid 2xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="p-4 sm:p-5">
-            <QuickMatchEntry
-              accounts={activePlayerAccounts}
-              defaultSettings={userSettings}
-              isSubmitting={createMatchMutation.isPending}
-              onSubmit={handleCreateMatch}
-            />
-          </div>
-
-          <aside className="space-y-5 border-t border-border bg-[hsl(var(--surface-2))] p-4 sm:p-5 2xl:border-l 2xl:border-t-0">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="metric-label">확인 패널</p>
-                <h3 className="mt-2 text-lg font-bold">
-                  {latestMatch ? '최근 저장' : '입력 대기'}
-                </h3>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="status-chip">
-                  <span className="status-dot" />
-                  {latestMatch ? formatTime(latestMatch.playedAt) : 'Idle'}
-                </span>
-                {latestMatch ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="bg-transparent"
-                    onClick={() => openEditEntry(latestMatch)}
-                  >
-                    <Pencil className="h-4 w-4" />
-                    수정
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="mt-5 overflow-hidden rounded-lg border border-border bg-card">
-              {reviewFields.map((field) => (
-                <div
-                  key={field.label}
-                  className="flat-row flex items-center justify-between gap-3 p-3"
-                >
-                  <span className="text-sm font-semibold text-muted-foreground">{field.label}</span>
-                  <span className="truncate text-sm font-semibold">{field.value}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-5 grid grid-cols-3 overflow-hidden rounded-lg border border-border bg-card">
-              <div className="border-r border-border p-3">
-                <MapIcon className="h-4 w-4 text-primary" />
-                <p className="metric-label mt-3">맵</p>
-                <p className="mt-1 truncate text-xs font-semibold">
-                  {latestMatch ? getMapLabel(latestMatch.mapId) : '-'}
-                </p>
-              </div>
-              <div className="border-r border-border p-3">
-                <Flag className="h-4 w-4 text-[hsl(var(--warning))]" />
-                <p className="metric-label mt-3">결과</p>
-                <p className="mt-1 text-xs font-semibold">
-                  {latestMatch ? getResultLabel(latestMatch.result) : '-'}
-                </p>
-              </div>
-              <div className="p-3">
-                <Clock3 className="h-4 w-4 text-[hsl(var(--success))]" />
-                <p className="metric-label mt-3">세션</p>
-                <p className="mt-1 text-xs font-semibold">{todaySessions.length}</p>
-              </div>
-            </div>
-
-            <div
-              className="rounded-lg border border-border bg-card p-3 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring/25"
-              aria-label="스크린샷 보조 입력"
-              tabIndex={0}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={handleDrop}
-            >
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <p className="metric-label">보조 입력</p>
-                  <h3 className="mt-2 text-base font-bold">이미지 분석</h3>
-                </div>
-                <span className="status-chip">
-                  <Wand2 className="h-3.5 w-3.5" />
-                  OCR
-                </span>
-              </div>
-
-              {screenshotPreview ? (
-                <div className="overflow-hidden rounded-lg border border-border bg-[hsl(var(--surface-2))]">
-                  <div className="aspect-video bg-secondary">
-                    <img
-                      alt={screenshotPreview.name}
-                      className="h-full w-full object-cover"
-                      src={screenshotPreview.imageUrl}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-3 p-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-bold">{screenshotPreview.name}</p>
-                      <p className="mt-1 text-xs font-semibold text-muted-foreground">
-                        {formatFileSize(screenshotPreview.size)}
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0"
-                      aria-label="이미지 제거"
-                      onClick={() => {
-                        setScreenshotPreview(null);
-                        setVisionProgress(null);
-                        setVisionResult(null);
-                      }}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex min-h-28 items-center justify-center rounded-lg border border-dashed border-border bg-[hsl(var(--surface-2))] text-center">
-                  <div>
-                    <Clipboard className="mx-auto h-6 w-6 text-primary" />
-                    <p className="mt-2 text-sm font-bold">스크린샷</p>
-                    <p className="mt-1 text-xs font-semibold text-muted-foreground">대기</p>
-                  </div>
-                </div>
-              )}
-
-              {visionProgress ? (
-                <div className="mt-3 rounded-md border border-border bg-background p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="truncate text-xs font-bold">{visionProgress.message}</p>
-                    {typeof visionProgress.progress === 'number' ? (
-                      <span className="text-xs font-bold text-muted-foreground">
-                        {Math.round(visionProgress.progress)}%
-                      </span>
-                    ) : null}
-                  </div>
-                  {typeof visionProgress.progress === 'number' ? (
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary">
-                      <div
-                        className="h-full rounded-full bg-primary transition-all"
-                        style={{
-                          width: `${Math.max(4, Math.min(100, visionProgress.progress))}%`,
-                        }}
-                      />
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {visionResult ? (
-                <div className="mt-3 grid gap-2">
-                  <div className="rounded-md border border-border bg-background p-3">
-                    <p className="metric-label">분석 결과</p>
-                    <p className="mt-2 truncate text-sm font-bold">
-                      {visionResult.draft.mapId ? getMapLabel(visionResult.draft.mapId) : '맵 확인'}{' '}
-                      ·{' '}
-                      {visionResult.draft.result
-                        ? getResultLabel(visionResult.draft.result)
-                        : '결과 확인'}
-                    </p>
-                  </div>
-                  {visionResult.warnings.length > 0 ? (
-                    <div className="rounded-md border border-[hsl(var(--warning)/0.35)] bg-[hsl(var(--warning)/0.08)] p-3">
-                      <p className="text-xs font-semibold leading-5">
-                        {visionResult.warnings.slice(0, 1).join(' ')}
-                      </p>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 2xl:grid-cols-1">
-                <Button type="button" disabled={isExtractingVision} onClick={openScreenshotEntry}>
-                  {isExtractingVision ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : screenshotPreview ? (
-                    <Wand2 className="h-4 w-4" />
-                  ) : (
-                    <Plus className="h-4 w-4" />
-                  )}
-                  {isExtractingVision
-                    ? '분석 중'
-                    : screenshotPreview
-                      ? visionResult
-                        ? '결과 열기'
-                        : '이미지 분석'
-                      : '상세 입력'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="bg-transparent"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <ImagePlus className="h-4 w-4" />
-                  이미지 선택
-                </Button>
-              </div>
-            </div>
-          </aside>
+        <div className="p-4 sm:p-5">
+          <QuickMatchEntry
+            accounts={activePlayerAccounts}
+            defaultSettings={userSettings}
+            isSubmitting={createMatchMutation.isPending}
+            onSubmit={handleCreateMatch}
+          />
         </div>
       </section>
 
@@ -826,6 +565,158 @@ const HomePage = () => {
           )}
         </div>
       </section>
+
+      <Dialog open={toolsOpen} onOpenChange={setToolsOpen}>
+        <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-2xl gap-0 p-0 sm:max-h-[calc(100dvh-3rem)]">
+          <DialogHeader className="border-b border-border bg-card px-4 py-4 pr-12 sm:px-5">
+            <DialogTitle>보조 입력</DialogTitle>
+            <DialogDescription>상세 기록과 이미지 분석은 필요할 때만 사용합니다.</DialogDescription>
+          </DialogHeader>
+
+          <div
+            className="max-h-[calc(100dvh-7rem)] overflow-y-auto p-4 sm:max-h-[calc(100dvh-9rem)] sm:p-5"
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={handleDrop}
+          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                className="rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-secondary"
+                onClick={openDirectEntry}
+              >
+                <p className="metric-label">수기</p>
+                <p className="mt-2 text-base font-bold">상세 입력</p>
+                <p className="mt-2 text-xs font-semibold leading-5 text-muted-foreground">
+                  계정, 시간, 영웅, 메모까지 수정합니다.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                className="rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-secondary"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <p className="metric-label">이미지</p>
+                <p className="mt-2 text-base font-bold">스크린샷 선택</p>
+                <p className="mt-2 text-xs font-semibold leading-5 text-muted-foreground">
+                  붙여넣기, 드롭, 파일 선택을 지원합니다.
+                </p>
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-border bg-card p-3">
+              {screenshotPreview ? (
+                <div className="grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
+                  <div className="aspect-video overflow-hidden rounded-md bg-secondary">
+                    <img
+                      alt={screenshotPreview.name}
+                      className="h-full w-full object-cover"
+                      src={screenshotPreview.imageUrl}
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="metric-label">선택된 이미지</p>
+                        <p className="mt-2 truncate text-sm font-bold">{screenshotPreview.name}</p>
+                        <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                          {formatFileSize(screenshotPreview.size)}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 shrink-0"
+                        aria-label="이미지 제거"
+                        onClick={() => {
+                          setScreenshotPreview(null);
+                          setVisionProgress(null);
+                          setVisionResult(null);
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    {visionProgress ? (
+                      <div className="mt-3 rounded-md border border-border bg-background p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="truncate text-xs font-bold">{visionProgress.message}</p>
+                          {typeof visionProgress.progress === 'number' ? (
+                            <span className="text-xs font-bold text-muted-foreground">
+                              {Math.round(visionProgress.progress)}%
+                            </span>
+                          ) : null}
+                        </div>
+                        {typeof visionProgress.progress === 'number' ? (
+                          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary">
+                            <div
+                              className="h-full rounded-full bg-primary transition-all"
+                              style={{
+                                width: `${Math.max(4, Math.min(100, visionProgress.progress))}%`,
+                              }}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {visionResult ? (
+                      <div className="mt-3 rounded-md border border-border bg-background p-3">
+                        <p className="metric-label">분석 결과</p>
+                        <p className="mt-2 truncate text-sm font-bold">
+                          {visionResult.draft.mapId
+                            ? getMapLabel(visionResult.draft.mapId)
+                            : '맵 확인'}{' '}
+                          ·{' '}
+                          {visionResult.draft.result
+                            ? getResultLabel(visionResult.draft.result)
+                            : '결과 확인'}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex min-h-28 items-center justify-center rounded-md border border-dashed border-border bg-[hsl(var(--surface-2))] text-center">
+                  <div>
+                    <Clipboard className="mx-auto h-6 w-6 text-primary" />
+                    <p className="mt-2 text-sm font-bold">이미지 없음</p>
+                    <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                      붙여넣거나 파일을 선택하세요.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <Button
+                  type="button"
+                  disabled={!screenshotPreview || isExtractingVision}
+                  onClick={openScreenshotEntry}
+                >
+                  {isExtractingVision ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Wand2 className="h-4 w-4" />
+                  )}
+                  {isExtractingVision ? '분석 중' : visionResult ? '결과 열기' : '이미지 분석'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="bg-transparent"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <ImagePlus className="h-4 w-4" />
+                  이미지 선택
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <MatchEntryDialog
         accounts={editingMatch ? playerAccounts : activePlayerAccounts}

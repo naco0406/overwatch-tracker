@@ -1,4 +1,13 @@
-import { CalendarDays, CheckSquare, Pencil, RotateCcw, Save, Search, Trash2 } from 'lucide-react';
+import {
+  CalendarDays,
+  CheckSquare,
+  Pencil,
+  RotateCcw,
+  Save,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+} from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 
 import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
@@ -103,6 +112,8 @@ const RecordsPage = () => {
   const [bulkResult, setBulkResult] = useState<MatchResult | 'keep'>('keep');
   const [bulkMapId, setBulkMapId] = useState('keep');
   const [bulkAccountId, setBulkAccountId] = useState('keep');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [bulkActionsOpen, setBulkActionsOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [isBulkSaving, setIsBulkSaving] = useState(false);
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
@@ -283,6 +294,7 @@ const RecordsPage = () => {
       setBulkResult('keep');
       setBulkMapId('keep');
       setBulkAccountId('keep');
+      setBulkActionsOpen(false);
       toast({
         description: `${selectedMatches.length.toLocaleString('ko-KR')}개 기록을 수정했습니다.`,
         title: '벌크 수정 완료',
@@ -311,6 +323,7 @@ const RecordsPage = () => {
 
       setSelectedIds([]);
       setBulkDeleteOpen(false);
+      setBulkActionsOpen(false);
       toast({
         description: `${selectedMatches.length.toLocaleString('ko-KR')}개 기록을 삭제했습니다.`,
         title: '벌크 삭제 완료',
@@ -327,21 +340,7 @@ const RecordsPage = () => {
 
   return (
     <div className="flex flex-1 flex-col gap-6">
-      <PageHeader
-        eyebrow="데이터"
-        title="기록"
-        actions={
-          <Button
-            variant="outline"
-            className="bg-transparent"
-            disabled={activeFilterCount === 0}
-            onClick={resetFilters}
-          >
-            <RotateCcw className="h-4 w-4" />
-            초기화
-          </Button>
-        }
-      />
+      <PageHeader eyebrow="데이터" title="기록" />
 
       <section className="workspace-panel overflow-hidden">
         <div className="grid border-b border-border md:grid-cols-3">
@@ -351,7 +350,7 @@ const RecordsPage = () => {
         </div>
 
         <div className="border-b border-border p-4 sm:p-5">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_180px_220px]">
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -361,85 +360,42 @@ const RecordsPage = () => {
                 onChange={(event) => setSearchQuery(event.target.value)}
               />
             </div>
-
-            <Select
-              value={modeFilter}
-              onValueChange={(value) => setModeFilter(value as ModeId | 'all')}
+            <Button
+              type="button"
+              variant="outline"
+              className="bg-transparent"
+              onClick={() => setFiltersOpen(true)}
             >
-              <SelectTrigger className="h-11 bg-card">
-                <SelectValue placeholder="모드" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">전체 모드</SelectItem>
-                {modeOptions.map((mode) => (
-                  <SelectItem key={mode.value} value={mode.value}>
-                    {mode.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={accountFilter} onValueChange={setAccountFilter}>
-              <SelectTrigger className="h-11 bg-card">
-                <SelectValue placeholder="계정" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">전체 계정</SelectItem>
-                <SelectItem value="unassigned">미지정</SelectItem>
-                {playerAccounts.map((account) => (
-                  <SelectItem key={account.id} value={account.id}>
-                    {getPlayerAccountLabel(account)}
-                    {account.isMain ? ' · 본계' : ''}
-                    {!account.isActive ? ' · 비활성' : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1 lg:justify-end">
-              {periodOptions.map((period) => (
-                <FilterButton
-                  key={period.value}
-                  active={periodFilter === period.value}
-                  onClick={() => setPeriodFilter(period.value)}
-                >
-                  {period.label}
-                </FilterButton>
-              ))}
-            </div>
+              <SlidersHorizontal className="h-4 w-4" />
+              필터{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}
+            </Button>
+            <Button
+              type="button"
+              disabled={selectedMatches.length === 0}
+              onClick={() => setBulkActionsOpen(true)}
+            >
+              <CheckSquare className="h-4 w-4" />
+              작업
+            </Button>
           </div>
 
-          <div className="mt-3 mobile-scroll flex gap-2 overflow-x-auto pb-1">
-            <FilterButton active={resultFilter === 'all'} onClick={() => setResultFilter('all')}>
-              전체 결과
-            </FilterButton>
-            {resultOptions.map((result) => (
-              <FilterButton
-                key={result.value}
-                active={resultFilter === result.value}
-                onClick={() => setResultFilter(result.value)}
+          {selectedMatches.length > 0 ? (
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/[0.06] p-3">
+              <p className="text-sm font-bold">
+                {selectedMatches.length.toLocaleString('ko-KR')}개 선택
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="bg-card"
+                onClick={() => setSelectedIds([])}
               >
-                {result.label}
-              </FilterButton>
-            ))}
-          </div>
+                해제
+              </Button>
+            </div>
+          ) : null}
         </div>
-
-        <BulkActionBar
-          accounts={playerAccounts}
-          bulkAccountId={bulkAccountId}
-          bulkMapId={bulkMapId}
-          bulkResult={bulkResult}
-          disabled={selectedMatches.length === 0 || isBulkSaving}
-          isSaving={isBulkSaving}
-          selectedCount={selectedMatches.length}
-          onApply={handleBulkUpdate}
-          onBulkAccountChange={setBulkAccountId}
-          onBulkDelete={() => setBulkDeleteOpen(true)}
-          onBulkMapChange={setBulkMapId}
-          onBulkResultChange={(value) => setBulkResult(value as MatchResult | 'keep')}
-          onClearSelection={() => setSelectedIds([])}
-        />
 
         <div className="p-4 sm:p-5">
           {isLoading ? (
@@ -532,6 +488,125 @@ const RecordsPage = () => {
           )}
         </div>
       </section>
+
+      <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <DialogContent className="max-w-2xl gap-0 p-0">
+          <DialogHeader className="border-b border-border px-4 py-4 pr-12 sm:px-5">
+            <DialogTitle>필터</DialogTitle>
+            <DialogDescription>필요한 조건만 켜서 기록을 좁힙니다.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5 p-4 sm:p-5">
+            <div>
+              <p className="metric-label mb-2">기간</p>
+              <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1">
+                {periodOptions.map((period) => (
+                  <FilterButton
+                    key={period.value}
+                    active={periodFilter === period.value}
+                    onClick={() => setPeriodFilter(period.value)}
+                  >
+                    {period.label}
+                  </FilterButton>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Select
+                value={modeFilter}
+                onValueChange={(value) => setModeFilter(value as ModeId | 'all')}
+              >
+                <SelectTrigger className="h-11 bg-card">
+                  <SelectValue placeholder="모드" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">전체 모드</SelectItem>
+                  {modeOptions.map((mode) => (
+                    <SelectItem key={mode.value} value={mode.value}>
+                      {mode.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={resultFilter}
+                onValueChange={(value) => setResultFilter(value as MatchResult | 'all')}
+              >
+                <SelectTrigger className="h-11 bg-card">
+                  <SelectValue placeholder="결과" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">전체 결과</SelectItem>
+                  {resultOptions.map((result) => (
+                    <SelectItem key={result.value} value={result.value}>
+                      {result.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={accountFilter} onValueChange={setAccountFilter}>
+                <SelectTrigger className="h-11 bg-card">
+                  <SelectValue placeholder="계정" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">전체 계정</SelectItem>
+                  <SelectItem value="unassigned">미지정</SelectItem>
+                  {playerAccounts.map((account) => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {getPlayerAccountLabel(account)}
+                      {account.isMain ? ' · 본계' : ''}
+                      {!account.isActive ? ' · 비활성' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter className="border-t border-border px-4 py-4 sm:px-5">
+            <Button
+              type="button"
+              variant="outline"
+              className="bg-transparent"
+              disabled={activeFilterCount === 0}
+              onClick={resetFilters}
+            >
+              <RotateCcw className="h-4 w-4" />
+              초기화
+            </Button>
+            <Button type="button" onClick={() => setFiltersOpen(false)}>
+              적용
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkActionsOpen} onOpenChange={setBulkActionsOpen}>
+        <DialogContent className="max-w-3xl gap-0 p-0">
+          <DialogHeader className="border-b border-border px-4 py-4 pr-12 sm:px-5">
+            <DialogTitle>선택 작업</DialogTitle>
+            <DialogDescription>
+              {selectedMatches.length.toLocaleString('ko-KR')}개 기록을 수정합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <BulkActionBar
+            accounts={playerAccounts}
+            bulkAccountId={bulkAccountId}
+            bulkMapId={bulkMapId}
+            bulkResult={bulkResult}
+            disabled={selectedMatches.length === 0 || isBulkSaving}
+            isSaving={isBulkSaving}
+            selectedCount={selectedMatches.length}
+            onApply={handleBulkUpdate}
+            onBulkAccountChange={setBulkAccountId}
+            onBulkDelete={() => setBulkDeleteOpen(true)}
+            onBulkMapChange={setBulkMapId}
+            onBulkResultChange={(value) => setBulkResult(value as MatchResult | 'keep')}
+            onClearSelection={() => setSelectedIds([])}
+          />
+        </DialogContent>
+      </Dialog>
 
       <MatchEntryDialog
         accounts={playerAccounts}
