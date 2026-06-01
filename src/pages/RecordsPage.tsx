@@ -490,12 +490,12 @@ const RecordsPage = () => {
       </section>
 
       <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
-        <DialogContent className="max-w-2xl gap-0 p-0">
+        <DialogContent className="flex h-[calc(100dvh-1rem)] max-w-2xl flex-col gap-0 p-0 sm:h-[460px] sm:max-h-[calc(100dvh-3rem)]">
           <DialogHeader className="border-b border-border px-4 py-4 pr-12 sm:px-5">
             <DialogTitle>필터</DialogTitle>
             <DialogDescription>필요한 조건만 켜서 기록을 좁힙니다.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-5 p-4 sm:p-5">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:p-5">
             <div>
               <p className="metric-label mb-2">기간</p>
               <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1">
@@ -583,7 +583,7 @@ const RecordsPage = () => {
       </Dialog>
 
       <Dialog open={bulkActionsOpen} onOpenChange={setBulkActionsOpen}>
-        <DialogContent className="max-w-3xl gap-0 p-0">
+        <DialogContent className="flex h-[calc(100dvh-1rem)] max-w-3xl flex-col gap-0 p-0 sm:h-[430px] sm:max-h-[calc(100dvh-3rem)]">
           <DialogHeader className="border-b border-border px-4 py-4 pr-12 sm:px-5">
             <DialogTitle>선택 작업</DialogTitle>
             <DialogDescription>

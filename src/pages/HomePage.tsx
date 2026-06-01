@@ -567,14 +567,14 @@ const HomePage = () => {
       </section>
 
       <Dialog open={toolsOpen} onOpenChange={setToolsOpen}>
-        <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-2xl gap-0 p-0 sm:max-h-[calc(100dvh-3rem)]">
+        <DialogContent className="flex h-[calc(100dvh-1rem)] max-w-2xl flex-col gap-0 p-0 sm:h-[680px] sm:max-h-[calc(100dvh-3rem)]">
           <DialogHeader className="border-b border-border bg-card px-4 py-4 pr-12 sm:px-5">
             <DialogTitle>보조 입력</DialogTitle>
             <DialogDescription>상세 기록과 이미지 분석은 필요할 때만 사용합니다.</DialogDescription>
           </DialogHeader>
 
           <div
-            className="max-h-[calc(100dvh-7rem)] overflow-y-auto p-4 sm:max-h-[calc(100dvh-9rem)] sm:p-5"
+            className="flex min-h-0 flex-1 flex-col p-4 sm:p-5"
             onDragOver={(event) => event.preventDefault()}
             onDrop={handleDrop}
           >
@@ -604,7 +604,7 @@ const HomePage = () => {
               </button>
             </div>
 
-            <div className="mt-4 rounded-lg border border-border bg-card p-3">
+            <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-card p-3">
               {screenshotPreview ? (
                 <div className="grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
                   <div className="aspect-video overflow-hidden rounded-md bg-secondary">
@@ -679,7 +679,7 @@ const HomePage = () => {
                   </div>
                 </div>
               ) : (
-                <div className="flex min-h-28 items-center justify-center rounded-md border border-dashed border-border bg-[hsl(var(--surface-2))] text-center">
+                <div className="flex h-full min-h-56 items-center justify-center rounded-md border border-dashed border-border bg-[hsl(var(--surface-2))] text-center">
                   <div>
                     <Clipboard className="mx-auto h-6 w-6 text-primary" />
                     <p className="mt-2 text-sm font-bold">이미지 없음</p>

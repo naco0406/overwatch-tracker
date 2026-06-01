@@ -296,11 +296,11 @@ const QuickMatchEntry = ({
       </div>
 
       <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
-        <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-2xl gap-0 p-0 sm:max-h-[calc(100dvh-3rem)]">
+        <DialogContent className="flex h-[calc(100dvh-1rem)] max-w-3xl flex-col gap-0 p-0 sm:h-[760px] sm:max-h-[calc(100dvh-3rem)]">
           <DialogHeader className="border-b border-border bg-card px-4 py-4 pr-12 sm:px-5">
             <DialogTitle>맵 선택</DialogTitle>
           </DialogHeader>
-          <div className="p-4 sm:p-5">
+          <div className="flex min-h-0 flex-1 flex-col p-4 sm:p-5">
             <Input
               autoFocus
               placeholder="맵 검색"
@@ -321,43 +321,46 @@ const QuickMatchEntry = ({
                 </ModeButton>
               ))}
             </div>
-            <div className="mt-4 grid max-h-[58dvh] gap-3 overflow-y-auto rounded-lg border border-border bg-[hsl(var(--surface-2))] p-2 sm:grid-cols-2">
-              {filteredMaps.map((map) => (
-                <button
-                  key={map.value}
-                  type="button"
-                  className={cn(
-                    'overflow-hidden rounded-md border bg-card text-left transition-[background-color,border-color,color] hover:border-primary/35 hover:bg-secondary',
-                    map.value === mapId && 'border-primary bg-primary/[0.06]',
-                  )}
-                  onClick={() => selectMap(map.value)}
-                >
-                  <span className="block aspect-[16/9] overflow-hidden bg-secondary">
-                    <img
-                      alt={map.label}
-                      className="h-full w-full object-cover"
-                      src={getMapScreenshotPath(map.value)}
-                      loading="lazy"
-                    />
-                  </span>
-                  <span className="flex items-center justify-between gap-3 px-3 py-2">
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-bold">{map.label}</span>
-                      <span className="mt-1 block text-xs font-semibold text-muted-foreground">
-                        {getModeLabel(map.modeId)}
+            <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-[hsl(var(--surface-2))] p-2">
+              {filteredMaps.length > 0 ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {filteredMaps.map((map) => (
+                    <button
+                      key={map.value}
+                      type="button"
+                      className={cn(
+                        'overflow-hidden rounded-md border bg-card text-left transition-[background-color,border-color,color] hover:border-primary/35 hover:bg-secondary',
+                        map.value === mapId && 'border-primary bg-primary/[0.06]',
+                      )}
+                      onClick={() => selectMap(map.value)}
+                    >
+                      <span className="block aspect-[16/9] overflow-hidden bg-secondary">
+                        <img
+                          alt={map.label}
+                          className="h-full w-full object-cover"
+                          src={getMapScreenshotPath(map.value)}
+                          loading="lazy"
+                        />
                       </span>
-                    </span>
-                    {map.value === mapId ? (
-                      <span className="shrink-0 text-xs font-bold text-primary">선택됨</span>
-                    ) : null}
-                  </span>
-                </button>
-              ))}
-              {filteredMaps.length === 0 ? (
-                <div className="p-4 text-center text-sm font-semibold text-muted-foreground">
+                      <span className="flex items-center justify-between gap-3 px-3 py-2">
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-bold">{map.label}</span>
+                          <span className="mt-1 block text-xs font-semibold text-muted-foreground">
+                            {getModeLabel(map.modeId)}
+                          </span>
+                        </span>
+                        {map.value === mapId ? (
+                          <span className="shrink-0 text-xs font-bold text-primary">선택됨</span>
+                        ) : null}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex h-full min-h-72 items-center justify-center rounded-md border border-dashed border-border bg-card text-center text-sm font-semibold text-muted-foreground">
                   검색 결과 없음
                 </div>
-              ) : null}
+              )}
             </div>
           </div>
         </DialogContent>
