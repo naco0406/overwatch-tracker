@@ -1,17 +1,14 @@
 import {
   Activity,
   CalendarDays,
-  CheckCircle2,
   Clipboard,
   Clock3,
-  FilePlus2,
   Flag,
   ImagePlus,
   Loader2,
   MapIcon,
   Pencil,
   Plus,
-  ShieldCheck,
   Trash2,
   TrendingUp,
   Wand2,
@@ -31,6 +28,7 @@ import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
 import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
+import { QuickMatchEntry } from '@/components/input/QuickMatchEntry';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
@@ -124,12 +122,6 @@ const getSummaryMetrics = (matches: Match[]) => {
   ];
 };
 
-const pipeline = [
-  { label: '캡처', icon: Clipboard },
-  { label: '확인', icon: CheckCircle2 },
-  { label: '저장', icon: ShieldCheck },
-];
-
 const HomePage = () => {
   const [entryDialogOpen, setEntryDialogOpen] = useState(false);
   const [entrySource, setEntrySource] = useState<MatchCreateInput['source']>('manual');
@@ -191,7 +183,8 @@ const HomePage = () => {
         { label: '스코어', value: `${latestMatch.teamScore} : ${latestMatch.enemyScore}` },
         {
           label: '영웅',
-          value: latestMatch.myHeroes.map((heroId) => getHeroLabel(heroId)).join(', ') || '-',
+          value:
+            latestMatch.myHeroes.map((heroId) => getHeroLabel(heroId)).join(', ') || '영웅 미지정',
         },
       ]
     : [
@@ -499,7 +492,7 @@ const HomePage = () => {
               </div>
               <div className="p-3">
                 <p className="metric-label">입력</p>
-                <p className="mt-2 text-sm font-semibold">OCR 우선</p>
+                <p className="mt-2 text-sm font-semibold">수기 우선</p>
               </div>
             </div>
           </div>
@@ -507,222 +500,15 @@ const HomePage = () => {
 
         <div className="grid 2xl:grid-cols-[minmax(0,1fr)_340px]">
           <div className="p-4 sm:p-5">
-            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="metric-label">입력</p>
-                <h2 className="mt-2 text-2xl font-bold tracking-normal">새 경기</h2>
-              </div>
-              <Badge
-                variant="outline"
-                className="hidden w-fit border-primary/25 bg-primary/5 text-primary sm:inline-flex"
-              >
-                클립보드 대기
-              </Badge>
-            </div>
-
-            <div
-              className="field-surface flex min-h-[320px] items-center justify-center p-6 text-center outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring/25 sm:min-h-[380px]"
-              aria-label="스크린샷 붙여넣기 영역"
-              tabIndex={0}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={handleDrop}
-            >
-              <div className="relative z-10 w-full max-w-lg">
-                {screenshotPreview ? (
-                  <div className="overflow-hidden rounded-lg border border-border bg-card text-left">
-                    <div className="aspect-video bg-secondary">
-                      <img
-                        alt={screenshotPreview.name}
-                        className="h-full w-full object-cover"
-                        src={screenshotPreview.imageUrl}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <p className="metric-label">스크린샷</p>
-                        <p className="mt-1 truncate text-sm font-bold">{screenshotPreview.name}</p>
-                        <p className="mt-1 text-xs font-semibold text-muted-foreground">
-                          {formatFileSize(screenshotPreview.size)}
-                        </p>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="bg-transparent"
-                        onClick={() => {
-                          setScreenshotPreview(null);
-                          setVisionProgress(null);
-                          setVisionResult(null);
-                        }}
-                      >
-                        <X className="h-4 w-4" />
-                        제거
-                      </Button>
-                    </div>
-                    <div className="border-t border-border p-4">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="status-chip">
-                          <Wand2 className="h-3.5 w-3.5" />
-                          이미지 분석
-                        </span>
-                        <span className="status-chip">
-                          <span className="status-dot" />
-                          영역 탐지
-                        </span>
-                        <span className="status-chip">
-                          <span className="status-dot" />
-                          OCR
-                        </span>
-                        <span className="status-chip">
-                          <span className="status-dot" />
-                          전장 매칭
-                        </span>
-                        <span className="status-chip">
-                          <span className="status-dot" />
-                          영웅 매칭
-                        </span>
-                        <span className="status-chip">
-                          <span className="status-dot" />내 행 탐지
-                        </span>
-                      </div>
-
-                      {visionProgress ? (
-                        <div className="mt-3 rounded-md border border-border bg-background p-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="truncate text-xs font-bold">{visionProgress.message}</p>
-                            {typeof visionProgress.progress === 'number' ? (
-                              <span className="text-xs font-bold text-muted-foreground">
-                                {Math.round(visionProgress.progress)}%
-                              </span>
-                            ) : null}
-                          </div>
-                          {typeof visionProgress.progress === 'number' ? (
-                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary">
-                              <div
-                                className="h-full rounded-full bg-primary transition-all"
-                                style={{
-                                  width: `${Math.max(4, Math.min(100, visionProgress.progress))}%`,
-                                }}
-                              />
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : null}
-
-                      {visionResult ? (
-                        <div className="mt-3 space-y-3">
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            <div className="rounded-md border border-border bg-background p-3">
-                              <p className="metric-label">결과</p>
-                              <p className="mt-2 text-sm font-bold">
-                                {visionResult.draft.result
-                                  ? getResultLabel(visionResult.draft.result)
-                                  : '확인 필요'}{' '}
-                                · {visionResult.draft.teamScore ?? '--'}:
-                                {visionResult.draft.enemyScore ?? '--'}
-                              </p>
-                            </div>
-                            <div className="rounded-md border border-border bg-background p-3">
-                              <p className="metric-label">전장</p>
-                              <p className="mt-2 truncate text-sm font-bold">
-                                {visionResult.draft.mapId
-                                  ? getMapLabel(visionResult.draft.mapId)
-                                  : '확인 필요'}
-                              </p>
-                            </div>
-                            <div className="rounded-md border border-border bg-background p-3">
-                              <p className="metric-label">영웅</p>
-                              <p className="mt-2 truncate text-sm font-bold">
-                                {visionResult.draft.myHeroes?.length
-                                  ? visionResult.draft.myHeroes.map(getHeroLabel).join(', ')
-                                  : '확인 필요'}
-                              </p>
-                            </div>
-                            <div className="rounded-md border border-border bg-background p-3">
-                              <p className="metric-label">후보</p>
-                              <p className="mt-2 text-sm font-bold">
-                                전장 {visionResult.mapCandidates.length} · 영웅{' '}
-                                {visionResult.heroCandidates.length}
-                              </p>
-                            </div>
-                          </div>
-                          {visionResult.warnings.length > 0 ? (
-                            <div className="rounded-md border border-[hsl(var(--warning)/0.35)] bg-[hsl(var(--warning)/0.08)] p-3 text-left">
-                              <p className="metric-label text-[hsl(var(--warning))]">확인</p>
-                              <p className="mt-2 text-xs font-semibold leading-5 text-foreground">
-                                {visionResult.warnings.slice(0, 2).join(' ')}
-                              </p>
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-lg border border-primary/20 bg-card text-primary">
-                      <Clipboard className="h-7 w-7" />
-                    </div>
-                    <h3 className="mt-5 text-2xl font-bold tracking-normal">스코어보드 캡처</h3>
-                    <p className="mt-2 text-sm text-muted-foreground">붙여넣기 또는 파일 선택</p>
-                  </>
-                )}
-
-                <div className="mt-7 grid gap-2 sm:grid-cols-2">
-                  <Button
-                    size="lg"
-                    type="button"
-                    disabled={isExtractingVision}
-                    onClick={openScreenshotEntry}
-                  >
-                    {isExtractingVision ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : screenshotPreview ? (
-                      <Wand2 className="h-4 w-4" />
-                    ) : (
-                      <FilePlus2 className="h-4 w-4" />
-                    )}
-                    {isExtractingVision
-                      ? '분석 중'
-                      : screenshotPreview
-                        ? visionResult
-                          ? '분석 결과 열기'
-                          : '이미지 분석'
-                        : '직접 입력'}
-                  </Button>
-                  <Button
-                    size="lg"
-                    type="button"
-                    variant="outline"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <ImagePlus className="h-4 w-4" />
-                    이미지 선택
-                  </Button>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 grid overflow-hidden rounded-lg border border-border sm:grid-cols-3">
-              {pipeline.map((item, index) => (
-                <div
-                  key={item.label}
-                  className="flat-row tap-target flex items-center gap-3 p-3 sm:border-b-0 sm:border-r sm:last:border-r-0"
-                >
-                  <div className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary text-primary">
-                    <item.icon className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground">STEP {index + 1}</p>
-                    <p className="text-sm font-semibold">{item.label}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <QuickMatchEntry
+              accounts={activePlayerAccounts}
+              defaultSettings={userSettings}
+              isSubmitting={createMatchMutation.isPending}
+              onSubmit={handleCreateMatch}
+            />
           </div>
 
-          <aside className="border-t border-border bg-[hsl(var(--surface-2))] p-4 sm:p-5 2xl:border-l 2xl:border-t-0">
+          <aside className="space-y-5 border-t border-border bg-[hsl(var(--surface-2))] p-4 sm:p-5 2xl:border-l 2xl:border-t-0">
             <div className="flex items-center justify-between">
               <div>
                 <p className="metric-label">확인 패널</p>
@@ -783,6 +569,140 @@ const HomePage = () => {
                 <p className="mt-1 text-xs font-semibold">{todaySessions.length}</p>
               </div>
             </div>
+
+            <div
+              className="rounded-lg border border-border bg-card p-3 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring/25"
+              aria-label="스크린샷 보조 입력"
+              tabIndex={0}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={handleDrop}
+            >
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="metric-label">보조 입력</p>
+                  <h3 className="mt-2 text-base font-bold">이미지 분석</h3>
+                </div>
+                <span className="status-chip">
+                  <Wand2 className="h-3.5 w-3.5" />
+                  OCR
+                </span>
+              </div>
+
+              {screenshotPreview ? (
+                <div className="overflow-hidden rounded-lg border border-border bg-[hsl(var(--surface-2))]">
+                  <div className="aspect-video bg-secondary">
+                    <img
+                      alt={screenshotPreview.name}
+                      className="h-full w-full object-cover"
+                      src={screenshotPreview.imageUrl}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-3 p-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold">{screenshotPreview.name}</p>
+                      <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                        {formatFileSize(screenshotPreview.size)}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                      aria-label="이미지 제거"
+                      onClick={() => {
+                        setScreenshotPreview(null);
+                        setVisionProgress(null);
+                        setVisionResult(null);
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex min-h-28 items-center justify-center rounded-lg border border-dashed border-border bg-[hsl(var(--surface-2))] text-center">
+                  <div>
+                    <Clipboard className="mx-auto h-6 w-6 text-primary" />
+                    <p className="mt-2 text-sm font-bold">스크린샷</p>
+                    <p className="mt-1 text-xs font-semibold text-muted-foreground">대기</p>
+                  </div>
+                </div>
+              )}
+
+              {visionProgress ? (
+                <div className="mt-3 rounded-md border border-border bg-background p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="truncate text-xs font-bold">{visionProgress.message}</p>
+                    {typeof visionProgress.progress === 'number' ? (
+                      <span className="text-xs font-bold text-muted-foreground">
+                        {Math.round(visionProgress.progress)}%
+                      </span>
+                    ) : null}
+                  </div>
+                  {typeof visionProgress.progress === 'number' ? (
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary">
+                      <div
+                        className="h-full rounded-full bg-primary transition-all"
+                        style={{
+                          width: `${Math.max(4, Math.min(100, visionProgress.progress))}%`,
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {visionResult ? (
+                <div className="mt-3 grid gap-2">
+                  <div className="rounded-md border border-border bg-background p-3">
+                    <p className="metric-label">분석 결과</p>
+                    <p className="mt-2 truncate text-sm font-bold">
+                      {visionResult.draft.mapId ? getMapLabel(visionResult.draft.mapId) : '맵 확인'}{' '}
+                      ·{' '}
+                      {visionResult.draft.result
+                        ? getResultLabel(visionResult.draft.result)
+                        : '결과 확인'}
+                    </p>
+                  </div>
+                  {visionResult.warnings.length > 0 ? (
+                    <div className="rounded-md border border-[hsl(var(--warning)/0.35)] bg-[hsl(var(--warning)/0.08)] p-3">
+                      <p className="text-xs font-semibold leading-5">
+                        {visionResult.warnings.slice(0, 1).join(' ')}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 2xl:grid-cols-1">
+                <Button type="button" disabled={isExtractingVision} onClick={openScreenshotEntry}>
+                  {isExtractingVision ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : screenshotPreview ? (
+                    <Wand2 className="h-4 w-4" />
+                  ) : (
+                    <Plus className="h-4 w-4" />
+                  )}
+                  {isExtractingVision
+                    ? '분석 중'
+                    : screenshotPreview
+                      ? visionResult
+                        ? '결과 열기'
+                        : '이미지 분석'
+                      : '상세 입력'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="bg-transparent"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <ImagePlus className="h-4 w-4" />
+                  이미지 선택
+                </Button>
+              </div>
+            </div>
           </aside>
         </div>
       </section>
@@ -838,7 +758,8 @@ const HomePage = () => {
                     </p>
                     <p className="mt-1 truncate text-xs text-muted-foreground">
                       {getPlayerAccountLabel(accountById.get(match.accountId ?? ''))} ·{' '}
-                      {match.myHeroes.map((heroId) => getHeroLabel(heroId)).join(', ')}
+                      {match.myHeroes.map((heroId) => getHeroLabel(heroId)).join(', ') ||
+                        '영웅 미지정'}
                     </p>
                   </div>
                   <div

@@ -158,7 +158,6 @@ const MatchEntryForm = ({
   const [selectedHeroes, setSelectedHeroes] = useState<string[]>(
     initialMatch?.myHeroes ?? initialDraft?.myHeroes ?? [],
   );
-  const [heroError, setHeroError] = useState('');
   const [heroQuery, setHeroQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<HeroRoleFilter>('all');
 
@@ -216,7 +215,6 @@ const MatchEntryForm = ({
   }, [defaultSettings, form, initialDraft?.queueType, initialMatch]);
 
   const toggleHero = (heroId: string) => {
-    setHeroError('');
     setSelectedHeroes((current) =>
       current.includes(heroId)
         ? current.filter((selectedHero) => selectedHero !== heroId)
@@ -230,17 +228,11 @@ const MatchEntryForm = ({
       initialMatch ? (initialMatch.accountId ?? '') : (initialDraft?.accountId ?? null),
     );
     setSelectedHeroes(initialMatch?.myHeroes ?? initialDraft?.myHeroes ?? []);
-    setHeroError('');
     setHeroQuery('');
     setRoleFilter('all');
   };
 
   const submit = form.handleSubmit(async (values) => {
-    if (selectedHeroes.length === 0) {
-      setHeroError('영웅을 1명 이상 선택하세요.');
-      return;
-    }
-
     await onSubmit({
       account: selectedAccount?.isMain === false ? 'sub' : 'main',
       accountId: selectedAccount?.id ?? null,
@@ -557,7 +549,6 @@ const MatchEntryForm = ({
               ))}
             </div>
           ) : null}
-          {heroError ? <p className="text-sm font-medium text-destructive">{heroError}</p> : null}
         </section>
 
         <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
