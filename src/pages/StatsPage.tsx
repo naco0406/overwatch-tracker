@@ -43,7 +43,7 @@ import {
 import { getHeroPortraitPath, getMapScreenshotPath } from '@/data/masterAssets';
 import { useMatches } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
-import { formatWinRate, getPeakHour, summarizeResults } from '@/lib/matchStats';
+import { formatWinRate, summarizeResults } from '@/lib/matchStats';
 import { groupMatchesBySession } from '@/lib/session';
 import { cn } from '@/lib/utils';
 import type { Match, ModeId, QueueType } from '@/types/match';
@@ -77,6 +77,11 @@ const getPeriodStart = (period: PeriodFilter) => {
 };
 
 const formatHour = (hour: number) => `${String(hour).padStart(2, '0')}:00`;
+
+const formatShare = (value: number) => `${value}%`;
+
+const getShare = (count: number, total: number) =>
+  total === 0 ? 0 : Math.round((count / total) * 100);
 
 const chartFontFamily =
   'Pretendard, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
@@ -153,7 +158,6 @@ const StatsPage = () => {
   }, [accountFilter, matches, modeFilter, periodFilter, queueFilter]);
 
   const summary = useMemo(() => summarizeResults(filteredMatches), [filteredMatches]);
-  const peakHour = useMemo(() => getPeakHour(filteredMatches), [filteredMatches]);
   const sessions = useMemo(() => groupMatchesBySession(filteredMatches), [filteredMatches]);
 
   const modeStats = useMemo(
@@ -164,6 +168,38 @@ const StatsPage = () => {
           return {
             ...summarizeResults(modeMatches),
             label: mode.label,
+            value: mode.value,
+          };
+        })
+        .filter((mode) => mode.total > 0),
+    [filteredMatches],
+  );
+
+  const modeMapStats = useMemo(
+    () =>
+      modeOptions
+        .map((mode) => {
+          const modeMatches = filteredMatches.filter((match) => match.modeId === mode.value);
+          const modeSummary = summarizeResults(modeMatches);
+          const maps = mapOptions
+            .filter((map) => map.modeId === mode.value)
+            .map((map) => {
+              const mapMatches = modeMatches.filter((match) => match.mapId === map.value);
+
+              return {
+                ...summarizeResults(mapMatches),
+                label: map.label,
+                pickRate: getShare(mapMatches.length, modeMatches.length),
+                value: map.value,
+              };
+            })
+            .filter((map) => map.total > 0)
+            .sort((a, b) => b.total - a.total || (b.winRate ?? -1) - (a.winRate ?? -1));
+
+          return {
+            ...modeSummary,
+            label: mode.label,
+            maps,
             value: mode.value,
           };
         })
@@ -285,9 +321,10 @@ const StatsPage = () => {
   );
 
   const maxModeCount = Math.max(1, ...modeStats.map((stat) => stat.total));
-  const maxMapCount = Math.max(1, ...mapStats.map((stat) => stat.total));
   const maxHeroCount = Math.max(1, ...heroStats.map((stat) => stat.total));
   const maxOrderCount = Math.max(1, ...orderStats.map((stat) => stat.total));
+  const topMap = mapStats[0] ?? null;
+  const topMode = [...modeStats].sort((a, b) => b.total - a.total)[0] ?? null;
   const activeFilterCount = [
     periodFilter !== '30d',
     modeFilter !== 'all',
@@ -316,16 +353,16 @@ const StatsPage = () => {
       value: formatWinRate(summary.winRate),
     },
     {
-      detail: '필터 내 고유 전장',
+      detail: topMap ? `${topMap.total}경기 · ${getModeLabel(topMap.modeId)}` : '기록 대기',
       icon: MapIcon,
-      label: '전장',
-      value: new Set(filteredMatches.map((match) => match.mapId)).size.toLocaleString('ko-KR'),
+      label: '최다 맵',
+      value: topMap ? topMap.label : '--',
     },
     {
-      detail: peakHour ? `${peakHour.count}경기 집중` : '기록 대기',
-      icon: Clock3,
-      label: '피크 시간',
-      value: peakHour ? `${peakHour.hour}시` : '--',
+      detail: topMode ? `${topMode.total}경기 · ${formatWinRate(topMode.winRate)}` : '기록 대기',
+      icon: BarChart3,
+      label: '최다 모드',
+      value: topMode ? topMode.label : '--',
     },
   ];
 
@@ -355,11 +392,57 @@ const StatsPage = () => {
             ))}
           </div>
 
+          <div className="section-divider section-pad">
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="metric-label">맵 인사이트</p>
+                <h2 className="mt-1 text-xl font-bold">모드와 전장 선택 흐름</h2>
+              </div>
+              <Badge variant="outline" className="w-fit bg-transparent">
+                {filteredMatches.length.toLocaleString('ko-KR')} 경기 기준
+              </Badge>
+            </div>
+
+            {modeMapStats.length > 0 ? (
+              <div className="grid gap-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
+                <div className="subpanel">
+                  <div className="section-header">
+                    <p className="metric-label">모드</p>
+                    <h3 className="mt-1 text-lg font-bold">모드별 승률</h3>
+                  </div>
+                  <div className="divide-y divide-border/70">
+                    {modeStats.map((stat) => (
+                      <ModeWinRateRow key={stat.value} maxCount={maxModeCount} stat={stat} />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="subpanel">
+                  <div className="section-header">
+                    <p className="metric-label">전장</p>
+                    <h3 className="mt-1 text-lg font-bold">모드 안 맵 선택 비율</h3>
+                  </div>
+                  <div className="grid gap-0 lg:grid-cols-2">
+                    {modeMapStats.map((mode) => (
+                      <ModeMapShareGroup key={mode.value} mode={mode} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <TabEmpty
+                icon={MapIcon}
+                isLoading={isLoading}
+                title="맵 통계를 만들 기록이 없습니다."
+              />
+            )}
+          </div>
+
           <div className="section-pad">
-            <Tabs defaultValue="mode" className="w-full">
+            <Tabs defaultValue="map" className="w-full">
               <TabsList className="mobile-scroll flex w-full justify-start overflow-x-auto xl:inline-flex xl:w-auto">
-                <TabsTrigger value="mode">모드</TabsTrigger>
                 <TabsTrigger value="map">전장</TabsTrigger>
+                <TabsTrigger value="mode">모드</TabsTrigger>
                 <TabsTrigger value="hero">영웅</TabsTrigger>
                 <TabsTrigger value="time">시간</TabsTrigger>
                 <TabsTrigger value="order">순서</TabsTrigger>
@@ -462,19 +545,39 @@ const StatsPage = () => {
               </TabsContent>
 
               <TabsContent value="map" className="mt-4">
-                <AnalysisPanel icon={MapIcon} label="전장 분포" title="전장별 성과">
-                  {mapStats.length > 0 ? (
-                    <div className="grid gap-3 lg:grid-cols-2">
-                      {mapStats.slice(0, 12).map((stat) => (
-                        <MediaStatRow
-                          key={stat.value}
-                          count={stat.total}
-                          detail={getModeLabel(stat.modeId)}
-                          imageSrc={getMapScreenshotPath(stat.value)}
-                          label={getMapLabel(stat.value)}
-                          maxCount={maxMapCount}
-                          winRate={stat.winRate}
-                        />
+                <AnalysisPanel icon={MapIcon} label="전장 분포" title="모드별 전장 선택률">
+                  {modeMapStats.length > 0 ? (
+                    <div className="space-y-4">
+                      {modeMapStats.map((mode) => (
+                        <div
+                          key={mode.value}
+                          className="overflow-hidden rounded-lg border border-border/70 bg-[hsl(var(--surface-2))]"
+                        >
+                          <div className="flex flex-col gap-2 border-b border-border/70 bg-card px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0">
+                              <p className="metric-label">{mode.total}경기</p>
+                              <h3 className="mt-1 truncate text-base font-bold">{mode.label}</h3>
+                            </div>
+                            <Badge variant="outline" className="w-fit bg-transparent">
+                              승률 {formatWinRate(mode.winRate)}
+                            </Badge>
+                          </div>
+
+                          <div className="grid gap-3 p-3 lg:grid-cols-2">
+                            {mode.maps.map((stat) => (
+                              <MediaStatRow
+                                key={stat.value}
+                                count={stat.total}
+                                detail={`${stat.total}경기`}
+                                imageSrc={getMapScreenshotPath(stat.value)}
+                                label={getMapLabel(stat.value)}
+                                maxCount={Math.max(1, mode.total)}
+                                share={stat.pickRate}
+                                winRate={stat.winRate}
+                              />
+                            ))}
+                          </div>
+                        </div>
                       ))}
                     </div>
                   ) : (
@@ -879,10 +982,127 @@ const StatRow = ({ count, detail, label, maxCount, winRate }: StatRowProps) => (
   </div>
 );
 
+interface ModeWinRateRowProps {
+  maxCount: number;
+  stat: {
+    detail?: string;
+    draws: number;
+    label: string;
+    losses: number;
+    total: number;
+    winRate: number | null;
+    wins: number;
+  };
+}
+
+const ModeWinRateRow = ({ maxCount, stat }: ModeWinRateRowProps) => (
+  <div className="p-3">
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="truncate text-sm font-bold">{stat.label}</p>
+        <p className="mt-1 text-xs font-semibold text-muted-foreground">
+          {stat.wins}승 {stat.losses}패 {stat.draws}무
+        </p>
+      </div>
+      <Badge variant="outline" className="w-[64px] shrink-0 justify-center bg-card">
+        {formatWinRate(stat.winRate)}
+      </Badge>
+    </div>
+    <div className="mt-3 h-2 overflow-hidden rounded-full bg-secondary">
+      <div
+        className="h-full rounded-full bg-primary"
+        style={{ width: `${Math.max(5, (stat.total / maxCount) * 100)}%` }}
+      />
+    </div>
+    <p className="mt-2 text-right text-xs font-semibold text-muted-foreground">{stat.total}경기</p>
+  </div>
+);
+
+interface ModeMapShareGroupProps {
+  mode: {
+    label: string;
+    maps: Array<{
+      label: string;
+      pickRate: number;
+      total: number;
+      value: string;
+      winRate: number | null;
+    }>;
+    total: number;
+    value: string;
+    winRate: number | null;
+  };
+}
+
+const ModeMapShareGroup = ({ mode }: ModeMapShareGroupProps) => (
+  <div className="border-b border-border/70 p-3 last:border-b-0 lg:border-r lg:even:border-r-0">
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="metric-label">{mode.total}경기</p>
+        <h4 className="mt-1 truncate text-sm font-bold">{mode.label}</h4>
+      </div>
+      <Badge variant="outline" className="shrink-0 bg-card">
+        {formatWinRate(mode.winRate)}
+      </Badge>
+    </div>
+
+    <div className="mt-3 space-y-2">
+      {mode.maps.slice(0, 4).map((map) => (
+        <MapShareRow key={map.value} map={map} modeTotal={mode.total} />
+      ))}
+    </div>
+  </div>
+);
+
+interface MapShareRowProps {
+  map: {
+    label: string;
+    pickRate: number;
+    total: number;
+    value: string;
+    winRate: number | null;
+  };
+  modeTotal: number;
+}
+
+const MapShareRow = ({ map, modeTotal }: MapShareRowProps) => (
+  <div className="grid grid-cols-[56px_minmax(0,1fr)_52px] items-center gap-3">
+    <div className="aspect-[4/3] overflow-hidden rounded-md bg-secondary">
+      <img
+        alt={map.label}
+        className="h-full w-full object-cover"
+        loading="lazy"
+        src={getMapScreenshotPath(map.value)}
+      />
+    </div>
+    <div className="min-w-0">
+      <div className="flex items-center justify-between gap-2">
+        <p className="truncate text-xs font-bold">{map.label}</p>
+        <span className="shrink-0 text-[11px] font-semibold text-muted-foreground">
+          {map.total}경기
+        </span>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-secondary">
+        <div
+          className="h-full rounded-full bg-primary"
+          style={{ width: `${Math.max(5, (map.total / modeTotal) * 100)}%` }}
+        />
+      </div>
+    </div>
+    <div className="text-right">
+      <p className="text-xs font-bold">{formatShare(map.pickRate)}</p>
+      <p className="mt-1 text-[11px] font-semibold text-muted-foreground">
+        {formatWinRate(map.winRate)}
+      </p>
+    </div>
+  </div>
+);
+
 interface MediaStatRowProps extends Omit<StatRowProps, 'detail'> {
   detail: string;
   imageClassName?: string;
   imageSrc: string;
+  share?: number;
 }
 
 const MediaStatRow = ({
@@ -892,6 +1112,7 @@ const MediaStatRow = ({
   imageSrc,
   label,
   maxCount,
+  share,
   winRate,
 }: MediaStatRowProps) => (
   <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-2">
@@ -920,8 +1141,8 @@ const MediaStatRow = ({
             style={{ width: `${Math.max(5, (count / maxCount) * 100)}%` }}
           />
         </div>
-        <span className="w-10 text-right text-xs font-semibold text-muted-foreground">
-          {count}경기
+        <span className="w-12 text-right text-xs font-semibold text-muted-foreground">
+          {share === undefined ? `${count}경기` : formatShare(share)}
         </span>
       </div>
     </div>
