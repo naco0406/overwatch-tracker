@@ -179,21 +179,21 @@ const SessionsPage = () => {
         }
       />
 
-      <section className="workspace-panel overflow-hidden">
-        <div className="metric-strip md:grid-cols-3">
-          {metrics.map((metric) => (
-            <MetricCell key={metric.label} {...metric} isLoading={isLoading} />
-          ))}
-        </div>
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
+        <div className="workspace-panel overflow-hidden">
+          <div className="metric-strip md:grid-cols-3">
+            {metrics.map((metric) => (
+              <MetricCell key={metric.label} {...metric} isLoading={isLoading} />
+            ))}
+          </div>
 
-        <div className="grid 2xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="section-pad">
-            <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="metric-label">타임라인</p>
-                <h2 className="mt-2 text-xl font-bold">세션 타임라인</h2>
+                <h2 className="mt-1 text-xl font-bold">세션 흐름</h2>
               </div>
-              <Badge variant="outline" className="bg-transparent">
+              <Badge variant="outline" className="w-fit bg-transparent">
                 {sessions.length} sessions
               </Badge>
             </div>
@@ -216,13 +216,15 @@ const SessionsPage = () => {
               <SessionTimelineEmpty />
             )}
           </div>
+        </div>
 
-          <aside className="border-t border-border/70 bg-[hsl(var(--surface-2))] p-4 sm:p-5 2xl:border-l 2xl:border-t-0">
-            <div className="mb-4">
-              <p className="metric-label">요약</p>
-              <h3 className="mt-2 text-lg font-bold">최근 세션</h3>
-            </div>
+        <aside className="workspace-panel overflow-hidden">
+          <div className="section-header">
+            <p className="metric-label">요약</p>
+            <h3 className="mt-1 text-lg font-bold">최근 세션</h3>
+          </div>
 
+          <div className="section-pad">
             {isLoading ? (
               <RecentSessionsSkeleton />
             ) : sessions.length > 0 ? (
@@ -261,8 +263,8 @@ const SessionsPage = () => {
                 <RecentSessionPlaceholder />
               </div>
             )}
-          </aside>
-        </div>
+          </div>
+        </aside>
       </section>
 
       <MatchEntryDialog
@@ -468,10 +470,10 @@ const SessionBlock = ({ accountById, onDeleteMatch, onEditMatch, session }: Sess
   const summary = summarizeResults(session.matches);
 
   return (
-    <article className="grid gap-4 border-b border-border/70 bg-card p-4 last:border-b-0 lg:grid-cols-[180px_minmax(0,1fr)]">
-      <div>
+    <article className="grid gap-4 border-b border-border/70 bg-card p-4 last:border-b-0 lg:grid-cols-[190px_minmax(0,1fr)]">
+      <div className="lg:border-r lg:border-border/70 lg:pr-4">
         <p className="metric-label">{formatDate(session.startedAt)}</p>
-        <h3 className="mt-2 text-lg font-bold">
+        <h3 className="mt-1 text-lg font-bold">
           {formatTime(session.startedAt)} - {formatTime(session.endedAt)}
         </h3>
         <div className="mt-3 flex flex-wrap gap-2">

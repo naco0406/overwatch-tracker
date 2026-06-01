@@ -68,11 +68,15 @@ const MasterDataPage = () => {
 
   return (
     <div className="page-stack">
-      <PageHeader eyebrow="마스터" title="마스터 데이터" />
+      <PageHeader
+        eyebrow="마스터"
+        title="마스터 데이터"
+        description="상세 입력과 이미지 분석에 쓰이는 영웅, 전장, 모드 asset을 확인합니다."
+      />
 
       <section className="workspace-panel overflow-hidden">
-        <Tabs defaultValue="heroes" className="section-pad">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <Tabs defaultValue="heroes">
+          <div className="section-header flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <TabsList className="grid w-full grid-cols-2 lg:w-auto">
               <TabsTrigger value="heroes">영웅</TabsTrigger>
               <TabsTrigger value="maps">전장</TabsTrigger>
@@ -93,7 +97,7 @@ const MasterDataPage = () => {
             </div>
           </div>
 
-          <TabsContent value="heroes" className="mt-5 space-y-5">
+          <TabsContent value="heroes" className="section-pad mt-0 space-y-5">
             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
               <div className="flex flex-wrap gap-2">
                 {roleOptions.map((role) => (
@@ -162,7 +166,7 @@ const MasterDataPage = () => {
             </div>
           </TabsContent>
 
-          <TabsContent value="maps" className="mt-5 space-y-5">
+          <TabsContent value="maps" className="section-pad mt-0 space-y-5">
             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
               <div className="flex flex-wrap gap-2">
                 <Button

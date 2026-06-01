@@ -138,173 +138,181 @@ const SettingsPage = () => {
     <div className="page-stack">
       <PageHeader eyebrow="설정" title="설정" />
 
-      <section className="workspace-panel overflow-hidden">
-        <div className="flat-row grid gap-4 p-4 sm:grid-cols-[220px_minmax(0,1fr)] sm:p-5">
-          <SectionLead icon={ShieldCheck} label="계정" title="계정" />
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div className="min-w-0 rounded-md border border-border/70 bg-secondary p-3 sm:min-w-[320px]">
-              <p className="metric-label">이메일</p>
-              <p className="mt-1 truncate text-sm font-semibold">{user?.email}</p>
-            </div>
-            <Button variant="outline" className="bg-transparent" onClick={handleSignOut}>
-              <LogOut className="h-4 w-4" />
-              로그아웃
-            </Button>
-          </div>
-        </div>
-
-        <div className="flat-row grid gap-4 p-4 sm:grid-cols-[220px_minmax(0,1fr)] sm:p-5">
-          <SectionLead icon={UserRound} label="게임 계정" title="배틀태그" />
-          <div className="space-y-4">
-            <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_96px]">
-              <Input
-                placeholder="BattleTag#1234"
-                value={battleTag}
-                onChange={(event) => setBattleTag(event.target.value)}
-              />
-              <Input
-                placeholder="표시명"
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-              />
-              <Button
-                disabled={!battleTag.trim() || createPlayerAccount.isPending}
-                onClick={handleCreateAccount}
-              >
-                <Plus className="h-4 w-4" />
-                추가
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+        <div className="workspace-panel overflow-hidden">
+          <div className="flat-row grid gap-4 p-4 sm:grid-cols-[220px_minmax(0,1fr)] sm:p-5">
+            <SectionLead icon={ShieldCheck} label="계정" title="계정" />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className="min-w-0 rounded-md border border-border/70 bg-secondary p-3 sm:min-w-[320px]">
+                <p className="metric-label">이메일</p>
+                <p className="mt-1 truncate text-sm font-semibold">{user?.email}</p>
+              </div>
+              <Button variant="outline" className="bg-transparent" onClick={handleSignOut}>
+                <LogOut className="h-4 w-4" />
+                로그아웃
               </Button>
             </div>
+          </div>
 
-            <div className="subpanel">
-              {activeAccounts.length > 0 ? (
-                activeAccounts.map((account) => (
-                  <div
-                    key={account.id}
-                    className="flat-row grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_auto]"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
+          <div className="flat-row grid gap-4 p-4 sm:grid-cols-[220px_minmax(0,1fr)] sm:p-5">
+            <SectionLead icon={UserRound} label="게임 계정" title="배틀태그" />
+            <div className="space-y-4">
+              <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_96px]">
+                <Input
+                  placeholder="BattleTag#1234"
+                  value={battleTag}
+                  onChange={(event) => setBattleTag(event.target.value)}
+                />
+                <Input
+                  placeholder="표시명"
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                />
+                <Button
+                  disabled={!battleTag.trim() || createPlayerAccount.isPending}
+                  onClick={handleCreateAccount}
+                >
+                  <Plus className="h-4 w-4" />
+                  추가
+                </Button>
+              </div>
+
+              <div className="subpanel">
+                {activeAccounts.length > 0 ? (
+                  activeAccounts.map((account) => (
+                    <div
+                      key={account.id}
+                      className="flat-row grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_auto]"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-sm font-bold">
+                            {getPlayerAccountLabel(account)}
+                          </p>
+                          {account.isMain ? (
+                            <Badge className="gap-1 bg-primary/10 text-primary" variant="outline">
+                              <Star className="h-3 w-3" />
+                              본계
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <p className="mt-1 truncate text-xs text-muted-foreground">
+                          {account.battleTag}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          className="bg-transparent"
+                          disabled={account.isMain || updatePlayerAccount.isPending}
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleSetMain(account.id)}
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                          본계
+                        </Button>
+                        <Button
+                          className="bg-transparent"
+                          disabled={deletePlayerAccount.isPending}
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDeleteAccount(account.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          삭제
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-4 text-sm text-muted-foreground">
+                    등록된 배틀태그가 없습니다.
+                  </div>
+                )}
+              </div>
+
+              {inactiveAccounts.length > 0 ? (
+                <div className="subpanel">
+                  <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] p-3">
+                    <p className="metric-label">비활성 계정</p>
+                  </div>
+                  {inactiveAccounts.map((account) => (
+                    <div
+                      key={account.id}
+                      className="flat-row grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_auto]"
+                    >
+                      <div className="min-w-0">
                         <p className="truncate text-sm font-bold">
                           {getPlayerAccountLabel(account)}
                         </p>
-                        {account.isMain ? (
-                          <Badge className="gap-1 bg-primary/10 text-primary" variant="outline">
-                            <Star className="h-3 w-3" />
-                            본계
-                          </Badge>
-                        ) : null}
+                        <p className="mt-1 truncate text-xs text-muted-foreground">
+                          {account.battleTag}
+                        </p>
                       </div>
-                      <p className="mt-1 truncate text-xs text-muted-foreground">
-                        {account.battleTag}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
                       <Button
                         className="bg-transparent"
-                        disabled={account.isMain || updatePlayerAccount.isPending}
+                        disabled={restorePlayerAccount.isPending}
                         size="sm"
                         variant="outline"
-                        onClick={() => handleSetMain(account.id)}
+                        onClick={() => handleRestoreAccount(account.id)}
                       >
-                        <CheckCircle2 className="h-4 w-4" />
-                        본계
-                      </Button>
-                      <Button
-                        className="bg-transparent"
-                        disabled={deletePlayerAccount.isPending}
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleDeleteAccount(account.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        삭제
+                        복원
                       </Button>
                     </div>
-                  </div>
-                ))
-              ) : (
-                <div className="p-4 text-sm text-muted-foreground">등록된 배틀태그가 없습니다.</div>
-              )}
-            </div>
-
-            {inactiveAccounts.length > 0 ? (
-              <div className="subpanel">
-                <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] p-3">
-                  <p className="metric-label">비활성 계정</p>
+                  ))}
                 </div>
-                {inactiveAccounts.map((account) => (
-                  <div
-                    key={account.id}
-                    className="flat-row grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_auto]"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-bold">{getPlayerAccountLabel(account)}</p>
-                      <p className="mt-1 truncate text-xs text-muted-foreground">
-                        {account.battleTag}
-                      </p>
-                    </div>
-                    <Button
-                      className="bg-transparent"
-                      disabled={restorePlayerAccount.isPending}
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleRestoreAccount(account.id)}
-                    >
-                      복원
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            ) : null}
+              ) : null}
+            </div>
           </div>
         </div>
 
-        <div className="flat-row grid gap-4 p-4 sm:grid-cols-[220px_minmax(0,1fr)] sm:p-5">
-          <SectionLead icon={BookOpenCheck} label="마스터 데이터" title="열람" />
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-foreground">
-              영웅 초상화, 전장 이미지, 역할/모드 아이콘을 정적 asset으로 열람합니다.
-            </p>
-            <Button asChild variant="outline" className="bg-transparent sm:w-auto">
-              <Link to="/master-data">
-                <ExternalLink className="h-4 w-4" />
-                열기
-              </Link>
-            </Button>
+        <aside className="workspace-panel overflow-hidden">
+          <div className="flat-row grid gap-4 p-4 sm:p-5">
+            <SectionLead icon={BookOpenCheck} label="마스터 데이터" title="열람" />
+            <div className="flex flex-col gap-3">
+              <p className="text-sm text-muted-foreground">
+                영웅 초상화, 전장 이미지, 역할/모드 아이콘을 정적 asset으로 열람합니다.
+              </p>
+              <Button asChild variant="outline" className="w-fit bg-transparent">
+                <Link to="/master-data">
+                  <ExternalLink className="h-4 w-4" />
+                  열기
+                </Link>
+              </Button>
+            </div>
           </div>
-        </div>
 
-        <div className="flat-row grid gap-4 p-4 sm:grid-cols-[220px_minmax(0,1fr)] sm:p-5">
-          <SectionLead icon={CheckCircle2} label="이미지 분석" title="파이프라인" />
-          <div className="grid gap-2 sm:grid-cols-4">
-            {[
-              { label: '영역', value: 'UI 탐지' },
-              { label: 'OCR', value: '텍스트' },
-              { label: '전장', value: '이미지 매칭' },
-              { label: '영웅', value: '내 행' },
-            ].map((item) => (
-              <div key={item.label} className="rounded-md border border-border/70 bg-card p-3">
-                <p className="metric-label">{item.label}</p>
-                <p className="mt-2 text-sm font-bold">{item.value}</p>
-              </div>
-            ))}
+          <div className="flat-row grid gap-4 p-4 sm:p-5">
+            <SectionLead icon={CheckCircle2} label="이미지 분석" title="파이프라인" />
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+              {[
+                { label: '영역', value: 'UI 탐지' },
+                { label: 'OCR', value: '텍스트' },
+                { label: '전장', value: '이미지 매칭' },
+                { label: '영웅', value: '내 행' },
+              ].map((item) => (
+                <div key={item.label} className="rounded-md border border-border/70 bg-card p-3">
+                  <p className="metric-label">{item.label}</p>
+                  <p className="mt-2 text-sm font-bold">{item.value}</p>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div className="grid gap-4 p-4 sm:grid-cols-[220px_minmax(0,1fr)] sm:p-5">
-          <SectionLead icon={Database} label="데이터" title="데이터" />
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button variant="outline" className="bg-transparent" disabled>
-              <Upload className="h-4 w-4" />
-              가져오기
-            </Button>
-            <Button variant="outline" className="bg-transparent" disabled>
-              <Download className="h-4 w-4" />
-              내보내기
-            </Button>
+          <div className="grid gap-4 p-4 sm:p-5">
+            <SectionLead icon={Database} label="데이터" title="데이터" />
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button variant="outline" className="bg-transparent" disabled>
+                <Upload className="h-4 w-4" />
+                가져오기
+              </Button>
+              <Button variant="outline" className="bg-transparent" disabled>
+                <Download className="h-4 w-4" />
+                내보내기
+              </Button>
+            </div>
           </div>
-        </div>
+        </aside>
       </section>
     </div>
   );

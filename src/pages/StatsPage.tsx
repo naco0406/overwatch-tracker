@@ -1,14 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import {
-  BarChart3,
-  Clock3,
-  Filter,
-  ListOrdered,
-  MapIcon,
-  RotateCcw,
-  Swords,
-  Target,
-} from 'lucide-react';
+import { BarChart3, Clock3, ListOrdered, MapIcon, RotateCcw, Swords, Target } from 'lucide-react';
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   Bar,
@@ -356,325 +347,179 @@ const StatsPage = () => {
         }
       />
 
-      <section className="workspace-panel overflow-hidden">
-        <div className="metric-strip md:grid-cols-4">
-          {metrics.map((metric) => (
-            <MetricCell key={metric.label} {...metric} />
-          ))}
-        </div>
-
-        <div className="section-divider section-pad">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-primary" />
-              <p className="text-sm font-bold">필터</p>
-            </div>
-            <Badge variant={activeFilterCount > 0 ? 'default' : 'secondary'}>
-              {activeFilterCount} active
-            </Badge>
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px] xl:items-start">
+        <div className="workspace-panel overflow-hidden">
+          <div className="metric-strip md:grid-cols-4">
+            {metrics.map((metric) => (
+              <MetricCell key={metric.label} {...metric} />
+            ))}
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
-            <FilterGroup label="기간">
-              {periodOptions.map((period) => (
-                <FilterButton
-                  key={period.value}
-                  active={periodFilter === period.value}
-                  onClick={() => setPeriodFilter(period.value)}
-                >
-                  {period.label}
-                </FilterButton>
-              ))}
-            </FilterGroup>
+          <div className="section-pad">
+            <Tabs defaultValue="mode" className="w-full">
+              <TabsList className="mobile-scroll flex w-full justify-start overflow-x-auto xl:inline-flex xl:w-auto">
+                <TabsTrigger value="mode">모드</TabsTrigger>
+                <TabsTrigger value="map">전장</TabsTrigger>
+                <TabsTrigger value="hero">영웅</TabsTrigger>
+                <TabsTrigger value="time">시간</TabsTrigger>
+                <TabsTrigger value="order">순서</TabsTrigger>
+              </TabsList>
 
-            <FilterSelect label="계정">
-              <Select value={accountFilter} onValueChange={setAccountFilter}>
-                <SelectTrigger className="h-9 bg-card">
-                  <SelectValue placeholder="계정 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체 계정</SelectItem>
-                  <SelectItem value="unassigned">미지정</SelectItem>
-                  {playerAccounts.map((account) => (
-                    <SelectItem key={account.id} value={account.id}>
-                      {getPlayerAccountLabel(account)}
-                      {account.isMain ? ' · 본계' : ''}
-                      {!account.isActive ? ' · 비활성' : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </FilterSelect>
-          </div>
-
-          <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <FilterGroup label="모드">
-              <FilterButton active={modeFilter === 'all'} onClick={() => setModeFilter('all')}>
-                전체
-              </FilterButton>
-              {modeOptions.map((mode) => (
-                <FilterButton
-                  key={mode.value}
-                  active={modeFilter === mode.value}
-                  onClick={() => setModeFilter(mode.value)}
-                >
-                  {mode.label}
-                </FilterButton>
-              ))}
-            </FilterGroup>
-
-            <FilterGroup label="큐">
-              <FilterButton active={queueFilter === 'all'} onClick={() => setQueueFilter('all')}>
-                전체
-              </FilterButton>
-              {queueOptions.map((queue) => (
-                <FilterButton
-                  key={queue.value}
-                  active={queueFilter === queue.value}
-                  onClick={() => setQueueFilter(queue.value)}
-                >
-                  {queue.label}
-                </FilterButton>
-              ))}
-            </FilterGroup>
-          </div>
-        </div>
-
-        <div className="section-pad">
-          <Tabs defaultValue="mode" className="w-full">
-            <TabsList className="mobile-scroll flex w-full justify-start overflow-x-auto xl:inline-flex xl:w-auto">
-              <TabsTrigger value="mode">모드</TabsTrigger>
-              <TabsTrigger value="map">전장</TabsTrigger>
-              <TabsTrigger value="hero">영웅</TabsTrigger>
-              <TabsTrigger value="time">시간</TabsTrigger>
-              <TabsTrigger value="order">순서</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="mode" className="mt-4">
-              <AnalysisPanel icon={BarChart3} label="모드 분포" title="모드별 성과">
-                {modeStats.length > 0 ? (
-                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-                    <ChartShell>
-                      <BarChart
-                        data={modeChartData}
-                        margin={{ bottom: 0, left: -18, right: 8, top: 12 }}
-                      >
-                        <CartesianGrid
-                          stroke={chartColors.grid}
-                          strokeDasharray="3 3"
-                          vertical={false}
-                        />
-                        <XAxis
-                          dataKey="name"
-                          tick={getAxisTick()}
-                          tickLine={false}
-                          axisLine={false}
-                          interval={0}
-                        />
-                        <YAxis
-                          allowDecimals={false}
-                          tick={getAxisTick()}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <Tooltip
-                          contentStyle={tooltipStyle}
-                          cursor={{ fill: 'hsl(var(--secondary) / 0.65)' }}
-                          itemStyle={tooltipStyle}
-                          labelStyle={tooltipStyle}
-                        />
-                        <Legend wrapperStyle={legendStyle} />
-                        <Bar
-                          dataKey="승리"
-                          stackId="result"
-                          fill={chartColors.win}
-                          radius={[0, 0, 4, 4]}
-                        />
-                        <Bar dataKey="무승부" stackId="result" fill={chartColors.draw} />
-                        <Bar
-                          dataKey="패배"
-                          stackId="result"
-                          fill={chartColors.loss}
-                          radius={[4, 4, 0, 0]}
-                        />
-                      </BarChart>
-                    </ChartShell>
-
-                    <ChartShell>
-                      <PieChart>
-                        <Tooltip
-                          contentStyle={tooltipStyle}
-                          itemStyle={tooltipStyle}
-                          labelStyle={tooltipStyle}
-                        />
-                        <Pie
-                          data={resultChartData}
-                          dataKey="value"
-                          innerRadius={58}
-                          nameKey="name"
-                          outerRadius={90}
-                          paddingAngle={2}
+              <TabsContent value="mode" className="mt-4">
+                <AnalysisPanel icon={BarChart3} label="모드 분포" title="모드별 성과">
+                  {modeStats.length > 0 ? (
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+                      <ChartShell>
+                        <BarChart
+                          data={modeChartData}
+                          margin={{ bottom: 0, left: -18, right: 8, top: 12 }}
                         >
-                          {resultChartData.map((entry) => (
-                            <Cell key={entry.name} fill={entry.fill} />
-                          ))}
-                        </Pie>
-                        <Legend wrapperStyle={legendStyle} />
-                      </PieChart>
-                    </ChartShell>
+                          <CartesianGrid
+                            stroke={chartColors.grid}
+                            strokeDasharray="3 3"
+                            vertical={false}
+                          />
+                          <XAxis
+                            dataKey="name"
+                            tick={getAxisTick()}
+                            tickLine={false}
+                            axisLine={false}
+                            interval={0}
+                          />
+                          <YAxis
+                            allowDecimals={false}
+                            tick={getAxisTick()}
+                            tickLine={false}
+                            axisLine={false}
+                          />
+                          <Tooltip
+                            contentStyle={tooltipStyle}
+                            cursor={{ fill: 'hsl(var(--secondary) / 0.65)' }}
+                            itemStyle={tooltipStyle}
+                            labelStyle={tooltipStyle}
+                          />
+                          <Legend wrapperStyle={legendStyle} />
+                          <Bar
+                            dataKey="승리"
+                            stackId="result"
+                            fill={chartColors.win}
+                            radius={[0, 0, 4, 4]}
+                          />
+                          <Bar dataKey="무승부" stackId="result" fill={chartColors.draw} />
+                          <Bar
+                            dataKey="패배"
+                            stackId="result"
+                            fill={chartColors.loss}
+                            radius={[4, 4, 0, 0]}
+                          />
+                        </BarChart>
+                      </ChartShell>
 
-                    <div className="space-y-2 xl:col-span-2">
-                      {modeStats.map((stat) => (
-                        <StatRow
+                      <ChartShell>
+                        <PieChart>
+                          <Tooltip
+                            contentStyle={tooltipStyle}
+                            itemStyle={tooltipStyle}
+                            labelStyle={tooltipStyle}
+                          />
+                          <Pie
+                            data={resultChartData}
+                            dataKey="value"
+                            innerRadius={58}
+                            nameKey="name"
+                            outerRadius={90}
+                            paddingAngle={2}
+                          >
+                            {resultChartData.map((entry) => (
+                              <Cell key={entry.name} fill={entry.fill} />
+                            ))}
+                          </Pie>
+                          <Legend wrapperStyle={legendStyle} />
+                        </PieChart>
+                      </ChartShell>
+
+                      <div className="space-y-2 xl:col-span-2">
+                        {modeStats.map((stat) => (
+                          <StatRow
+                            key={stat.value}
+                            count={stat.total}
+                            detail={`${stat.wins}승 ${stat.losses}패 ${stat.draws}무`}
+                            label={stat.label}
+                            maxCount={maxModeCount}
+                            winRate={stat.winRate}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <TabEmpty
+                      icon={BarChart3}
+                      isLoading={isLoading}
+                      title="필터에 해당하는 모드 기록이 없습니다."
+                    />
+                  )}
+                </AnalysisPanel>
+              </TabsContent>
+
+              <TabsContent value="map" className="mt-4">
+                <AnalysisPanel icon={MapIcon} label="전장 분포" title="전장별 성과">
+                  {mapStats.length > 0 ? (
+                    <div className="grid gap-3 lg:grid-cols-2">
+                      {mapStats.slice(0, 12).map((stat) => (
+                        <MediaStatRow
                           key={stat.value}
                           count={stat.total}
-                          detail={`${stat.wins}승 ${stat.losses}패 ${stat.draws}무`}
-                          label={stat.label}
-                          maxCount={maxModeCount}
+                          detail={getModeLabel(stat.modeId)}
+                          imageSrc={getMapScreenshotPath(stat.value)}
+                          label={getMapLabel(stat.value)}
+                          maxCount={maxMapCount}
                           winRate={stat.winRate}
                         />
                       ))}
                     </div>
-                  </div>
-                ) : (
-                  <TabEmpty
-                    icon={BarChart3}
-                    isLoading={isLoading}
-                    title="필터에 해당하는 모드 기록이 없습니다."
-                  />
-                )}
-              </AnalysisPanel>
-            </TabsContent>
+                  ) : (
+                    <TabEmpty
+                      icon={MapIcon}
+                      isLoading={isLoading}
+                      title="필터에 해당하는 전장 기록이 없습니다."
+                    />
+                  )}
+                </AnalysisPanel>
+              </TabsContent>
 
-            <TabsContent value="map" className="mt-4">
-              <AnalysisPanel icon={MapIcon} label="전장 분포" title="전장별 성과">
-                {mapStats.length > 0 ? (
-                  <div className="grid gap-3 lg:grid-cols-2">
-                    {mapStats.slice(0, 12).map((stat) => (
-                      <MediaStatRow
-                        key={stat.value}
-                        count={stat.total}
-                        detail={getModeLabel(stat.modeId)}
-                        imageSrc={getMapScreenshotPath(stat.value)}
-                        label={getMapLabel(stat.value)}
-                        maxCount={maxMapCount}
-                        winRate={stat.winRate}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <TabEmpty
-                    icon={MapIcon}
-                    isLoading={isLoading}
-                    title="필터에 해당하는 전장 기록이 없습니다."
-                  />
-                )}
-              </AnalysisPanel>
-            </TabsContent>
+              <TabsContent value="hero" className="mt-4">
+                <AnalysisPanel icon={Swords} label="영웅 풀" title="영웅별 성과">
+                  {heroStats.length > 0 ? (
+                    <div className="grid gap-3 lg:grid-cols-2">
+                      {heroStats.slice(0, 16).map((stat) => (
+                        <MediaStatRow
+                          key={stat.value}
+                          count={stat.total}
+                          detail={roleLabels[stat.role]}
+                          imageClassName="object-top"
+                          imageSrc={getHeroPortraitPath(stat.value)}
+                          label={getHeroLabel(stat.value)}
+                          maxCount={maxHeroCount}
+                          winRate={stat.winRate}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <TabEmpty
+                      icon={Swords}
+                      isLoading={isLoading}
+                      title="필터에 해당하는 영웅 기록이 없습니다."
+                    />
+                  )}
+                </AnalysisPanel>
+              </TabsContent>
 
-            <TabsContent value="hero" className="mt-4">
-              <AnalysisPanel icon={Swords} label="영웅 풀" title="영웅별 성과">
-                {heroStats.length > 0 ? (
-                  <div className="grid gap-3 lg:grid-cols-2">
-                    {heroStats.slice(0, 16).map((stat) => (
-                      <MediaStatRow
-                        key={stat.value}
-                        count={stat.total}
-                        detail={roleLabels[stat.role]}
-                        imageClassName="object-top"
-                        imageSrc={getHeroPortraitPath(stat.value)}
-                        label={getHeroLabel(stat.value)}
-                        maxCount={maxHeroCount}
-                        winRate={stat.winRate}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <TabEmpty
-                    icon={Swords}
-                    isLoading={isLoading}
-                    title="필터에 해당하는 영웅 기록이 없습니다."
-                  />
-                )}
-              </AnalysisPanel>
-            </TabsContent>
-
-            <TabsContent value="time" className="mt-4">
-              <AnalysisPanel icon={Clock3} label="시간대" title="시간대별 집중도">
-                {filteredMatches.length > 0 ? (
-                  <ChartShell className="h-[360px]">
-                    <ComposedChart
-                      data={hourlyChartData}
-                      margin={{ bottom: 8, left: -18, right: 8, top: 12 }}
-                    >
-                      <CartesianGrid
-                        stroke={chartColors.grid}
-                        strokeDasharray="3 3"
-                        vertical={false}
-                      />
-                      <XAxis
-                        dataKey="name"
-                        tick={getAxisTick(11)}
-                        tickLine={false}
-                        axisLine={false}
-                        interval={1}
-                      />
-                      <YAxis
-                        yAxisId="left"
-                        allowDecimals={false}
-                        tick={getAxisTick()}
-                        tickLine={false}
-                        axisLine={false}
-                      />
-                      <YAxis
-                        yAxisId="right"
-                        orientation="right"
-                        domain={[0, 100]}
-                        tick={getAxisTick()}
-                        tickFormatter={(value) => `${value}%`}
-                        tickLine={false}
-                        axisLine={false}
-                      />
-                      <Tooltip
-                        contentStyle={tooltipStyle}
-                        cursor={{ fill: 'hsl(var(--secondary) / 0.65)' }}
-                        itemStyle={tooltipStyle}
-                        labelStyle={tooltipStyle}
-                      />
-                      <Legend wrapperStyle={legendStyle} />
-                      <Bar
-                        yAxisId="left"
-                        dataKey="경기"
-                        fill={chartColors.primary}
-                        radius={[4, 4, 0, 0]}
-                      />
-                      <Line
-                        yAxisId="right"
-                        type="monotone"
-                        dataKey="승률"
-                        stroke="hsl(var(--success))"
-                        strokeWidth={2}
-                        dot={{ fill: 'hsl(var(--success))', r: 3 }}
-                      />
-                    </ComposedChart>
-                  </ChartShell>
-                ) : (
-                  <TabEmpty
-                    icon={Clock3}
-                    isLoading={isLoading}
-                    title="필터에 해당하는 시간대 기록이 없습니다."
-                  />
-                )}
-              </AnalysisPanel>
-            </TabsContent>
-
-            <TabsContent value="order" className="mt-4">
-              <AnalysisPanel icon={ListOrdered} label="세션 순서" title="세션 내 순서별 성과">
-                {orderStats.length > 0 ? (
-                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-                    <ChartShell className="h-[340px]">
+              <TabsContent value="time" className="mt-4">
+                <AnalysisPanel icon={Clock3} label="시간대" title="시간대별 집중도">
+                  {filteredMatches.length > 0 ? (
+                    <ChartShell className="h-[360px]">
                       <ComposedChart
-                        data={orderChartData}
+                        data={hourlyChartData}
                         margin={{ bottom: 8, left: -18, right: 8, top: 12 }}
                       >
                         <CartesianGrid
@@ -684,9 +529,10 @@ const StatsPage = () => {
                         />
                         <XAxis
                           dataKey="name"
-                          tick={getAxisTick()}
+                          tick={getAxisTick(11)}
                           tickLine={false}
                           axisLine={false}
+                          interval={1}
                         />
                         <YAxis
                           yAxisId="left"
@@ -727,31 +573,176 @@ const StatsPage = () => {
                         />
                       </ComposedChart>
                     </ChartShell>
+                  ) : (
+                    <TabEmpty
+                      icon={Clock3}
+                      isLoading={isLoading}
+                      title="필터에 해당하는 시간대 기록이 없습니다."
+                    />
+                  )}
+                </AnalysisPanel>
+              </TabsContent>
 
-                    <div className="space-y-2">
-                      {orderStats.slice(0, 12).map((stat) => (
-                        <StatRow
-                          key={stat.order}
-                          count={stat.total}
-                          detail={`${stat.wins}승 ${stat.losses}패 ${stat.draws}무`}
-                          label={`${stat.order}번째 경기`}
-                          maxCount={maxOrderCount}
-                          winRate={stat.winRate}
-                        />
-                      ))}
+              <TabsContent value="order" className="mt-4">
+                <AnalysisPanel icon={ListOrdered} label="세션 순서" title="세션 내 순서별 성과">
+                  {orderStats.length > 0 ? (
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+                      <ChartShell className="h-[340px]">
+                        <ComposedChart
+                          data={orderChartData}
+                          margin={{ bottom: 8, left: -18, right: 8, top: 12 }}
+                        >
+                          <CartesianGrid
+                            stroke={chartColors.grid}
+                            strokeDasharray="3 3"
+                            vertical={false}
+                          />
+                          <XAxis
+                            dataKey="name"
+                            tick={getAxisTick()}
+                            tickLine={false}
+                            axisLine={false}
+                          />
+                          <YAxis
+                            yAxisId="left"
+                            allowDecimals={false}
+                            tick={getAxisTick()}
+                            tickLine={false}
+                            axisLine={false}
+                          />
+                          <YAxis
+                            yAxisId="right"
+                            orientation="right"
+                            domain={[0, 100]}
+                            tick={getAxisTick()}
+                            tickFormatter={(value) => `${value}%`}
+                            tickLine={false}
+                            axisLine={false}
+                          />
+                          <Tooltip
+                            contentStyle={tooltipStyle}
+                            cursor={{ fill: 'hsl(var(--secondary) / 0.65)' }}
+                            itemStyle={tooltipStyle}
+                            labelStyle={tooltipStyle}
+                          />
+                          <Legend wrapperStyle={legendStyle} />
+                          <Bar
+                            yAxisId="left"
+                            dataKey="경기"
+                            fill={chartColors.primary}
+                            radius={[4, 4, 0, 0]}
+                          />
+                          <Line
+                            yAxisId="right"
+                            type="monotone"
+                            dataKey="승률"
+                            stroke="hsl(var(--success))"
+                            strokeWidth={2}
+                            dot={{ fill: 'hsl(var(--success))', r: 3 }}
+                          />
+                        </ComposedChart>
+                      </ChartShell>
+
+                      <div className="space-y-2">
+                        {orderStats.slice(0, 12).map((stat) => (
+                          <StatRow
+                            key={stat.order}
+                            count={stat.total}
+                            detail={`${stat.wins}승 ${stat.losses}패 ${stat.draws}무`}
+                            label={`${stat.order}번째 경기`}
+                            maxCount={maxOrderCount}
+                            winRate={stat.winRate}
+                          />
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <TabEmpty
-                    icon={ListOrdered}
-                    isLoading={isLoading}
-                    title="필터에 해당하는 세션 순서 기록이 없습니다."
-                  />
-                )}
-              </AnalysisPanel>
-            </TabsContent>
-          </Tabs>
+                  ) : (
+                    <TabEmpty
+                      icon={ListOrdered}
+                      isLoading={isLoading}
+                      title="필터에 해당하는 세션 순서 기록이 없습니다."
+                    />
+                  )}
+                </AnalysisPanel>
+              </TabsContent>
+            </Tabs>
+          </div>
         </div>
+
+        <aside className="workspace-panel order-first overflow-hidden xl:sticky xl:top-8 xl:order-none">
+          <div className="section-header flex items-center justify-between gap-3">
+            <div>
+              <p className="metric-label">필터</p>
+              <h2 className="mt-1 text-lg font-bold">분석 조건</h2>
+            </div>
+            <Badge variant={activeFilterCount > 0 ? 'default' : 'secondary'}>
+              {activeFilterCount} active
+            </Badge>
+          </div>
+
+          <div className="section-pad space-y-4">
+            <FilterGroup label="기간">
+              {periodOptions.map((period) => (
+                <FilterButton
+                  key={period.value}
+                  active={periodFilter === period.value}
+                  onClick={() => setPeriodFilter(period.value)}
+                >
+                  {period.label}
+                </FilterButton>
+              ))}
+            </FilterGroup>
+
+            <FilterSelect label="계정">
+              <Select value={accountFilter} onValueChange={setAccountFilter}>
+                <SelectTrigger className="h-9 bg-card">
+                  <SelectValue placeholder="계정 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">전체 계정</SelectItem>
+                  <SelectItem value="unassigned">미지정</SelectItem>
+                  {playerAccounts.map((account) => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {getPlayerAccountLabel(account)}
+                      {account.isMain ? ' · 본계' : ''}
+                      {!account.isActive ? ' · 비활성' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </FilterSelect>
+
+            <FilterGroup label="모드">
+              <FilterButton active={modeFilter === 'all'} onClick={() => setModeFilter('all')}>
+                전체
+              </FilterButton>
+              {modeOptions.map((mode) => (
+                <FilterButton
+                  key={mode.value}
+                  active={modeFilter === mode.value}
+                  onClick={() => setModeFilter(mode.value)}
+                >
+                  {mode.label}
+                </FilterButton>
+              ))}
+            </FilterGroup>
+
+            <FilterGroup label="큐">
+              <FilterButton active={queueFilter === 'all'} onClick={() => setQueueFilter('all')}>
+                전체
+              </FilterButton>
+              {queueOptions.map((queue) => (
+                <FilterButton
+                  key={queue.value}
+                  active={queueFilter === queue.value}
+                  onClick={() => setQueueFilter(queue.value)}
+                >
+                  {queue.label}
+                </FilterButton>
+              ))}
+            </FilterGroup>
+          </div>
+        </aside>
       </section>
     </div>
   );

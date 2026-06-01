@@ -1,5 +1,4 @@
 import {
-  CalendarDays,
   CheckSquare,
   Pencil,
   RotateCcw,
@@ -342,149 +341,157 @@ const RecordsPage = () => {
     <div className="page-stack">
       <PageHeader eyebrow="데이터" title="기록" />
 
-      <section className="workspace-panel overflow-hidden">
-        <div className="metric-strip md:grid-cols-3">
-          <MetricCell label="표시 기록" value={filteredMatches.length.toLocaleString('ko-KR')} />
-          <MetricCell label="승률" value={formatWinRate(summary.winRate)} />
-          <MetricCell label="선택" value={selectedMatches.length.toLocaleString('ko-KR')} />
-        </div>
-
-        <div className="section-divider section-pad">
-          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="검색"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-              />
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="bg-transparent"
-              onClick={() => setFiltersOpen(true)}
-            >
-              <SlidersHorizontal className="h-4 w-4" />
-              필터{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}
-            </Button>
-            <Button
-              type="button"
-              disabled={selectedMatches.length === 0}
-              onClick={() => setBulkActionsOpen(true)}
-            >
-              <CheckSquare className="h-4 w-4" />
-              작업
-            </Button>
+      <section className="grid gap-4 xl:grid-cols-[240px_minmax(0,1fr)] xl:items-start">
+        <aside className="workspace-panel overflow-hidden">
+          <div className="section-header">
+            <p className="metric-label">요약</p>
+            <h2 className="mt-1 text-lg font-bold">기록 상태</h2>
           </div>
+          <div className="divide-y divide-border/70">
+            <MetricCell label="표시 기록" value={filteredMatches.length.toLocaleString('ko-KR')} />
+            <MetricCell label="승률" value={formatWinRate(summary.winRate)} />
+            <MetricCell label="선택" value={selectedMatches.length.toLocaleString('ko-KR')} />
+          </div>
+        </aside>
 
-          {selectedMatches.length > 0 ? (
-            <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/[0.06] p-3">
-              <p className="text-sm font-bold">
-                {selectedMatches.length.toLocaleString('ko-KR')}개 선택
-              </p>
+        <div className="workspace-panel overflow-hidden">
+          <div className="section-divider section-pad">
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="맵, 모드, 결과 검색"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
+              </div>
               <Button
                 type="button"
                 variant="outline"
-                size="sm"
-                className="bg-card"
-                onClick={() => setSelectedIds([])}
+                className="bg-transparent"
+                onClick={() => setFiltersOpen(true)}
               >
-                해제
+                <SlidersHorizontal className="h-4 w-4" />
+                필터{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}
+              </Button>
+              <Button
+                type="button"
+                disabled={selectedMatches.length === 0}
+                onClick={() => setBulkActionsOpen(true)}
+              >
+                <CheckSquare className="h-4 w-4" />
+                작업
               </Button>
             </div>
-          ) : null}
-        </div>
 
-        <div className="section-pad">
-          {isLoading ? (
-            <RecordsSkeleton />
-          ) : filteredMatches.length > 0 ? (
-            <>
-              <div className="subpanel hidden md:block">
-                <table className="w-full table-fixed border-collapse text-left text-sm">
-                  <thead className="bg-[hsl(var(--surface-2))]">
-                    <tr className="border-b border-border/70">
-                      <th className="w-12 px-3 py-3">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 rounded border-border accent-primary"
-                          checked={visibleSelected}
-                          aria-label="표시 기록 전체 선택"
-                          onChange={toggleVisibleSelected}
+            {selectedMatches.length > 0 ? (
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-primary/20 bg-primary/[0.06] px-3 py-2">
+                <p className="text-sm font-bold">
+                  {selectedMatches.length.toLocaleString('ko-KR')}개 선택
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="bg-card"
+                  onClick={() => setSelectedIds([])}
+                >
+                  해제
+                </Button>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="section-pad">
+            {isLoading ? (
+              <RecordsSkeleton />
+            ) : filteredMatches.length > 0 ? (
+              <>
+                <div className="subpanel hidden md:block">
+                  <table className="w-full table-fixed border-collapse text-left text-sm">
+                    <thead className="bg-[hsl(var(--surface-2))]">
+                      <tr className="border-b border-border/70">
+                        <th className="w-12 px-3 py-3">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-border accent-primary"
+                            checked={visibleSelected}
+                            aria-label="표시 기록 전체 선택"
+                            onChange={toggleVisibleSelected}
+                          />
+                        </th>
+                        <th className="w-32 px-3 py-3 font-semibold text-muted-foreground">시간</th>
+                        <th className="px-3 py-3 font-semibold text-muted-foreground">맵</th>
+                        <th className="w-28 px-3 py-3 font-semibold text-muted-foreground">결과</th>
+                        <th className="w-32 px-3 py-3 font-semibold text-muted-foreground">계정</th>
+                        <th className="w-24 px-3 py-3 text-right font-semibold text-muted-foreground">
+                          액션
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredMatches.map((match) => (
+                        <RecordTableRow
+                          key={match.id}
+                          account={accountById.get(match.accountId ?? '')}
+                          match={match}
+                          selected={selectedIdSet.has(match.id)}
+                          onDelete={() => setDeleteTarget(match)}
+                          onEdit={() => setEditingMatch(match)}
+                          onSelect={() => toggleSelected(match.id)}
                         />
-                      </th>
-                      <th className="w-32 px-3 py-3 font-semibold text-muted-foreground">시간</th>
-                      <th className="px-3 py-3 font-semibold text-muted-foreground">맵</th>
-                      <th className="w-28 px-3 py-3 font-semibold text-muted-foreground">결과</th>
-                      <th className="w-32 px-3 py-3 font-semibold text-muted-foreground">계정</th>
-                      <th className="w-24 px-3 py-3 text-right font-semibold text-muted-foreground">
-                        액션
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredMatches.map((match) => (
-                      <RecordTableRow
-                        key={match.id}
-                        account={accountById.get(match.accountId ?? '')}
-                        match={match}
-                        selected={selectedIdSet.has(match.id)}
-                        onDelete={() => setDeleteTarget(match)}
-                        onEdit={() => setEditingMatch(match)}
-                        onSelect={() => toggleSelected(match.id)}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="space-y-3 md:hidden">
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-card p-3">
-                  <span className="text-sm font-bold">표시 기록</span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="bg-transparent"
-                    onClick={toggleVisibleSelected}
-                  >
-                    <CheckSquare className="h-4 w-4" />
-                    {visibleSelected ? '해제' : '전체 선택'}
-                  </Button>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                {filteredMatches.map((match) => (
-                  <RecordCard
-                    key={match.id}
-                    account={accountById.get(match.accountId ?? '')}
-                    match={match}
-                    selected={selectedIdSet.has(match.id)}
-                    onDelete={() => setDeleteTarget(match)}
-                    onEdit={() => setEditingMatch(match)}
-                    onSelect={() => toggleSelected(match.id)}
+
+                <div className="space-y-3 md:hidden">
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-card p-3">
+                    <span className="text-sm font-bold">표시 기록</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="bg-transparent"
+                      onClick={toggleVisibleSelected}
+                    >
+                      <CheckSquare className="h-4 w-4" />
+                      {visibleSelected ? '해제' : '전체 선택'}
+                    </Button>
+                  </div>
+                  {filteredMatches.map((match) => (
+                    <RecordCard
+                      key={match.id}
+                      account={accountById.get(match.accountId ?? '')}
+                      match={match}
+                      selected={selectedIdSet.has(match.id)}
+                      onDelete={() => setDeleteTarget(match)}
+                      onEdit={() => setEditingMatch(match)}
+                      onSelect={() => toggleSelected(match.id)}
+                    />
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="subpanel">
+                <div className="flat-row p-3">
+                  <InlineEmptyState
+                    title="기록 없음"
+                    description="필터 결과가 비어 있습니다."
+                    action={
+                      activeFilterCount > 0 ? (
+                        <Button variant="outline" className="bg-transparent" onClick={resetFilters}>
+                          <RotateCcw className="h-4 w-4" />
+                          초기화
+                        </Button>
+                      ) : undefined
+                    }
                   />
-                ))}
+                </div>
               </div>
-            </>
-          ) : (
-            <div className="subpanel">
-              <div className="flat-row p-3">
-                <InlineEmptyState
-                  title="기록 없음"
-                  description="필터 결과가 비어 있습니다."
-                  action={
-                    activeFilterCount > 0 ? (
-                      <Button variant="outline" className="bg-transparent" onClick={resetFilters}>
-                        <RotateCcw className="h-4 w-4" />
-                        초기화
-                      </Button>
-                    ) : undefined
-                  }
-                />
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </section>
 
@@ -673,13 +680,10 @@ interface MetricCellProps {
 }
 
 const MetricCell = ({ label, value }: MetricCellProps) => (
-  <div className="metric-cell">
-    <div>
+  <div className="px-4 py-3 sm:px-5">
+    <div className="min-w-0">
       <p className="metric-label">{label}</p>
-      <p className="mt-3 text-2xl font-bold">{value}</p>
-    </div>
-    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-secondary text-primary">
-      <CalendarDays className="h-5 w-5" />
+      <p className="mt-2 truncate text-2xl font-bold">{value}</p>
     </div>
   </div>
 );
