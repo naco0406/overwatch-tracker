@@ -3,6 +3,7 @@ import { BrowserRouter } from 'react-router-dom';
 
 import { Toaster } from '@/components/ui/toaster';
 import { AuthProvider } from '@/hooks/useAuth';
+import { LiveCaptureProvider } from '@/hooks/useLiveCapture';
 import { AppRoutes } from '@/routes';
 
 const queryClient = new QueryClient({
@@ -18,8 +19,10 @@ const App = () => (
   <BrowserRouter>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <AppRoutes />
-        <Toaster />
+        <LiveCaptureProvider>
+          <AppRoutes />
+          <Toaster />
+        </LiveCaptureProvider>
       </AuthProvider>
     </QueryClientProvider>
   </BrowserRouter>

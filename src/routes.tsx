@@ -5,6 +5,7 @@ import { AppLayout } from '@/components/common/AppLayout';
 import { RequireAuth } from '@/components/common/RequireAuth';
 import { HomePage } from '@/pages/HomePage';
 import { LoginPage } from '@/pages/LoginPage';
+import { LivePage } from '@/pages/LivePage';
 import { MasterDataPage } from '@/pages/MasterDataPage';
 import { SessionsPage } from '@/pages/SessionsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
@@ -31,6 +32,7 @@ const AppRoutes = () => (
     <Route element={<RequireAuth />}>
       <Route element={<AppLayout />}>
         <Route path="/" element={<HomePage />} />
+        <Route path="/live" element={<LivePage />} />
         <Route
           path="/records"
           element={

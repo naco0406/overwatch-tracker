@@ -5,15 +5,19 @@ import {
   Grid2X2,
   Home,
   LogOut,
+  MonitorUp,
+  Radio,
   Settings,
+  Square,
   Swords,
   TableProperties,
 } from 'lucide-react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { liveStatusLabel, useLiveCapture } from '@/hooks/useLiveCapture';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -55,8 +59,39 @@ const isNavItemActive = (item: NavItem, pathname: string) =>
 
 const AppLayout = () => {
   const { signOut, user } = useAuth();
+  const {
+    errorMessage: liveErrorMessage,
+    isLiveAvailable,
+    startCapture,
+    status: liveStatus,
+    stopCapture,
+  } = useLiveCapture();
   const location = useLocation();
-  const activeNavItem = navItems.find((item) => isNavItemActive(item, location.pathname));
+  const navigate = useNavigate();
+  const liveNavItem: NavItem | null = isLiveAvailable
+    ? {
+        icon: Radio,
+        label: 'LIVE',
+        to: '/live',
+      }
+    : null;
+  const visibleNavItems: NavItem[] = liveNavItem ? [...navItems, liveNavItem] : navItems;
+  const activeNavItem = visibleNavItems.find((item) => isNavItemActive(item, location.pathname));
+
+  const handleStartLive = async () => {
+    const started = await startCapture();
+
+    if (started) {
+      navigate('/live');
+    }
+  };
+
+  const handleStopLive = () => {
+    stopCapture('idle');
+    if (location.pathname === '/live') {
+      navigate('/');
+    }
+  };
 
   const handleSignOut = async () => {
     try {
@@ -124,20 +159,55 @@ const AppLayout = () => {
             );
           })}
         </nav>
-        <div className="mx-3 mb-3 rounded-lg border border-primary/15 bg-primary/5 p-3">
-          <div className="flex items-center justify-between gap-2 text-primary">
-            <div className="flex min-w-0 items-center gap-2">
-              <Command className="h-4 w-4 shrink-0" />
-              <p className="truncate text-sm font-semibold">빠른 기록</p>
+        <div className="mx-3 mb-3 border-t border-border/70 pt-3">
+          {isLiveAvailable ? (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+              <NavLink
+                to="/live"
+                className="flex items-center justify-between gap-3 text-destructive"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-destructive" />
+                  <span className="truncate text-sm font-bold">LIVE</span>
+                </span>
+                <span className="text-xs font-bold">{liveStatusLabel[liveStatus]}</span>
+              </NavLink>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-3 w-full justify-start border-destructive/30 bg-card text-destructive hover:text-destructive"
+                onClick={handleStopLive}
+              >
+                <Square className="h-4 w-4" />
+                종료
+              </Button>
             </div>
-            <span className="text-xs font-bold">Ready</span>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <span className="status-chip">맵</span>
-            <span className="status-chip">스코어</span>
-            <span className="status-chip">결과</span>
-            <span className="status-chip">OCR</span>
-          </div>
+          ) : (
+            <div className="rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <MonitorUp className="h-4 w-4 shrink-0 text-primary" />
+                  <p className="truncate text-sm font-semibold">LIVE 시작</p>
+                </div>
+                <span className="text-xs font-bold text-muted-foreground">
+                  {liveStatus === 'starting' ? '연결 중' : '화면 공유'}
+                </span>
+              </div>
+              <Button
+                type="button"
+                className="mt-3 w-full justify-start"
+                disabled={liveStatus === 'starting'}
+                onClick={handleStartLive}
+              >
+                <MonitorUp className="h-4 w-4" />
+                화면 공유
+              </Button>
+              {liveErrorMessage ? (
+                <p className="mt-2 text-xs font-semibold text-destructive">{liveErrorMessage}</p>
+              ) : null}
+            </div>
+          )}
         </div>
         <div className="border-t border-border/70 p-3">
           <div className="mb-3 rounded-md border border-border/70 bg-secondary/70 px-3 py-2">
@@ -170,7 +240,11 @@ const AppLayout = () => {
               ) : null}
             </div>
           </div>
-          <span className="max-w-[48vw] truncate text-xs text-muted-foreground">{user?.email}</span>
+          <div className="flex min-w-0 items-center justify-end gap-2">
+            <span className="max-w-[36vw] truncate text-xs text-muted-foreground">
+              {user?.email}
+            </span>
+          </div>
         </header>
         {activeNavItem?.children ? (
           <nav className="sticky top-14 z-20 border-b border-border/70 bg-background/95 px-3.5 py-2 backdrop-blur-xl xl:hidden">
