@@ -9,18 +9,25 @@ import { inflateSync } from 'node:zlib';
 import {
   createDetectedVisionLayout,
   createMapCardSearchRegions,
+  detectMapSelection,
+  detectVisionScreenType,
   detectRoleFromIcon,
   detectSelfBlueRow,
   getBlueHeroRect,
   getBlueRoleIconRect,
   getCandidateMargin,
+  getCoverSourceRect,
   getRelativeRect,
   heroMatchSize,
   isReliableHeroCandidate,
   isReliableMapCandidate,
+  findVisionTextOption,
+  mapSelectionLabelRegions,
+  mapSelectionMatchSize,
   mapMatchSize,
   parseOcrText,
   rankHeroTemplates,
+  refineMapSelectionWithTextEvidence,
   resizePixelImage,
   scoreMapImages,
   visionRegions,
@@ -381,6 +388,42 @@ const loadMapOptions = () => {
 
 const loadMapModes = () => new Map(loadMapOptions().map((map) => [map.value, map.modeId]));
 
+const loadMapSelectionTemplates = ({ tempDir }) => {
+  start('screen:map-selection:templates');
+  const mapDir = resolve(repoRoot, 'public/assets/overwatch/maps');
+  const templates = loadMapOptions()
+    .filter((map) => existsSync(join(mapDir, `${map.value}.jpg`)))
+    .map((map) => {
+      const mapImage = readPng(
+        resizeToPng({
+          inputPath: join(mapDir, `${map.value}.jpg`),
+          name: `map-selection-source-${map.value}`,
+          resize: {
+            height: 360,
+            width: 640,
+          },
+          tempDir,
+        }),
+      );
+
+      return {
+        image: resizePixelImage(
+          mapImage,
+          getCoverSourceRect(mapImage, mapSelectionMatchSize),
+          mapSelectionMatchSize,
+        ),
+        mapId: map.value,
+        modeId: map.modeId,
+      };
+    });
+
+  end('screen:map-selection:templates', {
+    templateCount: templates.length,
+  });
+
+  return templates;
+};
+
 const loadHeroOptions = () => {
   const source = readFileSync(resolve(repoRoot, 'src/data/matchOptions.ts'), 'utf8');
   const optionRegex =
@@ -509,6 +552,85 @@ const matchMap = ({ sampleImage, tempDir }) => {
     mapCardRegion,
     searchCandidates: searchRegions.length,
   };
+};
+
+const getMapTextOptions = () =>
+  loadMapOptions().map((map) => ({
+    aliases:
+      map.value === 'runasapi'
+        ? ['나사피', '루나 사피']
+        : map.value === 'paraiso'
+          ? ['파라이소', '파라이스']
+          : undefined,
+    label: map.label,
+    value: map.value,
+  }));
+
+const runMapSelectionLabelOcr = async ({ sampleImage, tempDir }) => {
+  start('screen:map-selection:label-ocr');
+  const mapModes = loadMapModes();
+
+  try {
+    const { OEM, PSM, createWorker } = await import('tesseract.js');
+    mkdirSync(tesseractCachePath, {
+      recursive: true,
+    });
+    const worker = await createWorker(ocrLanguages, OEM.LSTM_ONLY, {
+      cacheMethod: 'write',
+      cachePath: tesseractCachePath,
+      errorHandler: (error) => {
+        logStep('screen:map-selection:label-ocr:worker-error', {
+          error,
+        });
+      },
+    });
+
+    await worker.setParameters({
+      preserve_interword_spaces: '1',
+      tessedit_pageseg_mode: PSM.SPARSE_TEXT,
+    });
+
+    const textOptions = getMapTextOptions();
+    const evidence = [];
+
+    for (const labelRegion of mapSelectionLabelRegions) {
+      const rect = getRelativeRect(sampleImage, labelRegion.region);
+      const cropPath = cropResizeToPng({
+        image: sampleImage,
+        inputPath: samplePath,
+        name: `sample-map-selection-label-${labelRegion.slot}`,
+        rect,
+        resize: {
+          height: rect.height * 4,
+          width: rect.width * 4,
+        },
+        tempDir,
+      });
+      const result = await worker.recognize(cropPath);
+      const rawText = result.data.text.trim();
+      const option = findVisionTextOption(rawText, textOptions);
+
+      evidence.push({
+        confidence: option ? Math.max(0.9, result.data.confidence / 100) : result.data.confidence / 100,
+        mapId: option?.value,
+        modeId: option ? mapModes.get(option.value) : undefined,
+        rawText,
+        slot: labelRegion.slot,
+      });
+    }
+
+    await worker.terminate();
+    end('screen:map-selection:label-ocr', {
+      evidence,
+    });
+
+    return evidence;
+  } catch (error) {
+    end('screen:map-selection:label-ocr', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
 };
 
 const findSelfBlueRow = (sampleImage, layout) => {
@@ -725,6 +847,9 @@ const runOcr = async ({ layout, sampleImage, tempDir }) => {
   }
 };
 
+const isEqualAssertionValue = (received, wanted) =>
+  JSON.stringify(received) === JSON.stringify(wanted);
+
 const assertResult = (actual) => {
   if (!expected) {
     return null;
@@ -735,7 +860,7 @@ const assertResult = (actual) => {
 
     return {
       field,
-      ok: received === wanted,
+      ok: isEqualAssertionValue(received, wanted),
       received,
       wanted,
     };
@@ -767,6 +892,59 @@ const main = async () => {
       width: sampleImage.width,
     });
 
+    const mapSelectionTemplates = loadMapSelectionTemplates({ tempDir });
+    let mapSelectionDetection = detectMapSelection(sampleImage, mapSelectionTemplates);
+    const uniqueVisualMapCount = new Set(
+      mapSelectionDetection.candidates.map((candidate) => candidate.mapId),
+    ).size;
+
+    if (
+      (mapSelectionDetection.confidence >= 0.6 && uniqueVisualMapCount >= 3) ||
+      sampleSpec?.screenType === 'map_selection'
+    ) {
+      const textEvidence = await runMapSelectionLabelOcr({
+        sampleImage,
+        tempDir,
+      });
+
+      mapSelectionDetection = refineMapSelectionWithTextEvidence(
+        mapSelectionDetection,
+        textEvidence,
+      );
+    }
+
+    const earlyScreen = detectVisionScreenType({
+      mapSelection: mapSelectionDetection,
+    });
+
+    logStep('screen:early', {
+      mapSelection: mapSelectionDetection,
+      screen: earlyScreen,
+    });
+
+    if (earlyScreen.screenType === 'map_selection' && earlyScreen.confidence >= 0.72) {
+      const actual = {
+        accountName,
+        mapCandidateIds: mapSelectionDetection.candidates.map((candidate) => candidate.mapId),
+        screenType: earlyScreen.screenType,
+      };
+      const assertion = assertResult(actual);
+
+      end('pipeline', {
+        actual,
+        assertion,
+        confidence: {
+          mapSelection: mapSelectionDetection.confidence,
+        },
+        mapSelectionDetection,
+        screen: earlyScreen,
+      });
+
+      console.log(JSON.stringify({ actual, assertion, expected, sampleSpec }, null, 2));
+      process.exitCode = assertion ? (assertion.ok ? 0 : 1) : 0;
+      return;
+    }
+
     const mapMatchResult = matchMap({ sampleImage, tempDir });
     const layout = createDetectedVisionLayout(sampleImage, {
       mapCard: isReliableMapCandidate(mapMatchResult.candidates)
@@ -792,6 +970,11 @@ const main = async () => {
     const reliableHero = isReliableHeroCandidate(heroCandidates);
     const reliableFeaturedHero = featuredHeroCandidates.find((candidate) => candidate.reliable);
     const score = ocrResult.score;
+    const screen = detectVisionScreenType({
+      layout,
+      mapSelection: mapSelectionDetection,
+      ocrText: ocrResult.text,
+    });
     const actual = {
       accountName,
       enemyScore: score?.enemyScore ?? null,
@@ -806,6 +989,7 @@ const main = async () => {
         null,
       playedAtLocal: ocrResult.parsed.playedAtLocal ?? null,
       result: ocrResult.parsed.result ?? textEvidence.result ?? null,
+      screenType: screen.screenType,
       selfRow,
       teamScore: score?.teamScore ?? null,
     };
@@ -824,7 +1008,9 @@ const main = async () => {
       featuredHeroCandidates,
       heroCandidates,
       mapCandidates,
+      mapSelectionDetection,
       ocrText: ocrResult.text,
+      screen,
       textEvidence,
     });
 

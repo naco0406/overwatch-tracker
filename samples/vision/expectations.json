@@ -25,6 +25,7 @@
         "myHero": "doomfist",
         "playedAtLocal": "2026-05-25T02:05",
         "result": "win",
+        "screenType": "scoreboard",
         "selfRow": 1,
         "teamScore": 2
       }
@@ -48,6 +49,7 @@
         "myHero": "tracer",
         "playedAtLocal": null,
         "result": null,
+        "screenType": "in_game_status",
         "teamScore": null
       }
     },
@@ -72,6 +74,7 @@
         "myHero": "tracer",
         "playedAtLocal": null,
         "result": "loss",
+        "screenType": "match_result",
         "teamScore": null
       }
     },
@@ -342,6 +345,11 @@
       },
       "ignore": ["result", "score", "heroIds"],
       "requiredFields": ["mapCandidates[].mapId"],
+      "assertions": {
+        "accountName": "LUXY",
+        "mapCandidateIds": ["ilios", "runasapi", "paraiso"],
+        "screenType": "map_selection"
+      },
       "notes": "LIVE 맵 추천용 샘플. 후보 맵을 인식한 뒤 해당 후보 안에서 승률 추천을 계산한다."
     }
   ]

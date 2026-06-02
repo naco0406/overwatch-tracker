@@ -23,6 +23,16 @@ export interface ImageDimensions {
   width: number;
 }
 
+export type VisionScreenType =
+  | 'competitive_progress'
+  | 'in_game_status'
+  | 'map_selection'
+  | 'match_history'
+  | 'match_result'
+  | 'match_summary'
+  | 'scoreboard'
+  | 'unknown';
+
 export interface PixelAverage {
   blue: number;
   green: number;
@@ -86,6 +96,50 @@ export interface RankedCandidate {
   confidence: number;
 }
 
+export interface MapTemplate<TMapId extends string = string> {
+  image: PixelImage;
+  mapId: TMapId;
+  modeId?: string;
+}
+
+export interface MapSelectionAlternative<TMapId extends string = string> {
+  confidence: number;
+  mapId: TMapId;
+  modeId?: string;
+}
+
+export interface MapSelectionCandidate<
+  TMapId extends string = string,
+> extends MapSelectionAlternative<TMapId> {
+  alternatives: MapSelectionAlternative<TMapId>[];
+  margin: number;
+  rect: RelativeRect;
+  slot: 'center' | 'left' | 'right';
+}
+
+export interface MapSelectionDetection<TMapId extends string = string> {
+  candidates: MapSelectionCandidate<TMapId>[];
+  confidence: number;
+  evidence: string[];
+  screenType: 'map_selection';
+  textEvidenceCount: number;
+}
+
+export interface MapSelectionTextEvidence<TMapId extends string = string> {
+  confidence: number;
+  mapId?: TMapId;
+  modeId?: string;
+  rawText: string;
+  slot: MapSelectionCandidate['slot'];
+}
+
+export interface VisionScreenDetection<TMapId extends string = string> {
+  confidence: number;
+  evidence: string[];
+  mapSelection?: MapSelectionDetection<TMapId>;
+  screenType: VisionScreenType;
+}
+
 export type HeroRole = 'damage' | 'support' | 'tank';
 
 export const visionRegions = {
@@ -132,6 +186,10 @@ export const heroMatchSize = {
 export const mapMatchSize = {
   height: 60,
   width: 96,
+} as const;
+export const mapSelectionMatchSize = {
+  height: 104,
+  width: 72,
 } as const;
 export const reliableMapConfidence = 0.9;
 export const reliableMapMargin = 0.025;
@@ -183,6 +241,34 @@ export const getRelativeRect = (dimensions: ImageDimensions, rect: RelativeRect)
   top: Math.round(dimensions.height * rect.top),
   width: Math.round(dimensions.width * rect.width),
 });
+
+export const getCoverSourceRect = (
+  dimensions: ImageDimensions,
+  target: ImageDimensions,
+): PixelRect => {
+  const sourceAspect = dimensions.width / dimensions.height;
+  const targetAspect = target.width / target.height;
+
+  if (sourceAspect > targetAspect) {
+    const width = Math.round(dimensions.height * targetAspect);
+
+    return {
+      height: dimensions.height,
+      left: Math.round((dimensions.width - width) / 2),
+      top: 0,
+      width,
+    };
+  }
+
+  const height = Math.round(dimensions.width / targetAspect);
+
+  return {
+    height,
+    left: 0,
+    top: Math.round((dimensions.height - height) / 2),
+    width: dimensions.width,
+  };
+};
 
 export const offsetRelativeRect = (
   rect: RelativeRect,
@@ -1019,3 +1105,332 @@ export const scoreMapImages = (sampleMap: PixelImage, mapImage: PixelImage) =>
   confidenceFromSimilarity(
     cosineSimilarity(createFeatureVector(sampleMap), createFeatureVector(mapImage)),
   );
+
+export const mapSelectionCardRegions = [
+  {
+    region: {
+      height: 0.46,
+      left: 0.187,
+      top: 0.272,
+      width: 0.178,
+    },
+    slot: 'left',
+  },
+  {
+    region: {
+      height: 0.473,
+      left: 0.407,
+      top: 0.259,
+      width: 0.186,
+    },
+    slot: 'center',
+  },
+  {
+    region: {
+      height: 0.46,
+      left: 0.637,
+      top: 0.272,
+      width: 0.178,
+    },
+    slot: 'right',
+  },
+] as const satisfies {
+  region: RelativeRect;
+  slot: MapSelectionCandidate['slot'];
+}[];
+
+export const mapSelectionLabelRegions = [
+  {
+    region: {
+      height: 0.075,
+      left: 0.244,
+      top: 0.518,
+      width: 0.13,
+    },
+    slot: 'left',
+  },
+  {
+    region: {
+      height: 0.075,
+      left: 0.464,
+      top: 0.518,
+      width: 0.13,
+    },
+    slot: 'center',
+  },
+  {
+    region: {
+      height: 0.075,
+      left: 0.695,
+      top: 0.518,
+      width: 0.13,
+    },
+    slot: 'right',
+  },
+] as const satisfies {
+  region: RelativeRect;
+  slot: MapSelectionCandidate['slot'];
+}[];
+
+const reliableMapSelectionConfidence = 0.84;
+const reliableMapSelectionMargin = 0.006;
+
+export const compactVisionScreenText = (text: string) =>
+  text
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\s\-_:/\\|()[\]{}.,'"`~!@#$%^&*+=?<>·•]+/g, '');
+
+export interface VisionTextOption<TValue extends string = string> {
+  aliases?: string[];
+  label: string;
+  value: TValue;
+}
+
+export const findVisionTextOption = <TValue extends string>(
+  text: string,
+  options: VisionTextOption<TValue>[],
+) => {
+  const compact = compactVisionScreenText(text);
+  const matches = options
+    .flatMap((option) =>
+      [option.label, option.value, ...(option.aliases ?? [])]
+        .map((alias) => ({
+          option,
+          position: compact.indexOf(compactVisionScreenText(alias)),
+        }))
+        .filter((match) => match.position >= 0),
+    )
+    .sort((left, right) => left.position - right.position);
+
+  return matches[0]?.option;
+};
+
+export const refineMapSelectionWithTextEvidence = <TMapId extends string>(
+  detection: MapSelectionDetection<TMapId>,
+  textEvidence: MapSelectionTextEvidence<TMapId>[],
+): MapSelectionDetection<TMapId> => {
+  const textEvidenceBySlot = new Map(textEvidence.map((evidence) => [evidence.slot, evidence]));
+  let changed = false;
+  const candidates = detection.candidates.map((candidate) => {
+    const evidence = textEvidenceBySlot.get(candidate.slot);
+
+    if (!evidence?.mapId || evidence.mapId === candidate.mapId) {
+      return candidate;
+    }
+
+    changed = true;
+
+    return {
+      ...candidate,
+      alternatives: [
+        {
+          confidence: evidence.confidence,
+          mapId: evidence.mapId,
+          modeId: evidence.modeId,
+        },
+        ...candidate.alternatives.filter((alternative) => alternative.mapId !== evidence.mapId),
+      ],
+      confidence: Math.max(candidate.confidence, evidence.confidence),
+      mapId: evidence.mapId,
+      margin: Math.max(candidate.margin, evidence.confidence - candidate.confidence),
+      modeId: evidence.modeId ?? candidate.modeId,
+    };
+  });
+
+  const correctedCount = textEvidence.filter((evidence) => evidence.mapId).length;
+
+  if (!changed) {
+    return correctedCount > 0
+      ? {
+          ...detection,
+          confidence: Math.min(0.99, Math.max(detection.confidence, 0.76 + correctedCount * 0.06)),
+          evidence: [...detection.evidence, `${correctedCount} OCR map labels`],
+          textEvidenceCount: correctedCount,
+        }
+      : detection;
+  }
+
+  return {
+    ...detection,
+    candidates,
+    confidence: Math.min(0.99, Math.max(detection.confidence, 0.76 + correctedCount * 0.06)),
+    evidence: [...detection.evidence, `${correctedCount} OCR map labels`],
+    textEvidenceCount: correctedCount,
+  };
+};
+
+const hasCompactKeyword = (text: string, keywords: string[]) => {
+  const compact = compactVisionScreenText(text);
+
+  return keywords.some((keyword) => compact.includes(compactVisionScreenText(keyword)));
+};
+
+export const detectMapSelection = <TMapId extends string>(
+  image: PixelImage,
+  templates: MapTemplate<TMapId>[],
+): MapSelectionDetection<TMapId> => {
+  const candidates = mapSelectionCardRegions
+    .map(({ region, slot }) => {
+      const sampleMap = resizePixelImage(
+        image,
+        getRelativeRect(image, region),
+        mapSelectionMatchSize,
+      );
+      const alternatives = templates
+        .map((template) => ({
+          confidence: scoreMapImages(sampleMap, template.image),
+          mapId: template.mapId,
+          modeId: template.modeId,
+        }))
+        .sort((left, right) => right.confidence - left.confidence)
+        .slice(0, 5);
+      const best = alternatives[0];
+
+      return {
+        alternatives,
+        confidence: best?.confidence ?? 0,
+        mapId: best?.mapId ?? ('' as TMapId),
+        margin: getCandidateMargin(alternatives),
+        modeId: best?.modeId,
+        rect: region,
+        slot,
+      };
+    })
+    .filter((candidate) => candidate.mapId);
+
+  const reliableCandidates = candidates.filter(
+    (candidate) =>
+      candidate.confidence >= reliableMapSelectionConfidence &&
+      candidate.margin >= reliableMapSelectionMargin,
+  );
+  const uniqueReliableMaps = new Set(reliableCandidates.map((candidate) => candidate.mapId));
+  const averageConfidence =
+    reliableCandidates.reduce((sum, candidate) => sum + candidate.confidence, 0) /
+    Math.max(1, reliableCandidates.length);
+  const confidence =
+    reliableCandidates.length >= 2
+      ? Math.min(0.98, 0.48 + reliableCandidates.length * 0.12 + averageConfidence * 0.24)
+      : Math.max(0, averageConfidence * 0.45);
+  const evidence = [
+    `${reliableCandidates.length}/3 reliable map cards`,
+    `${uniqueReliableMaps.size} unique maps`,
+  ];
+
+  return {
+    candidates,
+    confidence,
+    evidence,
+    screenType: 'map_selection',
+    textEvidenceCount: 0,
+  };
+};
+
+export const detectVisionScreenType = <TMapId extends string>({
+  layout,
+  mapSelection,
+  ocrText,
+}: {
+  layout?: VisionLayout;
+  mapSelection?: MapSelectionDetection<TMapId>;
+  ocrText?: string;
+}): VisionScreenDetection<TMapId> => {
+  const evidence: string[] = [];
+
+  if (
+    mapSelection &&
+    mapSelection.confidence >= (mapSelection.textEvidenceCount > 0 ? 0.72 : 0.97)
+  ) {
+    return {
+      confidence: mapSelection.confidence,
+      evidence: [...mapSelection.evidence, 'map cards detected'],
+      mapSelection,
+      screenType: 'map_selection',
+    };
+  }
+
+  if (ocrText) {
+    const parsed = parseOcrText(ocrText);
+
+    if (hasCompactKeyword(ocrText, ['많이 득표한 전장', '전장 선택'])) {
+      return {
+        confidence: Math.max(0.72, mapSelection?.confidence ?? 0),
+        evidence: ['map selection keyword'],
+        mapSelection,
+        screenType: 'map_selection',
+      };
+    }
+
+    if (hasCompactKeyword(ocrText, ['경쟁전 진척도'])) {
+      return {
+        confidence: 0.78,
+        evidence: ['competitive progress keyword'],
+        mapSelection,
+        screenType: 'competitive_progress',
+      };
+    }
+
+    if (hasCompactKeyword(ocrText, ['게임 분석', '분석 요약'])) {
+      return {
+        confidence: 0.74,
+        evidence: ['match summary keyword'],
+        mapSelection,
+        screenType: 'match_summary',
+      };
+    }
+
+    if (hasCompactKeyword(ocrText, ['기록', '경기 기록', '최근 경기'])) {
+      return {
+        confidence: 0.68,
+        evidence: ['history keyword'],
+        mapSelection,
+        screenType: 'match_history',
+      };
+    }
+
+    if (layout?.diagnostics.rowDetection.source === 'detected') {
+      const confidence = Math.max(0.3, Math.min(0.76, layout.diagnostics.rowDetection.confidence));
+      const isShiftedStatusLayout = Math.abs(layout.diagnostics.rowDetection.deltaTop) >= 0.05;
+
+      return {
+        confidence,
+        evidence: [isShiftedStatusLayout ? 'shifted status row layout' : 'scoreboard row layout'],
+        mapSelection,
+        screenType: isShiftedStatusLayout ? 'in_game_status' : 'scoreboard',
+      };
+    }
+
+    if (
+      parsed.result &&
+      (typeof parsed.teamScore === 'number' || hasCompactKeyword(ocrText, ['승리', '패배']))
+    ) {
+      return {
+        confidence: typeof parsed.teamScore === 'number' ? 0.82 : 0.68,
+        evidence: ['result text'],
+        mapSelection,
+        screenType: 'match_result',
+      };
+    }
+  }
+
+  if (layout?.diagnostics.rowDetection.source === 'detected') {
+    const confidence = Math.max(0.3, Math.min(0.72, layout.diagnostics.rowDetection.confidence));
+    const isShiftedStatusLayout = Math.abs(layout.diagnostics.rowDetection.deltaTop) >= 0.05;
+
+    evidence.push(isShiftedStatusLayout ? 'shifted status row layout' : 'scoreboard row layout');
+
+    return {
+      confidence,
+      evidence,
+      mapSelection,
+      screenType: isShiftedStatusLayout ? 'in_game_status' : 'scoreboard',
+    };
+  }
+
+  return {
+    confidence: 0,
+    evidence,
+    mapSelection,
+    screenType: 'unknown',
+  };
+};

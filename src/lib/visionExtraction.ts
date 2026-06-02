@@ -9,13 +9,17 @@ import { getHeroPortraitPath, getMapScreenshotPath } from '@/data/masterAssets';
 import {
   createDetectedVisionLayout,
   createMapCardSearchRegions,
+  detectMapSelection,
+  detectVisionScreenType,
   detectRoleFromIcon,
   detectSelfBlueRow,
   getBlueRoleIconRect,
+  getCoverSourceRect,
   getRelativeRect,
   heroMatchSize,
   isReliableHeroCandidate,
   isReliableMapCandidate,
+  mapSelectionMatchSize,
   mapMatchSize,
   parseOcrText,
   rankHeroTemplates,
@@ -29,6 +33,7 @@ import {
   type PixelRect as Rect,
   type RelativeRect,
   type VisionLayout,
+  type VisionScreenDetection,
 } from '@/lib/visionPipelineCore';
 import type { MatchCreateInput, MatchResult, ModeId } from '@/types/match';
 import type { PlayerAccount } from '@/types/playerAccount';
@@ -54,6 +59,7 @@ export interface VisionExtractionResult {
   mapCandidates: VisionMapCandidate[];
   ocrText?: string;
   raw: string;
+  screen: VisionScreenDetection<MapOption['value']>;
   warnings: string[];
 }
 
@@ -115,6 +121,7 @@ let loadedHeroTemplates:
     >
   | undefined;
 const loadedMapVectors = new Map<MapOption['value'], Promise<PixelImage>>();
+const loadedMapSelectionVectors = new Map<MapOption['value'], Promise<PixelImage>>();
 
 const mapById = new Map(mapOptions.map((map) => [map.value, map] as const));
 const visionLogPrefix = '[Overwatch Vision]';
@@ -549,6 +556,31 @@ const loadMapFeatureVector = (mapId: MapOption['value']) => {
   return promise;
 };
 
+const loadMapSelectionFeatureVector = (mapId: MapOption['value']) => {
+  const cached = loadedMapSelectionVectors.get(mapId);
+
+  if (cached) {
+    return cached;
+  }
+
+  const promise = loadHtmlImage(getMapScreenshotPath(mapId)).then((mapImage) =>
+    createPixelImage(
+      mapImage,
+      getCoverSourceRect(
+        {
+          height: mapImage.naturalHeight,
+          width: mapImage.naturalWidth,
+        },
+        mapSelectionMatchSize,
+      ),
+      mapSelectionMatchSize,
+    ),
+  );
+
+  loadedMapSelectionVectors.set(mapId, promise);
+  return promise;
+};
+
 const loadHeroTemplates = (logger: VisionLogger) => {
   if (loadedHeroTemplates) {
     logger.event('hero-match:template-cache-hit');
@@ -571,6 +603,32 @@ const loadHeroTemplates = (logger: VisionLogger) => {
   );
 
   return loadedHeroTemplates;
+};
+
+const runMapSelectionDetection = async ({
+  logger,
+  screenshotPixels,
+}: {
+  logger: VisionLogger;
+  screenshotPixels: PixelImage;
+}) => {
+  logger.start('screen:map-selection');
+  const mapTemplates = await Promise.all(
+    mapOptions.map(async (map) => ({
+      image: await loadMapSelectionFeatureVector(map.value),
+      mapId: map.value,
+      modeId: map.modeId,
+    })),
+  );
+  const detection = detectMapSelection(screenshotPixels, mapTemplates);
+
+  logger.end('screen:map-selection', {
+    candidates: detection.candidates,
+    confidence: detection.confidence,
+    evidence: detection.evidence,
+  });
+
+  return detection;
 };
 
 const runVisualMapMatch = async ({
@@ -998,6 +1056,61 @@ export const extractMatchFromScreenshot = async ({
   });
   const screenshotPixels = createPixelImage(screenshotImage, undefined, dimensions);
   const warnings: string[] = [];
+  let mapSelectionDetection: Awaited<ReturnType<typeof runMapSelectionDetection>> | undefined;
+
+  if (config.enableVisualMapMatch !== false) {
+    try {
+      mapSelectionDetection = await runMapSelectionDetection({
+        logger,
+        screenshotPixels,
+      });
+    } catch (error) {
+      logger.warn('screen:map-selection:error', getErrorPayload(error));
+    }
+  }
+
+  const earlyScreen = mapSelectionDetection
+    ? detectVisionScreenType({
+        mapSelection: mapSelectionDetection,
+      })
+    : undefined;
+
+  if (earlyScreen?.screenType === 'map_selection' && mapSelectionDetection) {
+    const screen = earlyScreen;
+    const result = {
+      draft: {
+        accountId: accounts.find((account) => account.isMain)?.id ?? accounts[0]?.id,
+        playedAt: new Date(),
+        source: 'mixed',
+      },
+      heroCandidates: [],
+      mapCandidates: mapSelectionDetection.candidates.map((candidate) => ({
+        confidence: candidate.confidence,
+        mapId: candidate.mapId,
+      })),
+      ocrText: '',
+      raw: JSON.stringify(
+        {
+          mapSelection: mapSelectionDetection,
+          pipeline: 'screen-type-map-selection',
+          screen,
+        },
+        null,
+        2,
+      ),
+      screen,
+      warnings: ['맵 선택 화면으로 감지되어 경기 결과 입력값은 만들지 않았습니다.'],
+    } satisfies VisionExtractionResult;
+
+    logger.end('analysis', {
+      draft: result.draft,
+      mapSelection: mapSelectionDetection,
+      screen,
+      warnings: result.warnings,
+    });
+
+    return result;
+  }
 
   let mapCandidates: VisionMapCandidate[] = [];
   let mapMatchResult: VisionMapMatchResult | undefined;
@@ -1096,6 +1209,11 @@ export const extractMatchFromScreenshot = async ({
   });
 
   logger.start('normalizing');
+  const screen = detectVisionScreenType({
+    layout,
+    mapSelection: mapSelectionDetection,
+    ocrText,
+  });
   const normalized = normalizeExtractionResult({
     fallback: {
       accountId: accounts.find((account) => account.isMain)?.id ?? accounts[0]?.id,
@@ -1116,13 +1234,16 @@ export const extractMatchFromScreenshot = async ({
         heroCandidates,
         layout,
         mapCandidates,
+        mapSelection: mapSelectionDetection,
         ocrText,
         pipeline: 'layout-detection-ocr-image-matching',
+        screen,
         textEvidence: normalized.textEvidence,
       },
       null,
       2,
     ),
+    screen,
     warnings: [...warnings, ...normalized.warnings],
   };
 
@@ -1137,6 +1258,7 @@ export const extractMatchFromScreenshot = async ({
     layout,
     mapCandidates: result.mapCandidates,
     ocrText: result.ocrText,
+    screen,
     warnings: result.warnings,
   });
 
