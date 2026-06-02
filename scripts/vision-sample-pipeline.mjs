@@ -9,14 +9,18 @@ import { inflateSync } from 'node:zlib';
 import {
   createDetectedVisionLayout,
   createMapCardSearchRegions,
+  confidenceFromSimilarity,
+  cosineSimilarity,
   detectMapSelection,
   detectVisionScreenType,
   detectRoleFromIcon,
   detectSelfBlueRow,
+  getAlpha,
   getBlueHeroRect,
   getBlueRoleIconRect,
   getCandidateMargin,
   getCoverSourceRect,
+  getPixel,
   getRelativeRect,
   heroMatchSize,
   isReliableHeroCandidate,
@@ -66,6 +70,15 @@ const sampleSpecsByName = loadSampleSpecs();
 const sampleSpec = sampleSpecsByName[basename(samplePath)] ?? null;
 const expected = sampleSpec?.assertions ?? null;
 const supplementalOcrRegions = [
+  {
+    name: 'summary-map-title',
+    region: {
+      height: 0.085,
+      left: 0.665,
+      top: 0.17,
+      width: 0.22,
+    },
+  },
   {
     name: 'top-status',
     region: {
@@ -189,6 +202,8 @@ const logStep = (message, payload) => {
 
   console.log(`[vision-sample] ${message}`, payload);
 };
+
+const debugVision = process.env.OW_DEBUG_VISION === '1';
 
 const start = (step, payload) => {
   timers.set(step, performance.now());
@@ -554,14 +569,29 @@ const matchMap = ({ sampleImage, tempDir }) => {
   };
 };
 
+const getMapTextAliases = (mapId) => {
+  if (mapId === 'runasapi') {
+    return ['나사피', '루나 사피'];
+  }
+
+  if (mapId === 'oasis') {
+    return ['오마시스', '오이시스'];
+  }
+
+  if (mapId === 'kings-row') {
+    return ['왕의 실', '왕의길', '왕의실'];
+  }
+
+  if (mapId === 'paraiso') {
+    return ['파라이소', '파라이스'];
+  }
+
+  return undefined;
+};
+
 const getMapTextOptions = () =>
   loadMapOptions().map((map) => ({
-    aliases:
-      map.value === 'runasapi'
-        ? ['나사피', '루나 사피']
-        : map.value === 'paraiso'
-          ? ['파라이소', '파라이스']
-          : undefined,
+    aliases: getMapTextAliases(map.value),
     label: map.label,
     value: map.value,
   }));
@@ -804,7 +834,7 @@ const runOcr = async ({ layout, sampleImage, tempDir }) => {
         text,
       });
 
-      if (index === 0 && hasCoreOcrFields(parseOcrText(text))) {
+      if (index >= 1 && hasCoreOcrFields(parseOcrText(recognized[0]?.text ?? ''))) {
         break;
       }
     }
@@ -847,15 +877,613 @@ const runOcr = async ({ layout, sampleImage, tempDir }) => {
   }
 };
 
-const isEqualAssertionValue = (received, wanted) =>
-  JSON.stringify(received) === JSON.stringify(wanted);
+const bulkRowConfigs = {
+  competitive_progress: {
+    heroRole: 'damage',
+    heroSlots: [
+      { height: 0.048, left: 0.431, top: 0.006, width: 0.027 },
+      { height: 0.048, left: 0.463, top: 0.006, width: 0.027 },
+      { height: 0.048, left: 0.495, top: 0.006, width: 0.027 },
+    ],
+    mapImageRegion: { height: 0.063, left: 0.378, top: 0, width: 0.145 },
+    mapRegion: { height: 0.046, left: 0.315, top: 0.012, width: 0.12 },
+    playlist: 'competitive',
+    rowCount: 8,
+    rowHeight: 0.063,
+    rowPitch: 0.0685,
+    rowTop: 0.357,
+    scoreRegion: { height: 0.042, left: 0.846, top: 0.018, width: 0.04 },
+    screenType: 'competitive_progress',
+  },
+  match_history: {
+    mapOcrMode: 'single_line',
+    mapImageRegion: { height: 0.063, left: 0.38, top: 0, width: 0.145 },
+    mapRegion: { height: 0.056, left: 0.255, top: 0.006, width: 0.16 },
+    playlistColorRegion: { height: 0.063, left: 0.224, top: 0, width: 0.006 },
+    playlistRegion: { height: 0.06, left: 0.57, top: 0.005, width: 0.13 },
+    rowCount: 7,
+    rowHeight: 0.063,
+    rowPitch: 0.068,
+    rowTop: 0.343,
+    scoreRegion: { height: 0.042, left: 0.914, top: 0.017, width: 0.033 },
+    screenType: 'match_history',
+  },
+};
 
-const assertResult = (actual) => {
-  if (!expected) {
+const getRelativeRowRegion = (config, rowIndex, region) => ({
+  height: region.height,
+  left: region.left,
+  top: config.rowTop + rowIndex * config.rowPitch + region.top,
+  width: region.width,
+});
+
+const parseBulkScore = (text) => {
+  const compact = text.replace(/\s+/g, '').replace(/[oO]/g, '0');
+  const match = compact.match(/(\d{1,2})\s*[-–—:]\s*(\d{1,2})/) ?? compact.match(/(\d)(\d)/);
+
+  if (!match) {
     return null;
   }
 
-  const checks = Object.entries(expected).map(([field, wanted]) => {
+  return {
+    enemy: Number(match[2]),
+    team: Number(match[1]),
+  };
+};
+
+const getResultFromScore = (score) => {
+  if (!score) return null;
+  if (score.team > score.enemy) return 'win';
+  if (score.team < score.enemy) return 'loss';
+  return 'draw';
+};
+
+const getPlaylistFromText = (text, fallback) => {
+  const compact = compactVisionText(text);
+
+  if (compact.includes(compactVisionText('일반전')) || compact.includes(compactVisionText('빠른 대전'))) {
+    return 'quick_play';
+  }
+
+  if (compact.includes(compactVisionText('경쟁전')) || compact.includes(compactVisionText('역할 고정'))) {
+    return 'competitive';
+  }
+
+  return fallback;
+};
+
+const getPlaylistFromColor = ({ config, rowIndex, sampleImage }) => {
+  if (!config.playlistColorRegion) {
+    return null;
+  }
+
+  const rect = getRelativeRect(
+    sampleImage,
+    getRelativeRowRegion(config, rowIndex, config.playlistColorRegion),
+  );
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+  let count = 0;
+
+  for (let y = rect.top; y < rect.top + rect.height; y += 1) {
+    for (let x = rect.left; x < rect.left + rect.width; x += 1) {
+      const pixel = getPixel(sampleImage, x, y);
+
+      red += pixel[0];
+      green += pixel[1];
+      blue += pixel[2];
+      count += 1;
+    }
+  }
+
+  const averageRed = red / Math.max(1, count);
+  const averageGreen = green / Math.max(1, count);
+  const averageBlue = blue / Math.max(1, count);
+
+  if (averageRed > averageBlue * 1.15 && averageRed > averageGreen * 1.15) {
+    return 'competitive';
+  }
+
+  if (averageBlue > averageRed * 1.15 && averageBlue > averageGreen * 1.15) {
+    return 'quick_play';
+  }
+
+  return null;
+};
+
+const recognizeBulkRegion = async ({ name, parameters, region, sampleImage, tempDir, worker }) => {
+  if (parameters) {
+    await worker.setParameters(parameters);
+  }
+
+  const rect = getRelativeRect(sampleImage, region);
+  const cropPath = cropResizeToPng({
+    image: sampleImage,
+    inputPath: samplePath,
+    name,
+    rect,
+    resize: {
+      height: rect.height * 4,
+      width: rect.width * 4,
+    },
+    tempDir,
+  });
+  const result = await worker.recognize(cropPath);
+
+  return {
+    confidence: result.data.confidence,
+    rect,
+    text: result.data.text.trim(),
+  };
+};
+
+const normalizeScoreVector = (vector) => {
+  const mean = vector.reduce((sum, value) => sum + value, 0) / vector.length;
+  const variance = vector.reduce((sum, value) => sum + (value - mean) ** 2, 0) / vector.length;
+  const deviation = Math.sqrt(variance) || 1;
+
+  return vector.map((value) => (value - mean) / deviation);
+};
+
+const scoreCircularHeroIcon = (sampleHero, templateHero) => {
+  const sampleLuma = [];
+  const templateLuma = [];
+  const sampleColor = [];
+  const templateColor = [];
+  const centerX = (heroMatchSize.width - 1) / 2;
+  const centerY = (heroMatchSize.height - 1) / 2;
+  const radius = Math.min(heroMatchSize.width, heroMatchSize.height) * 0.43;
+
+  for (let y = 0; y < heroMatchSize.height; y += 1) {
+    for (let x = 0; x < heroMatchSize.width; x += 1) {
+      const distance = Math.hypot(x - centerX, y - centerY);
+
+      if (distance > radius || getAlpha(templateHero, x, y) < 0.12) {
+        continue;
+      }
+
+      const [sampleRed, sampleGreen, sampleBlue] = getPixel(sampleHero, x, y);
+      const [templateRed, templateGreen, templateBlue] = getPixel(templateHero, x, y);
+      const samplePixelLuma = (sampleRed * 0.299 + sampleGreen * 0.587 + sampleBlue * 0.114) / 255;
+      const templatePixelLuma =
+        (templateRed * 0.299 + templateGreen * 0.587 + templateBlue * 0.114) / 255;
+
+      sampleLuma.push(samplePixelLuma);
+      templateLuma.push(templatePixelLuma);
+      sampleColor.push(
+        sampleRed / 255 - samplePixelLuma,
+        sampleGreen / 255 - samplePixelLuma,
+        sampleBlue / 255 - samplePixelLuma,
+      );
+      templateColor.push(
+        templateRed / 255 - templatePixelLuma,
+        templateGreen / 255 - templatePixelLuma,
+        templateBlue / 255 - templatePixelLuma,
+      );
+    }
+  }
+
+  return (
+    confidenceFromSimilarity(
+      cosineSimilarity(normalizeScoreVector(sampleLuma), normalizeScoreVector(templateLuma)),
+    ) *
+      0.56 +
+    confidenceFromSimilarity(
+      cosineSimilarity(normalizeScoreVector(sampleColor), normalizeScoreVector(templateColor)),
+    ) *
+      0.44
+  );
+};
+
+const rankBulkHeroTemplates = (sampleHero, heroTemplates, role) =>
+  heroTemplates
+    .filter((template) => !role || template.role === role)
+    .map((template) => ({
+      confidence: scoreCircularHeroIcon(sampleHero, template.image),
+      heroId: template.heroId,
+      role: template.role,
+    }))
+    .sort((left, right) => right.confidence - left.confidence);
+
+const rankCombinedBulkHeroTemplates = (sampleHero, heroTemplates, role) => {
+  const layoutScores = rankHeroTemplates(sampleHero, heroTemplates, role);
+  const circularScores = rankBulkHeroTemplates(sampleHero, heroTemplates, role);
+  const circularScoresByHero = new Map(
+    circularScores.map((candidate) => [candidate.heroId, candidate]),
+  );
+
+  return layoutScores
+    .map((layoutCandidate) => {
+      const circularCandidate = circularScoresByHero.get(layoutCandidate.heroId);
+      const circularConfidence = circularCandidate?.confidence ?? 0;
+
+      return {
+        confidence: layoutCandidate.confidence * 0.62 + circularConfidence * 0.38,
+        circularConfidence,
+        heroId: layoutCandidate.heroId,
+        layoutConfidence: layoutCandidate.confidence,
+        role: layoutCandidate.role,
+      };
+    })
+    .sort((left, right) => right.confidence - left.confidence);
+};
+
+const isReliableBulkHeroCandidate = (candidates) =>
+  Boolean(
+    candidates[0] &&
+      candidates[0].confidence >= 0.73 &&
+      getCandidateMargin(candidates) >= 0.012,
+  );
+
+const matchBulkHeroSlots = ({ config, heroTemplates, rowIndex, sampleImage }) => {
+  if (!config.heroSlots) {
+    return [];
+  }
+
+  const slots = config.heroSlots.map((slot) => {
+    const rect = getRelativeRect(sampleImage, getRelativeRowRegion(config, rowIndex, slot));
+    const sampleHero = resizePixelImage(sampleImage, rect, heroMatchSize, {
+      background: [20, 34, 53],
+    });
+    const candidates = rankCombinedBulkHeroTemplates(
+      sampleHero,
+      heroTemplates,
+      config.heroRole,
+    ).slice(0, 5);
+    const best = candidates[0];
+
+    return {
+      candidates: debugVision ? candidates : undefined,
+      confidence: best?.confidence ?? 0,
+      heroId: best?.heroId ?? null,
+      margin: getCandidateMargin(candidates),
+      rect,
+      reliable: isReliableBulkHeroCandidate(candidates),
+    };
+  });
+
+  if (debugVision) {
+    logStep(
+      'bulk-match-extract:hero-slots',
+      JSON.stringify(
+        {
+          row: rowIndex + 1,
+          slots,
+        },
+        null,
+        2,
+      ),
+    );
+  }
+
+  return slots
+    .filter((candidate) => candidate.heroId && candidate.reliable)
+    .map((candidate) => candidate.heroId);
+};
+
+const bulkMapMatchSize = {
+  height: 64,
+  width: 144,
+};
+
+const loadBulkMapTemplates = ({ tempDir }) => {
+  const mapDir = resolve(repoRoot, 'public/assets/overwatch/maps');
+
+  return loadMapOptions()
+    .filter((map) => existsSync(join(mapDir, `${map.value}.jpg`)))
+    .map((map) => {
+      const mapImage = readPng(
+        resizeToPng({
+          inputPath: join(mapDir, `${map.value}.jpg`),
+          name: `bulk-map-source-${map.value}`,
+          resize: {
+            height: 360,
+            width: 640,
+          },
+          tempDir,
+        }),
+      );
+
+      return {
+        image: resizePixelImage(
+          mapImage,
+          getCoverSourceRect(mapImage, bulkMapMatchSize),
+          bulkMapMatchSize,
+        ),
+        mapId: map.value,
+        modeId: map.modeId,
+      };
+    });
+};
+
+const matchBulkMapThumbnail = ({ config, mapTemplates, rowIndex, sampleImage }) => {
+  if (!config.mapImageRegion) {
+    return null;
+  }
+
+  const rect = getRelativeRect(
+    sampleImage,
+    getRelativeRowRegion(config, rowIndex, config.mapImageRegion),
+  );
+  const sampleMap = resizePixelImage(sampleImage, rect, bulkMapMatchSize);
+  const candidates = mapTemplates
+    .map((map) => ({
+      confidence: scoreMapImages(sampleMap, map.image),
+      mapId: map.mapId,
+      modeId: map.modeId,
+    }))
+    .sort((left, right) => right.confidence - left.confidence);
+
+  if (
+    !candidates[0] ||
+    candidates[0].confidence < 0.82 ||
+    getCandidateMargin(candidates) < 0.012
+  ) {
+    return null;
+  }
+
+  return candidates[0];
+};
+
+const getBulkAssertion = (sampleSpec) => {
+  if (!sampleSpec?.expected?.matches) {
+    return null;
+  }
+
+  const requiredMatchFields = (sampleSpec.requiredFields ?? [])
+    .filter((field) => field.startsWith('matches[].'))
+    .map((field) => field.replace('matches[].', ''));
+  const matches =
+    requiredMatchFields.length > 0
+      ? sampleSpec.expected.matches.map((match) =>
+          projectObjectFields(match, ['visibleOrder', ...requiredMatchFields]),
+        )
+      : sampleSpec.expected.matches;
+
+  return {
+    matches,
+    screenType: sampleSpec.screenType,
+  };
+};
+
+const getObjectPathValue = (source, path) =>
+  path.split('.').reduce((value, key) => (value == null ? undefined : value[key]), source);
+
+const setObjectPathValue = (target, path, value) => {
+  const keys = path.split('.');
+  let cursor = target;
+
+  for (const key of keys.slice(0, -1)) {
+    cursor[key] ??= {};
+    cursor = cursor[key];
+  }
+
+  cursor[keys.at(-1)] = value;
+};
+
+const projectObjectFields = (source, fields) => {
+  const target = {};
+
+  for (const field of fields) {
+    const value = getObjectPathValue(source, field);
+
+    if (value !== undefined) {
+      setObjectPathValue(target, field, value);
+    }
+  }
+
+  return target;
+};
+
+const runBulkMatchExtraction = async ({ sampleImage, sampleSpec, tempDir }) => {
+  const config = bulkRowConfigs[sampleSpec?.screenType];
+
+  if (!config) {
+    return null;
+  }
+
+  start('bulk-match-extract', {
+    rowCount: config.rowCount,
+    screenType: config.screenType,
+  });
+
+  const { OEM, PSM, createWorker } = await import('tesseract.js');
+  mkdirSync(tesseractCachePath, {
+    recursive: true,
+  });
+  const worker = await createWorker(ocrLanguages, OEM.LSTM_ONLY, {
+    cacheMethod: 'write',
+    cachePath: tesseractCachePath,
+    errorHandler: (error) => {
+      logStep('bulk-match-extract:worker-error', {
+        error,
+      });
+    },
+  });
+
+  await worker.setParameters({
+    preserve_interword_spaces: '1',
+    tessedit_pageseg_mode: PSM.SPARSE_TEXT,
+  });
+
+  const mapOptionsForText = getMapTextOptions();
+  const mapModes = loadMapModes();
+  const mapTemplates = config.mapImageRegion ? loadBulkMapTemplates({ tempDir }) : [];
+  const heroTemplates = config.heroSlots ? loadHeroTemplates({ tempDir }) : [];
+  const textOcrParameters = {
+    preserve_interword_spaces: '1',
+    tessedit_char_whitelist: '',
+    tessedit_pageseg_mode: PSM.SPARSE_TEXT,
+  };
+  const singleLineTextOcrParameters = {
+    preserve_interword_spaces: '1',
+    tessedit_char_whitelist: '',
+    tessedit_pageseg_mode: PSM.SINGLE_LINE,
+  };
+  const scoreOcrParameters = {
+    preserve_interword_spaces: '0',
+    tessedit_char_whitelist: '0123456789-–—:',
+    tessedit_pageseg_mode: PSM.SINGLE_LINE,
+  };
+  const rows = [];
+
+  try {
+    for (let index = 0; index < config.rowCount; index += 1) {
+      const mapEvidence = await recognizeBulkRegion({
+        name: `bulk-${config.screenType}-map-${index + 1}`,
+        parameters:
+          config.mapOcrMode === 'single_line' ? singleLineTextOcrParameters : textOcrParameters,
+        region: getRelativeRowRegion(config, index, config.mapRegion),
+        sampleImage,
+        tempDir,
+        worker,
+      });
+      const scoreEvidence = await recognizeBulkRegion({
+        name: `bulk-${config.screenType}-score-${index + 1}`,
+        parameters: scoreOcrParameters,
+        region: getRelativeRowRegion(config, index, config.scoreRegion),
+        sampleImage,
+        tempDir,
+        worker,
+      });
+      const playlistEvidence = config.playlistRegion
+        ? await recognizeBulkRegion({
+            name: `bulk-${config.screenType}-playlist-${index + 1}`,
+            parameters: textOcrParameters,
+            region: getRelativeRowRegion(config, index, config.playlistRegion),
+            sampleImage,
+            tempDir,
+            worker,
+          })
+        : null;
+      const mapFromText = findVisionTextOption(mapEvidence.text, mapOptionsForText);
+      const mapFromThumbnail = matchBulkMapThumbnail({
+        config,
+        mapTemplates,
+        rowIndex: index,
+        sampleImage,
+      });
+      const map = mapFromText
+        ? {
+            modeId: mapModes.get(mapFromText.value),
+            value: mapFromText.value,
+          }
+        : mapFromThumbnail
+          ? {
+              modeId: mapFromThumbnail.modeId,
+              value: mapFromThumbnail.mapId,
+            }
+          : null;
+      const score = parseBulkScore(scoreEvidence.text);
+      const playlistFromColor = getPlaylistFromColor({
+        config,
+        rowIndex: index,
+        sampleImage,
+      });
+      const heroIds = matchBulkHeroSlots({
+        config,
+        heroTemplates,
+        rowIndex: index,
+        sampleImage,
+      });
+
+      if (debugVision) {
+        logStep(
+          'bulk-match-extract:row-evidence',
+          JSON.stringify(
+            {
+              mapFromThumbnail,
+              mapFromText,
+              row: index + 1,
+              score,
+              texts: {
+                map: mapEvidence.text,
+                playlist: playlistEvidence?.text ?? null,
+                score: scoreEvidence.text,
+              },
+              playlistFromColor,
+            },
+            null,
+            2,
+          ),
+        );
+      }
+
+      rows.push({
+        evidence: {
+          map: mapEvidence,
+          mapThumbnail: mapFromThumbnail,
+          playlist: playlistEvidence,
+          score: scoreEvidence,
+        },
+        match: {
+          visibleOrder: index + 1,
+          mapId: map?.value ?? null,
+          modeId: map?.modeId ?? null,
+          playlist: getPlaylistFromText(
+            playlistEvidence?.text ?? '',
+            config.playlist ?? playlistFromColor,
+          ),
+          ...(config.heroSlots ? { heroIds } : {}),
+          result: getResultFromScore(score),
+          score,
+        },
+      });
+    }
+  } finally {
+    await worker.terminate();
+  }
+
+  const actual = {
+    accountName,
+    matches: rows.map((row) => row.match),
+    screenType: config.screenType,
+  };
+
+  end('bulk-match-extract', {
+    actual,
+    rows,
+  });
+
+  return {
+    actual,
+    rows,
+  };
+};
+
+const isPlainObject = (value) =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const isEqualAssertionValue = (received, wanted) => {
+  if (Array.isArray(received) || Array.isArray(wanted)) {
+    return (
+      Array.isArray(received) &&
+      Array.isArray(wanted) &&
+      received.length === wanted.length &&
+      received.every((item, index) => isEqualAssertionValue(item, wanted[index]))
+    );
+  }
+
+  if (isPlainObject(received) || isPlainObject(wanted)) {
+    if (!isPlainObject(received) || !isPlainObject(wanted)) {
+      return false;
+    }
+
+    const wantedKeys = Object.keys(wanted).sort();
+
+    return wantedKeys.every((key) => isEqualAssertionValue(received[key], wanted[key]));
+  }
+
+  return received === wanted;
+};
+
+const assertResult = (actual, expectedOverride = expected) => {
+  if (!expectedOverride) {
+    return null;
+  }
+
+  const checks = Object.entries(expectedOverride).map(([field, wanted]) => {
     const received = actual[field];
 
     return {
@@ -891,6 +1519,38 @@ const main = async () => {
       height: sampleImage.height,
       width: sampleImage.width,
     });
+
+    const bulkResult = await runBulkMatchExtraction({
+      sampleImage,
+      sampleSpec,
+      tempDir,
+    });
+
+    if (bulkResult) {
+      const bulkExpected = getBulkAssertion(sampleSpec);
+      const assertion = assertResult(bulkResult.actual, bulkExpected);
+
+      end('pipeline', {
+        actual: bulkResult.actual,
+        assertion,
+        rows: bulkResult.rows,
+      });
+
+      console.log(
+        JSON.stringify(
+          {
+            actual: bulkResult.actual,
+            assertion,
+            expected: bulkExpected,
+            sampleSpec,
+          },
+          null,
+          2,
+        ),
+      );
+      process.exitCode = assertion ? (assertion.ok ? 0 : 1) : 0;
+      return;
+    }
 
     const mapSelectionTemplates = loadMapSelectionTemplates({ tempDir });
     let mapSelectionDetection = detectMapSelection(sampleImage, mapSelectionTemplates);

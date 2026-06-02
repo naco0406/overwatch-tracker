@@ -216,6 +216,15 @@ const isMapId = (value: string | null | undefined): value is MapOption['value'] 
 
 const supplementalOcrRegions = [
   {
+    name: 'summary-map-title',
+    region: {
+      height: 0.085,
+      left: 0.665,
+      top: 0.17,
+      width: 0.22,
+    },
+  },
+  {
     name: 'top-status',
     region: {
       height: 0.14,
@@ -459,7 +468,7 @@ const runRightPanelOcr = async ({
         textLength: text.length,
       });
 
-      if (index === 0 && hasCoreOcrFields(parseOcrText(text))) {
+      if (index >= 1 && hasCoreOcrFields(parseOcrText(recognized[0]?.text ?? ''))) {
         logger.event('ocr:supplemental-skipped', {
           reason: 'result-panel-contained-core-fields',
         });

@@ -123,6 +123,7 @@ export interface MapSelectionDetection<TMapId extends string = string> {
   evidence: string[];
   screenType: 'map_selection';
   textEvidenceCount: number;
+  uniqueVisualMapCount: number;
 }
 
 export interface MapSelectionTextEvidence<TMapId extends string = string> {
@@ -1304,6 +1305,7 @@ export const detectMapSelection = <TMapId extends string>(
       candidate.confidence >= reliableMapSelectionConfidence &&
       candidate.margin >= reliableMapSelectionMargin,
   );
+  const uniqueVisualMaps = new Set(candidates.map((candidate) => candidate.mapId));
   const uniqueReliableMaps = new Set(reliableCandidates.map((candidate) => candidate.mapId));
   const averageConfidence =
     reliableCandidates.reduce((sum, candidate) => sum + candidate.confidence, 0) /
@@ -1323,6 +1325,7 @@ export const detectMapSelection = <TMapId extends string>(
     evidence,
     screenType: 'map_selection',
     textEvidenceCount: 0,
+    uniqueVisualMapCount: uniqueVisualMaps.size,
   };
 };
 
@@ -1339,7 +1342,8 @@ export const detectVisionScreenType = <TMapId extends string>({
 
   if (
     mapSelection &&
-    mapSelection.confidence >= (mapSelection.textEvidenceCount > 0 ? 0.72 : 0.97)
+    mapSelection.confidence >= (mapSelection.textEvidenceCount > 0 ? 0.72 : 0.97) &&
+    (mapSelection.textEvidenceCount > 0 || mapSelection.uniqueVisualMapCount >= 2)
   ) {
     return {
       confidence: mapSelection.confidence,
@@ -1388,6 +1392,31 @@ export const detectVisionScreenType = <TMapId extends string>({
       };
     }
 
+    if (
+      parsed.result &&
+      (typeof parsed.teamScore === 'number' || hasCompactKeyword(ocrText, ['승리', '패배']))
+    ) {
+      const isScoreboardLayout =
+        layout?.diagnostics.rowDetection.source === 'detected' &&
+        Math.abs(layout.diagnostics.rowDetection.deltaTop) < 0.05;
+
+      if (isScoreboardLayout) {
+        return {
+          confidence: Math.max(0.72, Math.min(0.86, layout.diagnostics.rowDetection.confidence)),
+          evidence: ['scoreboard row layout', 'result text'],
+          mapSelection,
+          screenType: 'scoreboard',
+        };
+      }
+
+      return {
+        confidence: typeof parsed.teamScore === 'number' ? 0.82 : 0.68,
+        evidence: ['result text'],
+        mapSelection,
+        screenType: typeof parsed.teamScore === 'number' ? 'match_summary' : 'match_result',
+      };
+    }
+
     if (layout?.diagnostics.rowDetection.source === 'detected') {
       const confidence = Math.max(0.3, Math.min(0.76, layout.diagnostics.rowDetection.confidence));
       const isShiftedStatusLayout = Math.abs(layout.diagnostics.rowDetection.deltaTop) >= 0.05;
@@ -1397,18 +1426,6 @@ export const detectVisionScreenType = <TMapId extends string>({
         evidence: [isShiftedStatusLayout ? 'shifted status row layout' : 'scoreboard row layout'],
         mapSelection,
         screenType: isShiftedStatusLayout ? 'in_game_status' : 'scoreboard',
-      };
-    }
-
-    if (
-      parsed.result &&
-      (typeof parsed.teamScore === 'number' || hasCompactKeyword(ocrText, ['승리', '패배']))
-    ) {
-      return {
-        confidence: typeof parsed.teamScore === 'number' ? 0.82 : 0.68,
-        evidence: ['result text'],
-        mapSelection,
-        screenType: 'match_result',
       };
     }
   }

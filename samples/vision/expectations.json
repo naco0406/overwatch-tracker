@@ -199,6 +199,16 @@
         "heroIds": []
       },
       "requiredFields": ["mapId", "modeId", "result", "score.team", "score.enemy"],
+      "assertions": {
+        "accountName": "LUXY",
+        "enemyScore": 3,
+        "mapId": "suravasa",
+        "modeId": "flashpoint",
+        "playedAtLocal": "2026-06-01T22:48",
+        "result": "loss",
+        "screenType": "match_summary",
+        "teamScore": 0
+      },
       "notes": "게임 분석 요약 화면. 플레이 영웅이 보강되면 heroIds에 추가한다."
     },
     {
@@ -313,9 +323,9 @@
         "matches[].playlist",
         "matches[].result",
         "matches[].score.team",
-        "matches[].score.enemy",
-        "matches[].heroIds"
+        "matches[].score.enemy"
       ],
+      "optionalFields": ["matches[].heroIds"],
       "dedupe": {
         "strategy": "first_existing_match_boundary",
         "matchFields": ["mapId", "result", "score.team", "score.enemy"],
