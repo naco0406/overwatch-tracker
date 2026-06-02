@@ -142,7 +142,7 @@ const SessionsPage = () => {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
-  const [sessionLimit, setSessionLimit] = useState(sessionPageSize);
+  const [sessionPage, setSessionPage] = useState(1);
   const { data: matches = [], isLoading } = useMatches();
   const { data: playerAccounts = [] } = usePlayerAccounts();
   const { data: userSettings } = useUserSettings();
@@ -174,13 +174,18 @@ const SessionsPage = () => {
       return true;
     });
   }, [accountById, periodFilter, searchQuery, sessions]);
-  const visibleSessions = filteredSessions.slice(0, sessionLimit);
+  const sessionPageCount = Math.max(1, Math.ceil(filteredSessions.length / sessionPageSize));
+  const currentSessionPage = Math.min(sessionPage, sessionPageCount);
+  const visibleSessions = filteredSessions.slice(
+    (currentSessionPage - 1) * sessionPageSize,
+    currentSessionPage * sessionPageSize,
+  );
   const selectedSession = useMemo(
     () =>
-      filteredSessions.find((session) => session.sessionId === selectedSessionId) ??
-      filteredSessions[0] ??
+      visibleSessions.find((session) => session.sessionId === selectedSessionId) ??
+      visibleSessions[0] ??
       null,
-    [filteredSessions, selectedSessionId],
+    [selectedSessionId, visibleSessions],
   );
   const longestStreak = useMemo(() => getLongestStreak(matches), [matches]);
   const averageMatches =
@@ -192,12 +197,14 @@ const SessionsPage = () => {
   const resetFilters = () => {
     setSearchQuery('');
     setPeriodFilter('all');
-    setSessionLimit(sessionPageSize);
+    setSessionPage(1);
+    setSelectedSessionId(null);
   };
 
   const selectPeriod = (period: PeriodFilter) => {
     setPeriodFilter(period);
-    setSessionLimit(sessionPageSize);
+    setSessionPage(1);
+    setSelectedSessionId(null);
   };
 
   const handleUpdateMatch = async (input: MatchCreateInput) => {
@@ -311,7 +318,8 @@ const SessionsPage = () => {
                 value={searchQuery}
                 onChange={(event) => {
                   setSearchQuery(event.target.value);
-                  setSessionLimit(sessionPageSize);
+                  setSessionPage(1);
+                  setSelectedSessionId(null);
                 }}
               />
             </div>
@@ -356,18 +364,18 @@ const SessionsPage = () => {
                   />
                 ))}
               </div>
-              {visibleSessions.length < filteredSessions.length ? (
-                <div className="border-t border-border/70 p-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full bg-transparent"
-                    onClick={() => setSessionLimit((current) => current + sessionPageSize)}
-                  >
-                    더 보기
-                  </Button>
-                </div>
-              ) : null}
+              <PaginationBar
+                itemLabel="세션"
+                page={currentSessionPage}
+                pageCount={sessionPageCount}
+                pageSize={sessionPageSize}
+                totalCount={filteredSessions.length}
+                visibleCount={visibleSessions.length}
+                onPageChange={(page) => {
+                  setSessionPage(page);
+                  setSelectedSessionId(null);
+                }}
+              />
             </div>
           ) : (
             <div className="section-pad">
@@ -768,6 +776,69 @@ const SessionMatchMobileRow = ({
         >
           <Trash2 className="h-4 w-4" />
         </Button>
+      </div>
+    </div>
+  );
+};
+
+interface PaginationBarProps {
+  itemLabel: string;
+  onPageChange: (page: number) => void;
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  totalCount: number;
+  visibleCount: number;
+}
+
+const PaginationBar = ({
+  itemLabel,
+  onPageChange,
+  page,
+  pageCount,
+  pageSize,
+  totalCount,
+  visibleCount,
+}: PaginationBarProps) => {
+  if (totalCount === 0) {
+    return null;
+  }
+
+  const start = (page - 1) * pageSize + 1;
+  const end = start + visibleCount - 1;
+
+  return (
+    <div className="border-t border-border/70 p-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs font-semibold text-muted-foreground">
+          {start.toLocaleString('ko-KR')}-{end.toLocaleString('ko-KR')} /{' '}
+          {totalCount.toLocaleString('ko-KR')} {itemLabel}
+        </p>
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:flex">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="bg-transparent"
+            disabled={page <= 1}
+            onClick={() => onPageChange(page - 1)}
+          >
+            이전
+          </Button>
+          <span className="px-2 text-center text-xs font-bold text-muted-foreground">
+            {page} / {pageCount}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="bg-transparent"
+            disabled={page >= pageCount}
+            onClick={() => onPageChange(page + 1)}
+          >
+            다음
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -13,6 +13,7 @@ import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
 import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -49,6 +50,8 @@ import { cn } from '@/lib/utils';
 import type { Match, MatchCreateInput, MatchResult, ModeId } from '@/types/match';
 import type { PlayerAccount } from '@/types/playerAccount';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
+
+const recordPageSize = 100;
 
 const periodOptions = [
   { label: '전체', value: 'all' },
@@ -108,6 +111,7 @@ const RecordsPage = () => {
   const [modeFilter, setModeFilter] = useState<ModeId | 'all'>('all');
   const [resultFilter, setResultFilter] = useState<MatchResult | 'all'>('all');
   const [accountFilter, setAccountFilter] = useState('all');
+  const [recordPage, setRecordPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkResult, setBulkResult] = useState<MatchResult | 'keep'>('keep');
   const [bulkMapId, setBulkMapId] = useState('keep');
@@ -169,9 +173,15 @@ const RecordsPage = () => {
     () => matches.filter((match) => selectedIdSet.has(match.id)),
     [matches, selectedIdSet],
   );
+  const recordPageCount = Math.max(1, Math.ceil(filteredMatches.length / recordPageSize));
+  const currentRecordPage = Math.min(recordPage, recordPageCount);
+  const visibleMatches = filteredMatches.slice(
+    (currentRecordPage - 1) * recordPageSize,
+    currentRecordPage * recordPageSize,
+  );
   const summary = useMemo(() => summarizeResults(filteredMatches), [filteredMatches]);
   const visibleSelected =
-    filteredMatches.length > 0 && filteredMatches.every((match) => selectedIdSet.has(match.id));
+    visibleMatches.length > 0 && visibleMatches.every((match) => selectedIdSet.has(match.id));
   const activeFilterCount = [
     searchQuery.trim().length > 0,
     periodFilter !== 'all',
@@ -187,6 +197,7 @@ const RecordsPage = () => {
     setModeFilter('all');
     setResultFilter('all');
     setAccountFilter('all');
+    setRecordPage(1);
   };
 
   const toggleSelected = (matchId: string) => {
@@ -197,13 +208,13 @@ const RecordsPage = () => {
 
   const toggleVisibleSelected = () => {
     if (visibleSelected) {
-      const filteredIds = new Set(filteredMatches.map((match) => match.id));
-      setSelectedIds((current) => current.filter((id) => !filteredIds.has(id)));
+      const visibleIds = new Set(visibleMatches.map((match) => match.id));
+      setSelectedIds((current) => current.filter((id) => !visibleIds.has(id)));
       return;
     }
 
     setSelectedIds((current) =>
-      Array.from(new Set([...current, ...filteredMatches.map((match) => match.id)])),
+      Array.from(new Set([...current, ...visibleMatches.map((match) => match.id)])),
     );
   };
 
@@ -340,159 +351,176 @@ const RecordsPage = () => {
 
   return (
     <div className="page-stack">
-      <PageHeader eyebrow="데이터" title="기록" />
+      <PageHeader
+        eyebrow="데이터"
+        title="기록"
+        actions={
+          <Badge variant="secondary">
+            {isLoading ? '불러오는 중' : `${matches.length.toLocaleString('ko-KR')} 경기`}
+          </Badge>
+        }
+      />
 
-      <section className="grid gap-3 xl:grid-cols-[240px_minmax(0,1fr)] xl:items-start xl:gap-4">
-        <aside className="workspace-panel overflow-hidden">
-          <div className="section-header">
-            <p className="metric-label">요약</p>
-            <h2 className="mt-1 text-lg font-bold">기록 상태</h2>
-          </div>
-          <div className="grid grid-cols-3 divide-x divide-border/70 xl:block xl:divide-x-0 xl:divide-y">
-            <MetricCell label="표시 기록" value={filteredMatches.length.toLocaleString('ko-KR')} />
-            <MetricCell label="승률" value={formatWinRate(summary.winRate)} />
-            <MetricCell label="선택" value={selectedMatches.length.toLocaleString('ko-KR')} />
-          </div>
-        </aside>
+      <section className="workspace-panel overflow-hidden">
+        <div className="metric-strip grid-cols-3 divide-x divide-border/70">
+          <MetricCell label="표시 기록" value={filteredMatches.length.toLocaleString('ko-KR')} />
+          <MetricCell label="승률" value={formatWinRate(summary.winRate)} />
+          <MetricCell label="선택" value={selectedMatches.length.toLocaleString('ko-KR')} />
+        </div>
+      </section>
 
-        <div className="workspace-panel overflow-hidden">
-          <div className="section-divider section-pad">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-              <div className="relative col-span-2 sm:col-span-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  className="pl-9"
-                  placeholder="맵, 모드, 결과 검색"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                />
-              </div>
+      <section className="workspace-panel overflow-hidden">
+        <div className="section-divider section-pad">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+            <div className="relative col-span-2 sm:col-span-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="맵, 모드, 결과 검색"
+                value={searchQuery}
+                onChange={(event) => {
+                  setSearchQuery(event.target.value);
+                  setRecordPage(1);
+                }}
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="bg-transparent"
+              onClick={() => setFiltersOpen(true)}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              필터{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}
+            </Button>
+            <Button
+              type="button"
+              disabled={selectedMatches.length === 0}
+              onClick={() => setBulkActionsOpen(true)}
+            >
+              <CheckSquare className="h-4 w-4" />
+              작업
+            </Button>
+          </div>
+
+          {selectedMatches.length > 0 ? (
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-primary/20 bg-primary/[0.06] px-3 py-2">
+              <p className="text-sm font-bold">
+                {selectedMatches.length.toLocaleString('ko-KR')}개 선택
+              </p>
               <Button
                 type="button"
                 variant="outline"
-                className="bg-transparent"
-                onClick={() => setFiltersOpen(true)}
+                size="sm"
+                className="bg-card"
+                onClick={() => setSelectedIds([])}
               >
-                <SlidersHorizontal className="h-4 w-4" />
-                필터{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}
-              </Button>
-              <Button
-                type="button"
-                disabled={selectedMatches.length === 0}
-                onClick={() => setBulkActionsOpen(true)}
-              >
-                <CheckSquare className="h-4 w-4" />
-                작업
+                해제
               </Button>
             </div>
+          ) : null}
+        </div>
 
-            {selectedMatches.length > 0 ? (
-              <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-primary/20 bg-primary/[0.06] px-3 py-2">
-                <p className="text-sm font-bold">
-                  {selectedMatches.length.toLocaleString('ko-KR')}개 선택
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="bg-card"
-                  onClick={() => setSelectedIds([])}
-                >
-                  해제
-                </Button>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="section-pad">
-            {isLoading ? (
-              <RecordsSkeleton />
-            ) : filteredMatches.length > 0 ? (
-              <>
-                <div className="subpanel hidden md:block">
-                  <table className="w-full table-fixed border-collapse text-left text-sm">
-                    <thead className="bg-[hsl(var(--surface-2))]">
-                      <tr className="border-b border-border/70">
-                        <th className="w-12 px-3 py-3">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 rounded border-border accent-primary"
-                            checked={visibleSelected}
-                            aria-label="표시 기록 전체 선택"
-                            onChange={toggleVisibleSelected}
-                          />
-                        </th>
-                        <th className="w-32 px-3 py-3 font-semibold text-muted-foreground">시간</th>
-                        <th className="px-3 py-3 font-semibold text-muted-foreground">맵</th>
-                        <th className="w-28 px-3 py-3 font-semibold text-muted-foreground">결과</th>
-                        <th className="w-32 px-3 py-3 font-semibold text-muted-foreground">계정</th>
-                        <th className="w-24 px-3 py-3 text-right font-semibold text-muted-foreground">
-                          액션
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredMatches.map((match) => (
-                        <RecordTableRow
-                          key={match.id}
-                          account={accountById.get(match.accountId ?? '')}
-                          match={match}
-                          selected={selectedIdSet.has(match.id)}
-                          onDelete={() => setDeleteTarget(match)}
-                          onEdit={() => setEditingMatch(match)}
-                          onSelect={() => toggleSelected(match.id)}
+        <div className="section-pad">
+          {isLoading ? (
+            <RecordsSkeleton />
+          ) : filteredMatches.length > 0 ? (
+            <>
+              <div className="subpanel hidden md:block">
+                <table className="w-full table-fixed border-collapse text-left text-sm">
+                  <thead className="bg-[hsl(var(--surface-2))]">
+                    <tr className="border-b border-border/70">
+                      <th className="w-12 px-3 py-3">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-border accent-primary"
+                          checked={visibleSelected}
+                          aria-label="불러온 기록 전체 선택"
+                          onChange={toggleVisibleSelected}
                         />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="subpanel md:hidden">
-                  <div className="flat-row flex items-center justify-between gap-3 p-3">
-                    <span className="text-sm font-bold">표시 기록</span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="bg-transparent"
-                      onClick={toggleVisibleSelected}
-                    >
-                      <CheckSquare className="h-4 w-4" />
-                      {visibleSelected ? '해제' : '전체 선택'}
-                    </Button>
-                  </div>
-                  {filteredMatches.map((match) => (
-                    <RecordCard
-                      key={match.id}
-                      account={accountById.get(match.accountId ?? '')}
-                      match={match}
-                      selected={selectedIdSet.has(match.id)}
-                      onDelete={() => setDeleteTarget(match)}
-                      onEdit={() => setEditingMatch(match)}
-                      onSelect={() => toggleSelected(match.id)}
-                    />
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="subpanel">
-                <div className="flat-row p-3">
-                  <InlineEmptyState
-                    title="기록 없음"
-                    description="필터 결과가 비어 있습니다."
-                    action={
-                      activeFilterCount > 0 ? (
-                        <Button variant="outline" className="bg-transparent" onClick={resetFilters}>
-                          <RotateCcw className="h-4 w-4" />
-                          초기화
-                        </Button>
-                      ) : undefined
-                    }
-                  />
-                </div>
+                      </th>
+                      <th className="w-32 px-3 py-3 font-semibold text-muted-foreground">시간</th>
+                      <th className="px-3 py-3 font-semibold text-muted-foreground">맵</th>
+                      <th className="w-28 px-3 py-3 font-semibold text-muted-foreground">결과</th>
+                      <th className="w-32 px-3 py-3 font-semibold text-muted-foreground">계정</th>
+                      <th className="w-24 px-3 py-3 text-right font-semibold text-muted-foreground">
+                        액션
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleMatches.map((match) => (
+                      <RecordTableRow
+                        key={match.id}
+                        account={accountById.get(match.accountId ?? '')}
+                        match={match}
+                        selected={selectedIdSet.has(match.id)}
+                        onDelete={() => setDeleteTarget(match)}
+                        onEdit={() => setEditingMatch(match)}
+                        onSelect={() => toggleSelected(match.id)}
+                      />
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            )}
-          </div>
+
+              <div className="subpanel md:hidden">
+                <div className="flat-row flex items-center justify-between gap-3 p-3">
+                  <span className="text-sm font-bold">
+                    {visibleMatches.length.toLocaleString('ko-KR')}개 표시
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="bg-transparent"
+                    onClick={toggleVisibleSelected}
+                  >
+                    <CheckSquare className="h-4 w-4" />
+                    {visibleSelected ? '해제' : '전체 선택'}
+                  </Button>
+                </div>
+                {visibleMatches.map((match) => (
+                  <RecordCard
+                    key={match.id}
+                    account={accountById.get(match.accountId ?? '')}
+                    match={match}
+                    selected={selectedIdSet.has(match.id)}
+                    onDelete={() => setDeleteTarget(match)}
+                    onEdit={() => setEditingMatch(match)}
+                    onSelect={() => toggleSelected(match.id)}
+                  />
+                ))}
+              </div>
+
+              <PaginationBar
+                itemLabel="기록"
+                page={currentRecordPage}
+                pageCount={recordPageCount}
+                pageSize={recordPageSize}
+                totalCount={filteredMatches.length}
+                visibleCount={visibleMatches.length}
+                onPageChange={setRecordPage}
+              />
+            </>
+          ) : (
+            <div className="subpanel">
+              <div className="flat-row p-3">
+                <InlineEmptyState
+                  title="기록 없음"
+                  description="필터 결과가 비어 있습니다."
+                  action={
+                    activeFilterCount > 0 ? (
+                      <Button variant="outline" className="bg-transparent" onClick={resetFilters}>
+                        <RotateCcw className="h-4 w-4" />
+                        초기화
+                      </Button>
+                    ) : undefined
+                  }
+                />
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -510,7 +538,10 @@ const RecordsPage = () => {
                   <FilterButton
                     key={period.value}
                     active={periodFilter === period.value}
-                    onClick={() => setPeriodFilter(period.value)}
+                    onClick={() => {
+                      setPeriodFilter(period.value);
+                      setRecordPage(1);
+                    }}
                   >
                     {period.label}
                   </FilterButton>
@@ -521,7 +552,10 @@ const RecordsPage = () => {
             <div className="grid gap-3 sm:grid-cols-3">
               <Select
                 value={modeFilter}
-                onValueChange={(value) => setModeFilter(value as ModeId | 'all')}
+                onValueChange={(value) => {
+                  setModeFilter(value as ModeId | 'all');
+                  setRecordPage(1);
+                }}
               >
                 <SelectTrigger className="h-11 bg-card">
                   <SelectValue placeholder="모드" />
@@ -538,7 +572,10 @@ const RecordsPage = () => {
 
               <Select
                 value={resultFilter}
-                onValueChange={(value) => setResultFilter(value as MatchResult | 'all')}
+                onValueChange={(value) => {
+                  setResultFilter(value as MatchResult | 'all');
+                  setRecordPage(1);
+                }}
               >
                 <SelectTrigger className="h-11 bg-card">
                   <SelectValue placeholder="결과" />
@@ -553,7 +590,13 @@ const RecordsPage = () => {
                 </SelectContent>
               </Select>
 
-              <Select value={accountFilter} onValueChange={setAccountFilter}>
+              <Select
+                value={accountFilter}
+                onValueChange={(value) => {
+                  setAccountFilter(value);
+                  setRecordPage(1);
+                }}
+              >
                 <SelectTrigger className="h-11 bg-card">
                   <SelectValue placeholder="계정" />
                 </SelectTrigger>
@@ -973,30 +1016,31 @@ const RecordTableRow = ({
 );
 
 const RecordCard = ({ account, match, onDelete, onEdit, onSelect, selected }: RecordRowProps) => (
-  <article
-    className={cn(
-      'flat-row border-l-2 border-l-transparent bg-card p-3',
-      selected && 'border-l-primary bg-primary/5',
-    )}
-  >
-    <div className="flex items-start justify-between gap-3">
-      <label className="flex min-w-0 flex-1 items-start gap-3">
+  <div className={cn('flat-row bg-card p-3', selected && 'bg-primary/5')}>
+    <div className="grid grid-cols-[24px_minmax(0,1fr)_auto] items-start gap-3">
+      <label className="pt-1">
         <input
           type="checkbox"
-          className="mt-1 h-4 w-4 rounded border-border accent-primary"
+          className="h-4 w-4 rounded border-border accent-primary"
           checked={selected}
+          aria-label={`${getMapLabel(match.mapId)} 기록 선택`}
           onChange={onSelect}
         />
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-bold">{getMapLabel(match.mapId)}</span>
-          <span className="mt-1 block truncate text-xs font-semibold text-muted-foreground">
-            {formatDate(match.playedAt)} · {formatTime(match.playedAt)}
-          </span>
-        </span>
       </label>
+
+      <div className="min-w-0">
+        <p className="truncate text-sm font-bold">
+          {getMapLabel(match.mapId)} · {getModeLabel(match.modeId)}
+        </p>
+        <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+          {formatDate(match.playedAt)} · {formatTime(match.playedAt)} ·{' '}
+          {getPlayerAccountLabel(account)}
+        </p>
+      </div>
+
       <span
         className={cn(
-          'inline-flex h-8 shrink-0 items-center justify-center rounded-md border px-2 text-xs font-bold',
+          'inline-flex h-8 min-w-14 shrink-0 items-center justify-center rounded-md border px-2 text-xs font-bold',
           getResultTone(match.result),
         )}
       >
@@ -1004,41 +1048,88 @@ const RecordCard = ({ account, match, onDelete, onEdit, onSelect, selected }: Re
       </span>
     </div>
 
-    <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 bg-[hsl(var(--surface-2))] px-3 py-2.5">
-      <InfoCell label="모드" value={getModeLabel(match.modeId)} />
-      <InfoCell label="결과" value={getResultLabel(match.result)} />
-      <InfoCell label="계정" value={getPlayerAccountLabel(account)} />
-      <InfoCell label="큐" value={getOptionLabel(queueOptions, match.queueType)} />
+    <div className="mt-2 flex items-center justify-between gap-2 pl-9">
+      <p className="truncate text-xs font-semibold text-muted-foreground">
+        {getResultLabel(match.result)} · {getOptionLabel(queueOptions, match.queueType)}
+      </p>
+      <div className="flex shrink-0 justify-end gap-1">
+        <Button type="button" size="icon" variant="ghost" className="h-9 w-9" onClick={onEdit}>
+          <Pencil className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-9 w-9 text-destructive hover:text-destructive"
+          onClick={onDelete}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
-
-    <div className="mt-3 flex justify-end gap-1">
-      <Button type="button" size="icon" variant="ghost" className="h-9 w-9" onClick={onEdit}>
-        <Pencil className="h-4 w-4" />
-      </Button>
-      <Button
-        type="button"
-        size="icon"
-        variant="ghost"
-        className="h-9 w-9 text-destructive hover:text-destructive"
-        onClick={onDelete}
-      >
-        <Trash2 className="h-4 w-4" />
-      </Button>
-    </div>
-  </article>
-);
-
-interface InfoCellProps {
-  label: string;
-  value: string;
-}
-
-const InfoCell = ({ label, value }: InfoCellProps) => (
-  <div className="min-w-0">
-    <p className="metric-label">{label}</p>
-    <p className="mt-1 truncate text-xs font-bold">{value}</p>
   </div>
 );
+
+interface PaginationBarProps {
+  itemLabel: string;
+  onPageChange: (page: number) => void;
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  totalCount: number;
+  visibleCount: number;
+}
+
+const PaginationBar = ({
+  itemLabel,
+  onPageChange,
+  page,
+  pageCount,
+  pageSize,
+  totalCount,
+  visibleCount,
+}: PaginationBarProps) => {
+  if (totalCount === 0) {
+    return null;
+  }
+
+  const start = (page - 1) * pageSize + 1;
+  const end = start + visibleCount - 1;
+
+  return (
+    <div className="mt-3 flex flex-col gap-2 border-t border-border/70 pt-3 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-xs font-semibold text-muted-foreground">
+        {start.toLocaleString('ko-KR')}-{end.toLocaleString('ko-KR')} /{' '}
+        {totalCount.toLocaleString('ko-KR')} {itemLabel}
+      </p>
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:flex">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="bg-transparent"
+          disabled={page <= 1}
+          onClick={() => onPageChange(page - 1)}
+        >
+          이전
+        </Button>
+        <span className="px-2 text-center text-xs font-bold text-muted-foreground">
+          {page} / {pageCount}
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="bg-transparent"
+          disabled={page >= pageCount}
+          onClick={() => onPageChange(page + 1)}
+        >
+          다음
+        </Button>
+      </div>
+    </div>
+  );
+};
 
 const RecordsSkeleton = () => (
   <div className="subpanel">
