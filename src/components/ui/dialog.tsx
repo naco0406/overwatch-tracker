@@ -30,13 +30,13 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-1rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-[0_24px_70px_-48px_hsl(var(--foreground)/0.45)] sm:w-[calc(100%-2rem)]',
+        'fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-0.75rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-[0_24px_70px_-48px_hsl(var(--foreground)/0.45)] sm:w-[calc(100%-2rem)]',
         className,
       )}
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card/90 text-muted-foreground transition-[background-color,border-color,color] hover:border-primary/25 hover:bg-secondary hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/25 disabled:pointer-events-none sm:right-4 sm:top-4">
+      <DialogPrimitive.Close className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-card/90 text-muted-foreground transition-[background-color,border-color,color] hover:border-primary/25 hover:bg-secondary hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/25 disabled:pointer-events-none sm:right-4 sm:top-4">
         <X className="h-4 w-4" />
         <span className="sr-only">닫기</span>
       </DialogPrimitive.Close>
@@ -52,7 +52,7 @@ DialogHeader.displayName = 'DialogHeader';
 
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2', className)}
+    className={cn('flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className)}
     {...props}
   />
 );

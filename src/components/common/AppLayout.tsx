@@ -156,17 +156,24 @@ const AppLayout = () => {
       </aside>
 
       <div className="xl:pl-72">
-        <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-2 border-b border-border/70 bg-card/90 px-3 backdrop-blur-xl xl:hidden">
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-2 border-b border-border/70 bg-card/95 px-3.5 backdrop-blur-xl xl:hidden">
           <div className="flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <Command className="h-4 w-4" />
             </div>
-            <span className="text-sm font-semibold">OW Tracker</span>
+            <div className="min-w-0">
+              <span className="block truncate text-sm font-semibold">OW Tracker</span>
+              {activeNavItem ? (
+                <span className="block truncate text-[11px] font-semibold text-muted-foreground">
+                  {activeNavItem.label}
+                </span>
+              ) : null}
+            </div>
           </div>
           <span className="max-w-[48vw] truncate text-xs text-muted-foreground">{user?.email}</span>
         </header>
         {activeNavItem?.children ? (
-          <nav className="sticky top-14 z-20 border-b border-border/70 bg-background/95 px-3 py-2 backdrop-blur-xl xl:hidden">
+          <nav className="sticky top-14 z-20 border-b border-border/70 bg-background/95 px-3.5 py-2 backdrop-blur-xl xl:hidden">
             <div className="mobile-scroll flex gap-1 overflow-x-auto">
               {activeNavItem.children.map((child) => {
                 const childActive = isPathActive(child.to, location.pathname);
@@ -188,10 +195,10 @@ const AppLayout = () => {
             </div>
           </nav>
         ) : null}
-        <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-24 pt-5 sm:px-6 xl:px-8 xl:py-8">
+        <main className="safe-page-bottom mx-auto flex min-h-screen w-full max-w-7xl flex-col px-3.5 pt-4 sm:px-6 sm:pt-5 xl:px-8 xl:py-8">
           <Outlet />
         </main>
-        <nav className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-6 rounded-lg border border-border/70 bg-card/95 p-1 backdrop-blur-xl xl:hidden">
+        <nav className="safe-bottom-nav fixed inset-x-2 z-40 grid grid-cols-6 rounded-lg border border-border/70 bg-card/95 p-1 backdrop-blur-xl xl:hidden">
           {navItems.map((item) => {
             const active = isNavItemActive(item, location.pathname);
 
@@ -200,7 +207,7 @@ const AppLayout = () => {
                 key={item.to}
                 to={item.to}
                 className={cn(
-                  'flex h-14 flex-col items-center justify-center gap-1 rounded-md text-[11px] font-semibold text-muted-foreground transition-[background-color,color]',
+                  'flex h-[52px] min-h-[52px] flex-col items-center justify-center gap-1 rounded-md px-0.5 text-[10px] font-semibold text-muted-foreground transition-[background-color,color] min-[390px]:text-[11px]',
                   active && 'bg-primary text-primary-foreground',
                 )}
                 aria-label={item.label}

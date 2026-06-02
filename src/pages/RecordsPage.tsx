@@ -341,13 +341,13 @@ const RecordsPage = () => {
     <div className="page-stack">
       <PageHeader eyebrow="데이터" title="기록" />
 
-      <section className="grid gap-4 xl:grid-cols-[240px_minmax(0,1fr)] xl:items-start">
+      <section className="grid gap-3 xl:grid-cols-[240px_minmax(0,1fr)] xl:items-start xl:gap-4">
         <aside className="workspace-panel overflow-hidden">
           <div className="section-header">
             <p className="metric-label">요약</p>
             <h2 className="mt-1 text-lg font-bold">기록 상태</h2>
           </div>
-          <div className="divide-y divide-border/70">
+          <div className="grid grid-cols-3 divide-x divide-border/70 xl:block xl:divide-x-0 xl:divide-y">
             <MetricCell label="표시 기록" value={filteredMatches.length.toLocaleString('ko-KR')} />
             <MetricCell label="승률" value={formatWinRate(summary.winRate)} />
             <MetricCell label="선택" value={selectedMatches.length.toLocaleString('ko-KR')} />
@@ -356,8 +356,8 @@ const RecordsPage = () => {
 
         <div className="workspace-panel overflow-hidden">
           <div className="section-divider section-pad">
-            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-              <div className="relative">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+              <div className="relative col-span-2 sm:col-span-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   className="pl-9"
@@ -446,8 +446,8 @@ const RecordsPage = () => {
                   </table>
                 </div>
 
-                <div className="space-y-3 md:hidden">
-                  <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-card p-3">
+                <div className="subpanel md:hidden">
+                  <div className="flat-row flex items-center justify-between gap-3 p-3">
                     <span className="text-sm font-bold">표시 기록</span>
                     <Button
                       type="button"
@@ -680,10 +680,10 @@ interface MetricCellProps {
 }
 
 const MetricCell = ({ label, value }: MetricCellProps) => (
-  <div className="px-4 py-3 sm:px-5">
+  <div className="px-3 py-3 sm:px-5 xl:px-4">
     <div className="min-w-0">
       <p className="metric-label">{label}</p>
-      <p className="mt-2 truncate text-2xl font-bold">{value}</p>
+      <p className="mt-2 truncate text-xl font-bold sm:text-2xl">{value}</p>
     </div>
   </div>
 );
@@ -902,12 +902,12 @@ const RecordTableRow = ({
 const RecordCard = ({ account, match, onDelete, onEdit, onSelect, selected }: RecordRowProps) => (
   <article
     className={cn(
-      'rounded-lg border border-border/70 bg-card p-3',
-      selected && 'border-primary bg-primary/5',
+      'flat-row border-l-2 border-l-transparent bg-card p-3',
+      selected && 'border-l-primary bg-primary/5',
     )}
   >
     <div className="flex items-start justify-between gap-3">
-      <label className="flex min-w-0 items-start gap-3">
+      <label className="flex min-w-0 flex-1 items-start gap-3">
         <input
           type="checkbox"
           className="mt-1 h-4 w-4 rounded border-border accent-primary"
@@ -916,7 +916,7 @@ const RecordCard = ({ account, match, onDelete, onEdit, onSelect, selected }: Re
         />
         <span className="min-w-0">
           <span className="block truncate text-sm font-bold">{getMapLabel(match.mapId)}</span>
-          <span className="mt-1 block text-xs font-semibold text-muted-foreground">
+          <span className="mt-1 block truncate text-xs font-semibold text-muted-foreground">
             {formatDate(match.playedAt)} · {formatTime(match.playedAt)}
           </span>
         </span>
@@ -931,7 +931,7 @@ const RecordCard = ({ account, match, onDelete, onEdit, onSelect, selected }: Re
       </span>
     </div>
 
-    <div className="mt-3 grid grid-cols-2 gap-2 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3">
+    <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 bg-[hsl(var(--surface-2))] px-3 py-2.5">
       <InfoCell label="모드" value={getModeLabel(match.modeId)} />
       <InfoCell label="결과" value={getResultLabel(match.result)} />
       <InfoCell label="계정" value={getPlayerAccountLabel(account)} />

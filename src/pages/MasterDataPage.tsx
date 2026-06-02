@@ -81,11 +81,11 @@ const MasterDataPage = () => {
               <TabsTrigger value="heroes">영웅</TabsTrigger>
               <TabsTrigger value="maps">전장</TabsTrigger>
             </TabsList>
-            <div className="flex flex-wrap gap-2">
+            <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0">
               {roleSummary.map((role) => (
                 <div
                   key={role.value}
-                  className="inline-flex h-9 items-center gap-2 rounded-md border border-border/70 bg-card px-3 text-xs font-bold"
+                  className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-border/70 bg-card px-3 text-xs font-bold"
                 >
                   <AssetIcon size="sm" src={getRoleIconPath(role.value)} />
                   {role.label}
@@ -99,13 +99,13 @@ const MasterDataPage = () => {
 
           <TabsContent value="heroes" className="section-pad mt-0 space-y-5">
             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
-              <div className="flex flex-wrap gap-2">
+              <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0">
                 {roleOptions.map((role) => (
                   <Button
                     key={role.value}
                     type="button"
                     variant={roleFilter === role.value ? 'default' : 'outline'}
-                    className={cn(roleFilter !== role.value && 'bg-transparent')}
+                    className={cn('shrink-0', roleFilter !== role.value && 'bg-transparent')}
                     onClick={() => setRoleFilter(role.value)}
                   >
                     {role.value !== 'all' ? (
@@ -132,7 +132,7 @@ const MasterDataPage = () => {
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3 2xl:grid-cols-4">
               {filteredHeroes.map((hero) => (
                 <article
                   key={hero.value}
@@ -146,7 +146,7 @@ const MasterDataPage = () => {
                       loading="lazy"
                     />
                   </div>
-                  <div className="flex items-center justify-between gap-3 border-t border-border/70 p-3">
+                  <div className="grid gap-2 border-t border-border/70 p-2.5 sm:flex sm:items-center sm:justify-between sm:gap-3 sm:p-3">
                     <div className="min-w-0">
                       <h2 className="truncate text-base font-bold">{hero.label}</h2>
                       <p className="mt-1 text-xs font-semibold text-muted-foreground">
@@ -154,7 +154,7 @@ const MasterDataPage = () => {
                       </p>
                     </div>
                     <Badge
-                      className="gap-2 border-border bg-secondary/60 text-foreground"
+                      className="w-fit gap-2 border-border bg-secondary/60 text-foreground"
                       variant="outline"
                     >
                       <AssetIcon size="sm" src={getRoleIconPath(hero.role)} />
@@ -168,11 +168,11 @@ const MasterDataPage = () => {
 
           <TabsContent value="maps" className="section-pad mt-0 space-y-5">
             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
-              <div className="flex flex-wrap gap-2">
+              <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0">
                 <Button
                   type="button"
                   variant={modeFilter === 'all' ? 'default' : 'outline'}
-                  className={cn(modeFilter !== 'all' && 'bg-transparent')}
+                  className={cn('shrink-0', modeFilter !== 'all' && 'bg-transparent')}
                   onClick={() => setModeFilter('all')}
                 >
                   <Grid2X2 className="h-4 w-4" />
@@ -183,7 +183,7 @@ const MasterDataPage = () => {
                     key={mode.value}
                     type="button"
                     variant={modeFilter === mode.value ? 'default' : 'outline'}
-                    className={cn(modeFilter !== mode.value && 'bg-transparent')}
+                    className={cn('shrink-0', modeFilter !== mode.value && 'bg-transparent')}
                     onClick={() => setModeFilter(mode.value)}
                   >
                     <AssetIcon

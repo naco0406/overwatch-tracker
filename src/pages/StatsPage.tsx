@@ -704,7 +704,7 @@ const StatsPage = () => {
                   </div>
                   <div className="section-pad">
                     {mapStats.length > 0 ? (
-                      <ChartShell className="h-[420px]">
+                      <ChartShell className="h-[360px] sm:h-[420px]">
                         <BarChart
                           data={mapWinRateChartData}
                           layout="vertical"
@@ -835,7 +835,7 @@ const StatsPage = () => {
                   </div>
                   <div className="section-pad">
                     {modeStats.length > 0 ? (
-                      <ChartShell className="h-[380px]">
+                      <ChartShell className="h-[320px] sm:h-[380px]">
                         <BarChart
                           data={modeChartData}
                           margin={{ bottom: 0, left: -18, right: 8, top: 12 }}
@@ -901,7 +901,7 @@ const StatsPage = () => {
                 </div>
                 <div className="section-pad">
                   {modeStats.length > 0 ? (
-                    <ChartShell className="h-[320px]">
+                    <ChartShell className="h-[300px] sm:h-[320px]">
                       <BarChart
                         data={modeChartData}
                         margin={{ bottom: 0, left: -18, right: 8, top: 12 }}
@@ -980,7 +980,7 @@ const StatsPage = () => {
                     </div>
                     <div className="section-pad">
                       {heroStats.length > 0 ? (
-                        <ChartShell className="h-[360px]">
+                        <ChartShell className="h-[320px] sm:h-[360px]">
                           <ComposedChart
                             data={heroChartData}
                             margin={{ bottom: 8, left: -18, right: 8, top: 12 }}
@@ -1051,7 +1051,7 @@ const StatsPage = () => {
                     </div>
                     <div className="section-pad">
                       {roleStats.length > 0 ? (
-                        <ChartShell className="h-[360px]">
+                        <ChartShell className="h-[320px] sm:h-[360px]">
                           <ComposedChart
                             data={roleChartData}
                             margin={{ bottom: 8, left: -18, right: 8, top: 12 }}
@@ -1166,7 +1166,7 @@ const StatsPage = () => {
                 </div>
                 <div className="section-pad">
                   {filteredMatches.length > 0 ? (
-                    <ChartShell className="h-[460px]">
+                    <ChartShell className="h-[360px] sm:h-[460px]">
                       <ComposedChart
                         data={hourlyChartData}
                         margin={{ bottom: 8, left: -18, right: 8, top: 12 }}
@@ -1254,7 +1254,7 @@ const StatsPage = () => {
                 </div>
                 <div className="section-pad">
                   {orderStats.length > 0 ? (
-                    <ChartShell className="h-[460px]">
+                    <ChartShell className="h-[360px] sm:h-[460px]">
                       <ComposedChart
                         data={orderChartData}
                         margin={{ bottom: 8, left: -18, right: 8, top: 12 }}
@@ -1355,7 +1355,7 @@ interface MetricCardProps extends MetricCellProps {
 }
 
 const MetricCard = ({ className, detail, icon: Icon, label, value }: MetricCardProps) => (
-  <div className={cn('bg-card/55 p-4 sm:p-5', className)}>
+  <div className={cn('bg-card/55 p-3.5 sm:p-5', className)}>
     <div className="min-w-0">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -1376,7 +1376,7 @@ const MetricCard = ({ className, detail, icon: Icon, label, value }: MetricCardP
 const MetricGrid = ({ className, metrics }: { className?: string; metrics: MetricCellProps[] }) => (
   <div
     className={cn(
-      'grid overflow-hidden rounded-lg border border-border/70 bg-card/55 md:grid-cols-4',
+      'grid grid-cols-2 overflow-hidden rounded-lg border border-border/70 bg-card/55 md:grid-cols-4',
       className,
     )}
   >
@@ -1384,7 +1384,7 @@ const MetricGrid = ({ className, metrics }: { className?: string; metrics: Metri
       <MetricCard
         key={metric.label}
         {...metric}
-        className="border-b border-border/60 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0"
+        className="border-b border-border/60 odd:border-r last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0"
       />
     ))}
   </div>
@@ -1435,8 +1435,10 @@ const StatsFilterPanel = ({
   queueFilter,
   title,
 }: StatsFilterPanelProps) => (
-  <div className={cn('rounded-lg border border-border/70 bg-card/55 px-4 py-3 sm:px-5', className)}>
-    <div className="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start">
+  <div
+    className={cn('rounded-lg border border-border/70 bg-card/55 px-3.5 py-3 sm:px-5', className)}
+  >
+    <div className="grid gap-3 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start xl:gap-4">
       <div>
         <div className="flex items-center justify-between gap-3 xl:block">
           <div>
@@ -1450,7 +1452,7 @@ const StatsFilterPanel = ({
       </div>
       <div
         className={cn(
-          'grid gap-4',
+          'grid gap-3',
           includeMode ? 'lg:grid-cols-2 2xl:grid-cols-4' : 'lg:grid-cols-3',
         )}
       >
@@ -1468,7 +1470,7 @@ const StatsFilterPanel = ({
 
         <FilterSelect label="계정">
           <Select value={accountFilter} onValueChange={onAccountFilterChange}>
-            <SelectTrigger className="h-9 bg-transparent">
+            <SelectTrigger className="h-10 bg-transparent sm:h-9">
               <SelectValue placeholder="계정 선택" />
             </SelectTrigger>
             <SelectContent>
@@ -1531,7 +1533,7 @@ const FilterButton = ({ active, children, onClick }: FilterButtonProps) => (
   <button
     type="button"
     className={cn(
-      'h-9 shrink-0 rounded-md border px-3 text-xs font-bold transition-[background-color,border-color,color]',
+      'h-10 shrink-0 rounded-md border px-3 text-xs font-bold transition-[background-color,border-color,color] sm:h-9',
       active
         ? 'border-primary/60 bg-primary/10 text-primary'
         : 'border-border/70 bg-transparent text-muted-foreground hover:bg-secondary/70 hover:text-foreground',
@@ -1641,7 +1643,7 @@ interface ChartShellProps {
 }
 
 const ChartShell = ({ children, className }: ChartShellProps) => (
-  <div className={cn('h-[320px] min-w-0 rounded-md bg-transparent p-1 sm:p-2', className)}>
+  <div className={cn('h-[320px] min-w-0 rounded-md bg-transparent p-0.5 sm:p-2', className)}>
     <ResponsiveContainer height="100%" width="100%">
       {children}
     </ResponsiveContainer>
@@ -1701,7 +1703,7 @@ const MediaStatRow = ({
   share,
   winRate,
 }: MediaStatRowProps) => (
-  <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 border-b border-border/60 py-3 last:border-b-0">
+  <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-3 border-b border-border/60 py-3 last:border-b-0 sm:grid-cols-[72px_minmax(0,1fr)]">
     <div className="aspect-[4/3] overflow-hidden rounded-md bg-secondary">
       <img
         alt={label}

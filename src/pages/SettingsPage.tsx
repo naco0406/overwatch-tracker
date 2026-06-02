@@ -264,9 +264,9 @@ const SettingsPage = () => {
     <div className="page-stack">
       <PageHeader eyebrow="설정" title="설정" description="계정과 데이터 파일을 관리합니다." />
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+      <section className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start xl:gap-4">
         <div className="workspace-panel overflow-hidden">
-          <div className="flat-row grid gap-4 p-4 sm:grid-cols-[220px_minmax(0,1fr)] sm:p-5">
+          <div className="flat-row grid gap-3 p-3.5 sm:grid-cols-[220px_minmax(0,1fr)] sm:gap-4 sm:p-5">
             <SectionLead icon={ShieldCheck} label="계정" title="계정" />
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <div className="min-w-0 rounded-md border border-border/70 bg-secondary p-3 sm:min-w-[320px]">
@@ -280,7 +280,7 @@ const SettingsPage = () => {
             </div>
           </div>
 
-          <div className="flat-row grid gap-4 p-4 sm:grid-cols-[220px_minmax(0,1fr)] sm:p-5">
+          <div className="flat-row grid gap-3 p-3.5 sm:grid-cols-[220px_minmax(0,1fr)] sm:gap-4 sm:p-5">
             <SectionLead icon={UserRound} label="게임 계정" title="배틀태그" />
             <div className="space-y-4">
               <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_96px]">
@@ -352,10 +352,17 @@ const SettingsPage = () => {
                           </div>
                         )}
 
-                        <div className="flex flex-wrap gap-2 sm:justify-end">
+                        <div
+                          className={
+                            editing
+                              ? 'grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end'
+                              : 'grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:justify-end'
+                          }
+                        >
                           {editing ? (
                             <>
                               <Button
+                                className="h-10 sm:h-9"
                                 disabled={isAccountMutating || !editingBattleTag.trim()}
                                 size="sm"
                                 type="button"
@@ -365,7 +372,7 @@ const SettingsPage = () => {
                                 저장
                               </Button>
                               <Button
-                                className="bg-transparent"
+                                className="h-10 bg-transparent sm:h-9"
                                 disabled={isAccountMutating}
                                 size="sm"
                                 type="button"
@@ -379,7 +386,7 @@ const SettingsPage = () => {
                           ) : (
                             <>
                               <Button
-                                className="bg-transparent"
+                                className="h-10 bg-transparent sm:h-9"
                                 disabled={isAccountMutating}
                                 size="sm"
                                 type="button"
@@ -390,7 +397,7 @@ const SettingsPage = () => {
                                 {account.isMain ? '본계 해제' : '본계'}
                               </Button>
                               <Button
-                                className="bg-transparent"
+                                className="h-10 bg-transparent sm:h-9"
                                 disabled={isAccountMutating}
                                 size="sm"
                                 type="button"
@@ -401,7 +408,7 @@ const SettingsPage = () => {
                                 수정
                               </Button>
                               <Button
-                                className="bg-transparent"
+                                className="h-10 bg-transparent sm:h-9"
                                 disabled={isAccountMutating}
                                 size="sm"
                                 type="button"
@@ -443,7 +450,7 @@ const SettingsPage = () => {
                         </p>
                       </div>
                       <Button
-                        className="bg-transparent"
+                        className="h-10 bg-transparent sm:h-9"
                         disabled={restorePlayerAccount.isPending}
                         size="sm"
                         variant="outline"
@@ -465,7 +472,7 @@ const SettingsPage = () => {
           </div>
 
           <div className="section-pad space-y-4">
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+            <div className="grid grid-cols-2 gap-2 xl:grid-cols-1">
               <div className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3">
                 <p className="metric-label">저장 기록</p>
                 <p className="mt-2 text-2xl font-bold">{matches.length.toLocaleString('ko-KR')}</p>

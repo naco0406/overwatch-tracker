@@ -403,17 +403,19 @@ const HomePage = () => {
       />
 
       <section className="workspace-panel overflow-hidden">
-        <div className="metric-strip sm:grid-cols-3 sm:divide-x sm:divide-border/70">
+        <div className="metric-strip grid-cols-3 divide-x divide-border/70">
           {summaryMetrics.map((metric) => (
             <div
               key={metric.label}
-              className="flex min-h-[74px] items-end justify-between gap-3 border-b border-border/70 px-4 py-3 last:border-b-0 sm:border-b-0 sm:px-5 sm:py-4"
+              className="flex min-h-[68px] items-end justify-between gap-2 px-3 py-3 sm:min-h-[74px] sm:px-5 sm:py-4"
             >
               <div className="min-w-0">
                 <p className="metric-label">{metric.label}</p>
-                <div className="mt-2 flex min-w-0 items-baseline gap-2">
-                  <p className="text-2xl font-bold leading-none">{metric.value}</p>
-                  <p className="truncate text-xs font-semibold text-muted-foreground">
+                <div className="mt-2 min-w-0 sm:flex sm:items-baseline sm:gap-2">
+                  <p className="truncate text-xl font-bold leading-none sm:text-2xl">
+                    {metric.value}
+                  </p>
+                  <p className="mt-1 truncate text-[10px] font-semibold text-muted-foreground sm:mt-0 sm:text-xs">
                     {metric.detail}
                   </p>
                 </div>
@@ -427,6 +429,7 @@ const HomePage = () => {
             accounts={activePlayerAccounts}
             defaultSettings={userSettings}
             isSubmitting={createMatchMutation.isPending}
+            matches={matches}
             onSubmit={handleCreateMatch}
           />
         </div>
@@ -441,7 +444,7 @@ const HomePage = () => {
             </div>
             <Badge variant="secondary">{sessionMatches.length} 경기</Badge>
           </div>
-          <div className="grid grid-cols-6 gap-2 lg:grid-cols-3">
+          <div className="grid grid-cols-6 gap-1.5 sm:gap-2 lg:grid-cols-3">
             {isLoading
               ? emptySessionSlots.map((_, index) => (
                   <SkeletonBlock key={index} className="h-14 rounded-md" />
@@ -450,7 +453,7 @@ const HomePage = () => {
                 ? sessionMatches.slice(0, 9).map((match, index) => (
                     <div
                       key={match.id}
-                      className={`flex h-14 flex-col items-center justify-center rounded-md border text-xs font-bold ${getResultTone(
+                      className={`flex h-12 flex-col items-center justify-center rounded-md border text-[11px] font-bold sm:h-14 sm:text-xs ${getResultTone(
                         match.result,
                       )}`}
                     >
@@ -461,7 +464,7 @@ const HomePage = () => {
                 : emptySessionSlots.map((_, index) => (
                     <div
                       key={index}
-                      className="flex h-14 items-center justify-center rounded-md border border-dashed border-border bg-secondary/40 text-xs font-semibold text-muted-foreground"
+                      className="flex h-12 items-center justify-center rounded-md border border-dashed border-border bg-secondary/40 text-[11px] font-semibold text-muted-foreground sm:h-14 sm:text-xs"
                     >
                       {index + 1}
                     </div>
@@ -483,10 +486,14 @@ const HomePage = () => {
               {sortedSessionMatches.slice(0, 6).map((match) => (
                 <div
                   key={match.id}
-                  className="flat-row grid gap-3 p-3 sm:grid-cols-[72px_minmax(0,1fr)_80px_auto]"
+                  className="flat-row grid grid-cols-[minmax(0,1fr)_auto] gap-3 p-3 sm:grid-cols-[72px_minmax(0,1fr)_80px_auto] sm:items-center"
                 >
-                  <div className="text-sm font-bold">{formatTime(match.playedAt)}</div>
-                  <div className="min-w-0">
+                  <div className="col-span-2 text-sm font-bold sm:col-span-1 sm:block">
+                    <span className="sm:hidden">{formatTime(match.playedAt)} · </span>
+                    <span className="hidden sm:inline">{formatTime(match.playedAt)}</span>
+                    <span className="sm:hidden">{getResultLabel(match.result)}</span>
+                  </div>
+                  <div className="col-span-2 min-w-0 sm:col-span-1">
                     <p className="truncate text-sm font-semibold">
                       {getMapLabel(match.mapId)} · {getModeLabel(match.modeId)}
                     </p>
@@ -501,7 +508,7 @@ const HomePage = () => {
                   >
                     {match.teamScore}:{match.enemyScore}
                   </div>
-                  <div className="flex gap-1">
+                  <div className="col-span-2 flex justify-end gap-1 sm:col-span-1">
                     <Button
                       type="button"
                       size="icon"

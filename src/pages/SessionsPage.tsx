@@ -186,9 +186,9 @@ const SessionsPage = () => {
         }
       />
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
+      <section className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start xl:gap-4">
         <div className="workspace-panel overflow-hidden">
-          <div className="metric-strip md:grid-cols-3">
+          <div className="metric-strip grid-cols-3 divide-x divide-border/70">
             {metrics.map((metric) => (
               <MetricCell key={metric.label} {...metric} isLoading={isLoading} />
             ))}
@@ -350,7 +350,7 @@ interface MetricCellProps {
 }
 
 const MetricCell = ({ detail, icon: Icon, isLoading = false, label, value }: MetricCellProps) => (
-  <div className="metric-cell">
+  <div className="metric-cell border-b-0 border-r-0">
     <div className="min-w-0">
       <p className="metric-label">{label}</p>
       {isLoading ? (
@@ -360,12 +360,12 @@ const MetricCell = ({ detail, icon: Icon, isLoading = false, label, value }: Met
         </>
       ) : (
         <>
-          <p className="mt-3 truncate text-2xl font-bold">{value}</p>
-          <p className="mt-1 truncate text-xs text-muted-foreground">{detail}</p>
+          <p className="mt-2 truncate text-xl font-bold sm:mt-3 sm:text-2xl">{value}</p>
+          <p className="mt-1 truncate text-[10px] text-muted-foreground sm:text-xs">{detail}</p>
         </>
       )}
     </div>
-    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-secondary text-primary">
+    <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-md bg-secondary text-primary sm:flex">
       <Icon className="h-5 w-5" />
     </div>
   </div>
@@ -590,8 +590,8 @@ const MatchRow = ({ accountLabel, index, match, onDelete, onEdit }: MatchRowProp
       : '';
 
   return (
-    <div className="grid gap-3 bg-card p-3 transition-colors hover:bg-[hsl(var(--surface-2))] sm:grid-cols-[48px_88px_minmax(0,1fr)_88px_auto] sm:items-center">
-      <div className="flex items-center gap-2 sm:block">
+    <div className="grid grid-cols-[84px_minmax(0,1fr)] gap-3 bg-card p-3 transition-colors hover:bg-[hsl(var(--surface-2))] sm:grid-cols-[48px_88px_minmax(0,1fr)_88px_auto] sm:items-center">
+      <div className="col-span-2 flex items-center gap-2 sm:col-span-1 sm:block">
         <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary text-xs font-bold text-muted-foreground">
           {index + 1}
         </div>
@@ -618,7 +618,7 @@ const MatchRow = ({ accountLabel, index, match, onDelete, onEdit }: MatchRowProp
         </p>
       </div>
 
-      <div className="flex items-center justify-between gap-2 sm:block">
+      <div className="col-span-2 flex items-center justify-between gap-2 sm:col-span-1 sm:block">
         <span
           className={cn(
             'inline-flex h-8 min-w-16 items-center justify-center rounded-md border px-2 text-xs font-bold',
@@ -632,7 +632,7 @@ const MatchRow = ({ accountLabel, index, match, onDelete, onEdit }: MatchRowProp
         </p>
       </div>
 
-      <div className="flex justify-end gap-1">
+      <div className="col-span-2 flex justify-end gap-1 sm:col-span-1">
         <Button
           type="button"
           size="icon"

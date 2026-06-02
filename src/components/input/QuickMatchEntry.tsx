@@ -1,5 +1,5 @@
 import { Minus, Plus, Save, Search } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ import {
 } from '@/data/matchOptions';
 import { getMapScreenshotPath } from '@/data/masterAssets';
 import { cn } from '@/lib/utils';
-import type { MatchCreateInput, MatchResult, ModeId } from '@/types/match';
+import type { Match, MatchCreateInput, MatchResult, ModeId } from '@/types/match';
 import type { PlayerAccount } from '@/types/playerAccount';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
 import type { UserSettings } from '@/types/userSettings';
@@ -26,6 +26,7 @@ interface QuickMatchEntryProps {
   accounts?: PlayerAccount[];
   defaultSettings?: UserSettings;
   isSubmitting?: boolean;
+  matches?: Match[];
   onSubmit: (input: MatchCreateInput) => Promise<void>;
 }
 
@@ -79,6 +80,7 @@ const QuickMatchEntry = ({
   accounts = [],
   defaultSettings,
   isSubmitting = false,
+  matches = [],
   onSubmit,
 }: QuickMatchEntryProps) => {
   const [modeFilter, setModeFilter] = useState<ModeFilter>('all');
@@ -89,6 +91,8 @@ const QuickMatchEntry = ({
   const [result, setResult] = useState<ResultValue>('');
   const [error, setError] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState(() => getDefaultAccountId(accounts));
+  const enemyScoreInputRef = useRef<HTMLInputElement>(null);
+  const teamScoreInputRef = useRef<HTMLInputElement>(null);
   const defaultAccountId = getDefaultAccountId(accounts);
   const effectiveSelectedAccountId = accounts.some((account) => account.id === selectedAccountId)
     ? selectedAccountId
@@ -98,20 +102,52 @@ const QuickMatchEntry = ({
   const selectedMap = mapOptions.find((map) => map.value === mapId);
   const defaultQueueType = defaultSettings?.defaultQueueType ?? 'solo';
 
+  const mapPickCounts = useMemo(() => {
+    const all = new Map<string, number>();
+    const byMode = new Map<ModeId, Map<string, number>>();
+
+    matches.forEach((match) => {
+      all.set(match.mapId, (all.get(match.mapId) ?? 0) + 1);
+
+      const modeCounts = byMode.get(match.modeId) ?? new Map<string, number>();
+      modeCounts.set(match.mapId, (modeCounts.get(match.mapId) ?? 0) + 1);
+      byMode.set(match.modeId, modeCounts);
+    });
+
+    return {
+      all,
+      byMode,
+    };
+  }, [matches]);
+
   const visibleMaps = useMemo(() => {
     const normalizedQuery = mapQuery.trim().toLowerCase();
+    const baseOrder = new Map(mapOptions.map((map, index) => [map.value, index]));
+    const activeCounts =
+      modeFilter === 'all' ? mapPickCounts.all : (mapPickCounts.byMode.get(modeFilter) ?? null);
 
-    return mapOptions.filter((map) => {
-      const modeMatches = modeFilter === 'all' || map.modeId === modeFilter;
-      const queryMatches =
-        normalizedQuery.length === 0 ||
-        map.label.toLowerCase().includes(normalizedQuery) ||
-        map.value.toLowerCase().includes(normalizedQuery) ||
-        getModeLabel(map.modeId).toLowerCase().includes(normalizedQuery);
+    return mapOptions
+      .filter((map) => {
+        const modeMatches = modeFilter === 'all' || map.modeId === modeFilter;
+        const queryMatches =
+          normalizedQuery.length === 0 ||
+          map.label.toLowerCase().includes(normalizedQuery) ||
+          map.value.toLowerCase().includes(normalizedQuery) ||
+          getModeLabel(map.modeId).toLowerCase().includes(normalizedQuery);
 
-      return modeMatches && queryMatches;
-    });
-  }, [mapQuery, modeFilter]);
+        return modeMatches && queryMatches;
+      })
+      .sort((left, right) => {
+        const pickDelta =
+          (activeCounts?.get(right.value) ?? 0) - (activeCounts?.get(left.value) ?? 0);
+
+        if (pickDelta !== 0) {
+          return pickDelta;
+        }
+
+        return (baseOrder.get(left.value) ?? 0) - (baseOrder.get(right.value) ?? 0);
+      });
+  }, [mapPickCounts, mapQuery, modeFilter]);
 
   const selectMap = (nextMapId: string) => {
     const nextMap = mapOptions.find((map) => map.value === nextMapId);
@@ -189,12 +225,28 @@ const QuickMatchEntry = ({
     setError('');
   };
 
+  const handleScoreKeyDown = (event: KeyboardEvent<HTMLInputElement>, side: 'team' | 'enemy') => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void submit();
+      return;
+    }
+
+    if (event.key === 'Tab' && side === 'team' && !event.shiftKey) {
+      event.preventDefault();
+      enemyScoreInputRef.current?.focus();
+      enemyScoreInputRef.current?.select();
+    }
+  };
+
   return (
     <div className="w-full">
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <p className="metric-label">빠른 기록</p>
-          <h2 className="mt-1 truncate text-lg font-bold tracking-normal">새 경기</h2>
+          <h2 className="mt-1 truncate text-[17px] font-bold leading-tight tracking-normal sm:text-lg">
+            새 경기
+          </h2>
         </div>
         <div className="flex min-w-0 flex-col gap-2 sm:items-end">
           {accounts.length > 0 ? (
@@ -208,7 +260,7 @@ const QuickMatchEntry = ({
                     type="button"
                     title={account.battleTag}
                     className={cn(
-                      'flex h-8 max-w-36 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-bold transition-colors',
+                      'flex h-9 max-w-36 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-bold transition-colors sm:h-8',
                       selected
                         ? 'border-primary bg-primary text-primary-foreground'
                         : 'border-border bg-card text-muted-foreground hover:bg-secondary hover:text-foreground',
@@ -241,14 +293,14 @@ const QuickMatchEntry = ({
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_310px] lg:items-start lg:gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_310px] lg:items-start lg:gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0">
           <div className="grid gap-2 lg:grid-cols-[minmax(220px,300px)_minmax(0,1fr)] lg:items-center">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 aria-label="맵 검색"
-                className="h-9 pl-9 text-sm font-semibold"
+                className="h-10 pl-9 text-sm font-semibold sm:h-9"
                 placeholder="맵 검색"
                 value={mapQuery}
                 onChange={(event) => setMapQuery(event.target.value)}
@@ -270,9 +322,9 @@ const QuickMatchEntry = ({
             </div>
           </div>
 
-          <div className="mobile-scroll mt-3 h-[212px] overflow-x-auto pb-2 sm:h-[228px] lg:h-[244px]">
+          <div className="mobile-scroll mt-2.5 h-[190px] overflow-x-auto pb-2 min-[390px]:h-[204px] sm:mt-3 sm:h-[228px] lg:h-[244px]">
             {visibleMaps.length > 0 ? (
-              <div className="grid h-full auto-cols-[132px] grid-flow-col grid-rows-2 gap-2 sm:auto-cols-[148px] lg:auto-cols-[164px]">
+              <div className="grid h-full auto-cols-[124px] grid-flow-col grid-rows-2 gap-2 min-[390px]:auto-cols-[136px] sm:auto-cols-[148px] lg:auto-cols-[164px]">
                 {visibleMaps.map((map) => {
                   const selected = map.value === mapId;
 
@@ -286,7 +338,7 @@ const QuickMatchEntry = ({
                       )}
                       onClick={() => selectMap(map.value)}
                     >
-                      <span className="block h-14 overflow-hidden bg-secondary sm:h-16 lg:h-[72px]">
+                      <span className="block h-12 overflow-hidden bg-secondary min-[390px]:h-14 sm:h-16 lg:h-[72px]">
                         <img
                           alt={map.label}
                           className="h-full w-full object-cover"
@@ -298,7 +350,7 @@ const QuickMatchEntry = ({
                         <span className="block truncate text-xs font-bold">{map.label}</span>
                         <span
                           className={cn(
-                            'mt-0.5 block truncate text-[11px] font-semibold',
+                            'mt-0.5 block truncate text-[10px] font-semibold min-[390px]:text-[11px]',
                             selected ? 'text-primary/70' : 'text-muted-foreground',
                           )}
                         >
@@ -317,7 +369,7 @@ const QuickMatchEntry = ({
           </div>
         </div>
 
-        <div className="border-t border-border/70 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+        <div className="rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] p-3 lg:rounded-none lg:border-y-0 lg:border-l lg:border-r-0 lg:bg-transparent lg:p-0 lg:pl-5">
           <div className="mb-3 flex min-h-10 items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="metric-label">맵</p>
@@ -335,27 +387,31 @@ const QuickMatchEntry = ({
           <div className="grid gap-3">
             <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
               <ScoreField
+                inputRef={teamScoreInputRef}
                 label="우리"
                 value={teamScore}
                 onAdjust={(delta) => adjustScore('team', delta)}
                 onChange={(value) => updateScore('team', value)}
+                onKeyDown={(event) => handleScoreKeyDown(event, 'team')}
               />
               <div className="pt-9 text-lg font-bold text-muted-foreground">:</div>
               <ScoreField
+                inputRef={enemyScoreInputRef}
                 label="상대"
                 value={enemyScore}
                 onAdjust={(delta) => adjustScore('enemy', delta)}
                 onChange={(value) => updateScore('enemy', value)}
+                onKeyDown={(event) => handleScoreKeyDown(event, 'enemy')}
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
               {resultOptions.map((option) => (
                 <button
                   key={option.value}
                   type="button"
                   className={cn(
-                    'h-11 rounded-md border px-3 text-sm font-bold transition-colors',
+                    'h-11 rounded-md border px-2 text-sm font-bold transition-colors',
                     getResultTone(option.value, result === option.value),
                   )}
                   onClick={() => {
@@ -403,13 +459,15 @@ const ModeButton = ({ active, children, onClick }: ModeButtonProps) => (
 );
 
 interface ScoreFieldProps {
+  inputRef?: RefObject<HTMLInputElement>;
   label: string;
   onAdjust: (delta: number) => void;
   onChange: (value: string) => void;
+  onKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void;
   value: string;
 }
 
-const ScoreField = ({ label, onAdjust, onChange, value }: ScoreFieldProps) => (
+const ScoreField = ({ inputRef, label, onAdjust, onChange, onKeyDown, value }: ScoreFieldProps) => (
   <div>
     <p className="mb-2 text-center text-xs font-bold text-muted-foreground">{label}</p>
     <div className="grid grid-cols-[34px_minmax(0,1fr)_34px] overflow-hidden rounded-md border border-input bg-card">
@@ -417,11 +475,13 @@ const ScoreField = ({ label, onAdjust, onChange, value }: ScoreFieldProps) => (
         type="button"
         className="flex h-11 items-center justify-center border-r border-border/70 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
         aria-label={`${label} 점수 감소`}
+        tabIndex={-1}
         onClick={() => onAdjust(-1)}
       >
         <Minus className="h-4 w-4" />
       </button>
       <Input
+        ref={inputRef}
         className="h-11 rounded-none border-0 bg-card px-1 text-center text-lg font-bold focus-visible:ring-0"
         inputMode="numeric"
         max={10}
@@ -429,11 +489,13 @@ const ScoreField = ({ label, onAdjust, onChange, value }: ScoreFieldProps) => (
         type="text"
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        onKeyDown={onKeyDown}
       />
       <button
         type="button"
         className="flex h-11 items-center justify-center border-l border-border/70 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
         aria-label={`${label} 점수 증가`}
+        tabIndex={-1}
         onClick={() => onAdjust(1)}
       >
         <Plus className="h-4 w-4" />

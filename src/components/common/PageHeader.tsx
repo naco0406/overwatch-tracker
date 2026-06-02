@@ -14,7 +14,7 @@ const PageHeader = ({ actions, className, description, eyebrow, title }: PageHea
   <div className={cn('flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between', className)}>
     <div className="min-w-0">
       {eyebrow && <p className="metric-label mb-1.5">{eyebrow}</p>}
-      <h1 className="break-words text-[28px] font-bold leading-tight tracking-normal text-foreground sm:text-3xl">
+      <h1 className="break-words text-[26px] font-bold leading-tight tracking-normal text-foreground sm:text-3xl">
         {title}
       </h1>
       {description && (
@@ -24,7 +24,7 @@ const PageHeader = ({ actions, className, description, eyebrow, title }: PageHea
       )}
     </div>
     {actions && (
-      <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto [&>button]:min-w-0 [&>button]:flex-1 sm:[&>button]:flex-none">
+      <div className="grid w-full shrink-0 grid-cols-[repeat(auto-fit,minmax(0,1fr))] gap-2 sm:flex sm:w-auto sm:items-center [&>button]:min-w-0 sm:[&>button]:flex-none">
         {actions}
       </div>
     )}
