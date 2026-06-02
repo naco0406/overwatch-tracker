@@ -1,12 +1,11 @@
 import { Minus, Plus, Save, Search } from 'lucide-react';
-import { useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   getModeLabel,
-  getOptionLabel,
   mapOptions,
   modeOptions,
   queueOptions,
@@ -14,7 +13,7 @@ import {
 } from '@/data/matchOptions';
 import { getMapScreenshotPath } from '@/data/masterAssets';
 import { cn } from '@/lib/utils';
-import type { Match, MatchCreateInput, MatchResult, ModeId } from '@/types/match';
+import type { Match, MatchCreateInput, MatchResult, ModeId, QueueType } from '@/types/match';
 import type { PlayerAccount } from '@/types/playerAccount';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
 import type { UserSettings } from '@/types/userSettings';
@@ -91,7 +90,10 @@ const QuickMatchEntry = ({
   const [result, setResult] = useState<ResultValue>('');
   const [error, setError] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState(() => getDefaultAccountId(accounts));
+  const defaultQueueType = defaultSettings?.defaultQueueType ?? 'solo';
+  const [selectedQueueType, setSelectedQueueType] = useState<QueueType>(defaultQueueType);
   const enemyScoreInputRef = useRef<HTMLInputElement>(null);
+  const queueTouchedRef = useRef(false);
   const teamScoreInputRef = useRef<HTMLInputElement>(null);
   const defaultAccountId = getDefaultAccountId(accounts);
   const effectiveSelectedAccountId = accounts.some((account) => account.id === selectedAccountId)
@@ -100,7 +102,18 @@ const QuickMatchEntry = ({
   const selectedAccount =
     accounts.find((account) => account.id === effectiveSelectedAccountId) ?? null;
   const selectedMap = mapOptions.find((map) => map.value === mapId);
-  const defaultQueueType = defaultSettings?.defaultQueueType ?? 'solo';
+
+  useEffect(() => {
+    if (!queueTouchedRef.current) {
+      setSelectedQueueType(defaultQueueType);
+    }
+  }, [defaultQueueType]);
+
+  const selectQueueType = (queueType: QueueType) => {
+    queueTouchedRef.current = true;
+    setSelectedQueueType(queueType);
+    setError('');
+  };
 
   const mapPickCounts = useMemo(() => {
     const all = new Map<string, number>();
@@ -210,7 +223,7 @@ const QuickMatchEntry = ({
       modeId: selectedMap.modeId,
       myHeroes: [],
       playedAt: new Date().toISOString(),
-      queueType: defaultQueueType,
+      queueType: selectedQueueType,
       result,
       source: 'manual',
       tags: [],
@@ -287,9 +300,27 @@ const QuickMatchEntry = ({
               계정 미지정
             </Badge>
           )}
-          <Badge variant="outline" className="w-fit bg-transparent">
-            {getOptionLabel(queueOptions, defaultQueueType)}
-          </Badge>
+          <div className="mobile-scroll flex max-w-full gap-1 overflow-x-auto pb-0.5">
+            {queueOptions.map((queue) => {
+              const selected = queue.value === selectedQueueType;
+
+              return (
+                <button
+                  key={queue.value}
+                  type="button"
+                  className={cn(
+                    'h-8 shrink-0 rounded-md border px-2.5 text-xs font-bold transition-colors',
+                    selected
+                      ? 'border-foreground bg-foreground text-background'
+                      : 'border-border bg-card text-muted-foreground hover:bg-secondary hover:text-foreground',
+                  )}
+                  onClick={() => selectQueueType(queue.value)}
+                >
+                  {queue.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
