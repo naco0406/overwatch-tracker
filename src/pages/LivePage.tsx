@@ -1,8 +1,8 @@
 import type { LucideIcon } from 'lucide-react';
-import { Radio, ScanLine, Square, TimerReset } from 'lucide-react';
+import { MonitorUp, Radio, ScanLine, Square, TimerReset } from 'lucide-react';
 import { useCallback, useEffect, useRef } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
 
+import { EmptyState } from '@/components/common/EmptyState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -23,20 +23,24 @@ const liveSampleIntervalSeconds = Math.round(liveSampleIntervalMs / 1_000);
 const LivePage = () => {
   const {
     drawPreviewToCanvas,
+    errorMessage,
     evidenceEvents,
     frameMetrics,
     isLiveAvailable,
+    startCapture,
     status,
     stopCapture,
     streamInfo,
   } = useLiveCapture();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const navigate = useNavigate();
 
   const stopLive = useCallback(() => {
     stopCapture('idle');
-    navigate('/');
-  }, [navigate, stopCapture]);
+  }, [stopCapture]);
+
+  const startLive = useCallback(() => {
+    void startCapture();
+  }, [startCapture]);
 
   useEffect(() => {
     let previewTimer: number | null = null;
@@ -60,7 +64,46 @@ const LivePage = () => {
   }, [drawPreviewToCanvas, isLiveAvailable]);
 
   if (!isLiveAvailable) {
-    return <Navigate to="/" replace />;
+    return (
+      <div className="page-stack">
+        <PageHeader
+          eyebrow="실시간"
+          title="LIVE"
+          description="오버워치 창을 공유하면 프레임 진단과 증거 로그가 이 화면에 쌓입니다."
+        />
+
+        <section className="workspace-panel overflow-hidden">
+          <EmptyState
+            icon={MonitorUp}
+            title="화면 공유 대기 중"
+            description="데스크톱 GNB 하단의 화면 공유 버튼으로 오버워치 창을 연결하세요. 모바일에서는 LIVE 입력을 제공하지 않습니다."
+            action={
+              <Button
+                type="button"
+                className="hidden xl:inline-flex"
+                disabled={status === 'starting' || status === 'unsupported'}
+                onClick={startLive}
+              >
+                <MonitorUp className="h-4 w-4" />
+                {status === 'starting'
+                  ? '연결 중'
+                  : status === 'error'
+                    ? '다시 공유'
+                    : status === 'unsupported'
+                      ? '지원 안 함'
+                      : '화면 공유'}
+              </Button>
+            }
+          />
+        </section>
+
+        {errorMessage ? (
+          <div className="rounded-lg border border-destructive/25 bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive">
+            {errorMessage}
+          </div>
+        ) : null}
+      </div>
+    );
   }
 
   return (

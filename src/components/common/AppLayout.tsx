@@ -68,15 +68,23 @@ const AppLayout = () => {
   } = useLiveCapture();
   const location = useLocation();
   const navigate = useNavigate();
-  const liveNavItem: NavItem | null = isLiveAvailable
-    ? {
-        icon: Radio,
-        label: 'LIVE',
-        to: '/live',
-      }
-    : null;
-  const visibleNavItems: NavItem[] = liveNavItem ? [...navItems, liveNavItem] : navItems;
+  const liveNavItem: NavItem = {
+    icon: Radio,
+    label: 'LIVE',
+    to: '/live',
+  };
+  const visibleNavItems: NavItem[] = [...navItems, liveNavItem];
   const activeNavItem = visibleNavItems.find((item) => isNavItemActive(item, location.pathname));
+  const liveActive = isPathActive('/live', location.pathname);
+  const liveActionLabel = isLiveAvailable
+    ? '공유 종료'
+    : liveStatus === 'starting'
+      ? '연결 중'
+      : liveStatus === 'error'
+        ? '다시 공유'
+        : liveStatus === 'unsupported'
+          ? '지원 안 함'
+          : '화면 공유';
 
   const handleStartLive = async () => {
     const started = await startCapture();
@@ -88,9 +96,15 @@ const AppLayout = () => {
 
   const handleStopLive = () => {
     stopCapture('idle');
-    if (location.pathname === '/live') {
-      navigate('/');
+  };
+
+  const handleLiveAction = () => {
+    if (isLiveAvailable) {
+      handleStopLive();
+      return;
     }
+
+    void handleStartLive();
   };
 
   const handleSignOut = async () => {
@@ -160,54 +174,61 @@ const AppLayout = () => {
           })}
         </nav>
         <div className="mx-3 mb-3 border-t border-border/70 pt-3">
-          {isLiveAvailable ? (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3">
-              <NavLink
-                to="/live"
-                className="flex items-center justify-between gap-3 text-destructive"
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-destructive" />
-                  <span className="truncate text-sm font-bold">LIVE</span>
-                </span>
-                <span className="text-xs font-bold">{liveStatusLabel[liveStatus]}</span>
-              </NavLink>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="mt-3 w-full justify-start border-destructive/30 bg-card text-destructive hover:text-destructive"
-                onClick={handleStopLive}
-              >
-                <Square className="h-4 w-4" />
-                종료
-              </Button>
-            </div>
-          ) : (
-            <div className="rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] p-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  <MonitorUp className="h-4 w-4 shrink-0 text-primary" />
-                  <p className="truncate text-sm font-semibold">LIVE 시작</p>
-                </div>
-                <span className="text-xs font-bold text-muted-foreground">
-                  {liveStatus === 'starting' ? '연결 중' : '화면 공유'}
-                </span>
-              </div>
-              <Button
-                type="button"
-                className="mt-3 w-full justify-start"
-                disabled={liveStatus === 'starting'}
-                onClick={handleStartLive}
-              >
-                <MonitorUp className="h-4 w-4" />
-                화면 공유
-              </Button>
-              {liveErrorMessage ? (
-                <p className="mt-2 text-xs font-semibold text-destructive">{liveErrorMessage}</p>
-              ) : null}
-            </div>
-          )}
+          <div
+            className={cn(
+              'rounded-lg border p-3 transition-colors',
+              isLiveAvailable
+                ? 'border-destructive/30 bg-destructive/10'
+                : liveActive
+                  ? 'border-primary/25 bg-primary/5'
+                  : 'border-border/70 bg-[hsl(var(--surface-2))]',
+            )}
+          >
+            <NavLink
+              to="/live"
+              className={cn(
+                'flex h-10 items-center justify-between gap-3 rounded-md px-2 transition-colors',
+                isLiveAvailable
+                  ? 'text-destructive hover:bg-destructive/10'
+                  : liveActive
+                    ? 'text-primary hover:bg-primary/10'
+                    : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+              )}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <span
+                  className={cn(
+                    'h-2.5 w-2.5 shrink-0 rounded-full',
+                    isLiveAvailable
+                      ? 'animate-pulse bg-destructive'
+                      : liveActive
+                        ? 'bg-primary'
+                        : 'bg-muted-foreground/50',
+                  )}
+                />
+                <span className="truncate text-sm font-bold">LIVE</span>
+              </span>
+              <span className="text-xs font-bold">{liveStatusLabel[liveStatus]}</span>
+            </NavLink>
+            <Button
+              type="button"
+              variant={isLiveAvailable ? 'outline' : 'default'}
+              size="sm"
+              className={cn(
+                'mt-3 w-full justify-start',
+                isLiveAvailable &&
+                  'border-destructive/30 bg-card text-destructive hover:text-destructive',
+              )}
+              disabled={liveStatus === 'starting' || liveStatus === 'unsupported'}
+              onClick={handleLiveAction}
+            >
+              {isLiveAvailable ? <Square className="h-4 w-4" /> : <MonitorUp className="h-4 w-4" />}
+              {liveActionLabel}
+            </Button>
+            {liveErrorMessage ? (
+              <p className="mt-2 text-xs font-semibold text-destructive">{liveErrorMessage}</p>
+            ) : null}
+          </div>
         </div>
         <div className="border-t border-border/70 p-3">
           <div className="mb-3 rounded-md border border-border/70 bg-secondary/70 px-3 py-2">
