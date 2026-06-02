@@ -9,6 +9,14 @@ import {
   type ReactNode,
 } from 'react';
 
+import { getMapLabel } from '@/data/matchOptions';
+import {
+  analyzeLiveVisionCanvas,
+  drawLiveVisionFrame,
+  terminateLiveVisionOcr,
+  type LiveVisionAnalysis,
+} from '@/lib/liveVision';
+
 export type LiveStatus = 'capturing' | 'error' | 'idle' | 'starting' | 'unsupported';
 
 export interface LiveStreamInfo {
@@ -31,7 +39,7 @@ export interface LiveEvidenceEvent {
   detail: string;
   frameIndex: number;
   id: string;
-  kind: 'capture' | 'frame';
+  kind: 'capture' | 'frame' | 'vision';
   label: string;
   observedAt: string;
 }
@@ -46,6 +54,7 @@ interface LiveCaptureContextValue {
   status: LiveStatus;
   stopCapture: (nextStatus?: LiveStatus) => void;
   streamInfo: LiveStreamInfo | null;
+  visionAnalysis: LiveVisionAnalysis | null;
 }
 
 const displayMediaOptions = {
@@ -160,16 +169,29 @@ const createHiddenVideo = (stream: MediaStream) => {
   return video;
 };
 
+const formatMapSelectionDetail = (analysis: LiveVisionAnalysis) => {
+  const candidates = analysis.mapSelection?.candidates ?? [];
+
+  if (candidates.length === 0) {
+    return '후보 없음';
+  }
+
+  return candidates.map((candidate) => getMapLabel(candidate.mapId)).join(' · ');
+};
+
 export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
   const [errorMessage, setErrorMessage] = useState('');
   const [evidenceEvents, setEvidenceEvents] = useState<LiveEvidenceEvent[]>([]);
   const [frameMetrics, setFrameMetrics] = useState<LiveFrameMetrics | null>(null);
   const [status, setStatus] = useState<LiveStatus>('idle');
   const [streamInfo, setStreamInfo] = useState<LiveStreamInfo | null>(null);
+  const [visionAnalysis, setVisionAnalysis] = useState<LiveVisionAnalysis | null>(null);
   const analysisCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameIndexRef = useRef(0);
   const sampleTimerRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const visionCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const visionInFlightRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const clearSampling = useCallback(() => {
@@ -206,7 +228,10 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
 
       setStatus(nextStatus);
       setStreamInfo(null);
+      setVisionAnalysis(null);
       frameIndexRef.current = 0;
+      visionInFlightRef.current = false;
+      void terminateLiveVisionOcr();
     },
     [clearSampling],
   );
@@ -278,6 +303,45 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
       kind: 'frame',
       label: liveFrameQualityLabel[quality],
     });
+
+    if (quality !== 'readable' || visionInFlightRef.current) {
+      return;
+    }
+
+    const visionCanvas = visionCanvasRef.current ?? document.createElement('canvas');
+    visionCanvasRef.current = visionCanvas;
+
+    if (!drawLiveVisionFrame(video, visionCanvas)) {
+      return;
+    }
+
+    visionInFlightRef.current = true;
+    void analyzeLiveVisionCanvas(visionCanvas)
+      .then((analysis) => {
+        setVisionAnalysis(analysis);
+
+        if (analysis.screen.screenType === 'map_selection' && analysis.mapSelection) {
+          addEvidenceEvent({
+            confidence: analysis.screen.confidence,
+            detail: formatMapSelectionDetail(analysis),
+            frameIndex,
+            kind: 'vision',
+            label: '맵 선택 감지',
+          });
+        }
+      })
+      .catch((error) => {
+        addEvidenceEvent({
+          confidence: 0,
+          detail: error instanceof Error ? error.message : '분석 실패',
+          frameIndex,
+          kind: 'vision',
+          label: '분석 실패',
+        });
+      })
+      .finally(() => {
+        visionInFlightRef.current = false;
+      });
   }, [addEvidenceEvent]);
 
   const drawPreviewToCanvas = useCallback((canvas: HTMLCanvasElement) => {
@@ -315,6 +379,7 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
     setErrorMessage('');
     setEvidenceEvents([]);
     setFrameMetrics(null);
+    setVisionAnalysis(null);
     frameIndexRef.current = 0;
 
     try {
@@ -379,6 +444,7 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
       status,
       stopCapture,
       streamInfo,
+      visionAnalysis,
     }),
     [
       drawPreviewToCanvas,
@@ -389,6 +455,7 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
       status,
       stopCapture,
       streamInfo,
+      visionAnalysis,
     ],
   );
 
