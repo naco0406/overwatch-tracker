@@ -69,14 +69,14 @@ const LivePage = () => {
         <PageHeader
           eyebrow="실시간"
           title="LIVE"
-          description="오버워치 창을 공유하면 프레임 진단과 증거 로그가 이 화면에 쌓입니다."
+          description="오버워치 창을 공유하면 맵 선택 추천과 경기 결과 기록 후보를 이 화면에서 확인합니다."
         />
 
         <section className="workspace-panel overflow-hidden">
           <EmptyState
             icon={MonitorUp}
             title="화면 공유 대기 중"
-            description="데스크톱 GNB 하단의 화면 공유 버튼으로 오버워치 창을 연결하세요. 모바일에서는 LIVE 입력을 제공하지 않습니다."
+            description="데스크톱 GNB 하단의 화면 공유 버튼으로 오버워치 창을 연결하세요. LIVE는 게임 위에 오버레이를 띄우지 않고 웹서비스 안에서 추천과 기록 후보를 보여줍니다."
             action={
               <Button
                 type="button"
