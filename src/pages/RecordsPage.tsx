@@ -93,18 +93,6 @@ const formatTime = (value: string) =>
     minute: '2-digit',
   }).format(new Date(value));
 
-const getResultTone = (result: Match['result']) => {
-  if (result === 'win') {
-    return 'border-primary/25 bg-primary/10 text-primary';
-  }
-
-  if (result === 'loss') {
-    return 'border-destructive/25 bg-destructive/10 text-destructive';
-  }
-
-  return 'border-border bg-secondary text-muted-foreground';
-};
-
 const RecordsPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
@@ -190,6 +178,19 @@ const RecordsPage = () => {
     accountFilter !== 'all',
   ].filter(Boolean).length;
   const hasBulkUpdates = bulkResult !== 'keep' || bulkMapId !== 'keep' || bulkAccountId !== 'keep';
+  const activeFilterLabels = [
+    periodFilter !== 'all'
+      ? periodOptions.find((period) => period.value === periodFilter)?.label
+      : null,
+    modeFilter !== 'all' ? getModeLabel(modeFilter) : null,
+    resultFilter !== 'all' ? getResultLabel(resultFilter) : null,
+    accountFilter === 'unassigned'
+      ? '미지정 계정'
+      : accountFilter !== 'all'
+        ? getPlayerAccountLabel(accountById.get(accountFilter))
+        : null,
+    searchQuery.trim() ? `"${searchQuery.trim()}"` : null,
+  ].filter((label): label is string => Boolean(label));
 
   const resetFilters = () => {
     setSearchQuery('');
@@ -361,46 +362,46 @@ const RecordsPage = () => {
         }
       />
 
-      <section className="border-y border-border/70">
-        <div className="metric-strip grid-cols-3 divide-x divide-border/70">
-          <MetricCell label="표시 기록" value={filteredMatches.length.toLocaleString('ko-KR')} />
-          <MetricCell label="승률" value={formatWinRate(summary.winRate)} />
-          <MetricCell label="선택" value={selectedMatches.length.toLocaleString('ko-KR')} />
-        </div>
-      </section>
-
-      <section className="border-y border-border/70">
-        <div className="border-b border-border/70 px-3 py-3 sm:px-5">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-            <div className="relative col-span-2 sm:col-span-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="맵, 모드, 결과 검색"
-                value={searchQuery}
-                onChange={(event) => {
-                  setSearchQuery(event.target.value);
-                  setRecordPage(1);
-                }}
-              />
+      <section className="border-t border-border/70">
+        <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] px-3 py-3 sm:px-5">
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-center">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+              <div className="relative col-span-2 sm:col-span-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="h-10 bg-card pl-9"
+                  placeholder="맵, 모드, 결과 검색"
+                  value={searchQuery}
+                  onChange={(event) => {
+                    setSearchQuery(event.target.value);
+                    setRecordPage(1);
+                  }}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="bg-card"
+                onClick={() => setFiltersOpen(true)}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                필터{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}
+              </Button>
+              <Button
+                type="button"
+                disabled={selectedMatches.length === 0}
+                onClick={() => setBulkActionsOpen(true)}
+              >
+                <CheckSquare className="h-4 w-4" />
+                작업
+              </Button>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="bg-transparent"
-              onClick={() => setFiltersOpen(true)}
-            >
-              <SlidersHorizontal className="h-4 w-4" />
-              필터{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}
-            </Button>
-            <Button
-              type="button"
-              disabled={selectedMatches.length === 0}
-              onClick={() => setBulkActionsOpen(true)}
-            >
-              <CheckSquare className="h-4 w-4" />
-              작업
-            </Button>
+
+            <div className="grid grid-cols-3 divide-x divide-border/70 border-y border-border/70 bg-background xl:border-y-0 xl:bg-transparent">
+              <MetricCell label="표시" value={filteredMatches.length.toLocaleString('ko-KR')} />
+              <MetricCell label="승률" value={formatWinRate(summary.winRate)} />
+              <MetricCell label="선택" value={selectedMatches.length.toLocaleString('ko-KR')} />
+            </div>
           </div>
 
           {selectedMatches.length > 0 ? (
@@ -416,6 +417,28 @@ const RecordsPage = () => {
                 onClick={() => setSelectedIds([])}
               >
                 해제
+              </Button>
+            </div>
+          ) : null}
+
+          {activeFilterLabels.length > 0 ? (
+            <div className="mt-3 flex flex-col gap-2 border-t border-border/70 pt-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-xs font-semibold text-muted-foreground">
+                {activeFilterLabels.map((label, index) => (
+                  <span key={`${label}-${index}`} className="min-w-0 truncate">
+                    {label}
+                  </span>
+                ))}
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 w-fit px-2"
+                onClick={resetFilters}
+              >
+                <RotateCcw className="h-4 w-4" />
+                초기화
               </Button>
             </div>
           ) : null}
@@ -441,7 +464,7 @@ const RecordsPage = () => {
                       </th>
                       <th className="w-32 px-3 py-3 font-semibold text-muted-foreground">시간</th>
                       <th className="px-3 py-3 font-semibold text-muted-foreground">맵</th>
-                      <th className="w-28 px-3 py-3 font-semibold text-muted-foreground">결과</th>
+                      <th className="w-28 px-3 py-3 font-semibold text-muted-foreground">스코어</th>
                       <th className="w-32 px-3 py-3 font-semibold text-muted-foreground">계정</th>
                       <th className="w-24 px-3 py-3 text-right font-semibold text-muted-foreground">
                         액션
@@ -723,10 +746,10 @@ interface MetricCellProps {
 }
 
 const MetricCell = ({ label, value }: MetricCellProps) => (
-  <div className="px-3 py-3 sm:px-5 xl:px-4">
+  <div className="min-w-0 px-3 py-2">
     <div className="min-w-0">
       <p className="metric-label">{label}</p>
-      <p className="mt-2 truncate text-xl font-bold sm:text-2xl">{value}</p>
+      <p className="mt-1 truncate text-sm font-bold sm:text-base">{value}</p>
     </div>
   </div>
 );
@@ -953,7 +976,12 @@ const RecordTableRow = ({
   onSelect,
   selected,
 }: RecordRowProps) => (
-  <tr className={cn('border-b border-border/70 last:border-b-0', selected && 'bg-primary/5')}>
+  <tr
+    className={cn(
+      'border-b border-border/70 transition-colors last:border-b-0 hover:bg-[hsl(var(--surface-2))]',
+      selected && 'bg-primary/[0.05]',
+    )}
+  >
     <td className="px-3 py-3 align-middle">
       <input
         type="checkbox"
@@ -976,16 +1004,18 @@ const RecordTableRow = ({
       </p>
     </td>
     <td className="px-3 py-3 align-middle">
-      <span
+      <p className="text-sm font-bold">
+        {match.teamScore}:{match.enemyScore}
+      </p>
+      <p
         className={cn(
-          'inline-flex h-8 min-w-16 items-center justify-center rounded-md border px-2 text-xs font-bold',
-          getResultTone(match.result),
+          'mt-1 text-xs font-bold',
+          match.result === 'win' && 'text-primary',
+          match.result === 'loss' && 'text-destructive',
+          match.result === 'draw' && 'text-muted-foreground',
         )}
       >
         {getResultLabel(match.result)}
-      </span>
-      <p className="mt-2 text-sm font-bold">
-        {match.teamScore}:{match.enemyScore}
       </p>
     </td>
     <td className="px-3 py-3 align-middle">
@@ -1036,19 +1066,22 @@ const RecordCard = ({ account, match, onDelete, onEdit, onSelect, selected }: Re
         </p>
       </div>
 
-      <span
-        className={cn(
-          'inline-flex h-8 min-w-14 shrink-0 items-center justify-center rounded-md border px-2 text-xs font-bold',
-          getResultTone(match.result),
-        )}
-      >
+      <span className="shrink-0 text-sm font-bold">
         {match.teamScore}:{match.enemyScore}
       </span>
     </div>
 
     <div className="mt-2 flex items-center justify-between gap-2 pl-9">
       <p className="truncate text-xs font-semibold text-muted-foreground">
-        {getResultLabel(match.result)} · {getOptionLabel(queueOptions, match.queueType)}
+        <span
+          className={cn(
+            match.result === 'win' && 'text-primary',
+            match.result === 'loss' && 'text-destructive',
+          )}
+        >
+          {getResultLabel(match.result)}
+        </span>{' '}
+        · {getOptionLabel(queueOptions, match.queueType)}
       </p>
       <div className="flex shrink-0 justify-end gap-1">
         <Button type="button" size="icon" variant="ghost" className="h-9 w-9" onClick={onEdit}>
@@ -1095,7 +1128,7 @@ const PaginationBar = ({
   const end = start + visibleCount - 1;
 
   return (
-    <div className="mt-3 flex flex-col gap-2 border-t border-border/70 pt-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-2 border-t border-border/70 bg-[hsl(var(--surface-2))] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-xs font-semibold text-muted-foreground">
         {start.toLocaleString('ko-KR')}-{end.toLocaleString('ko-KR')} /{' '}
         {totalCount.toLocaleString('ko-KR')} {itemLabel}

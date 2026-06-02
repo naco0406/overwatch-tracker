@@ -1,4 +1,4 @@
-import { Pencil, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
@@ -88,16 +88,28 @@ const formatDuration = (startedAt: string, endedAt: string) => {
   return minutes === 0 ? `${hours}시간` : `${hours}시간 ${minutes}분`;
 };
 
-const getResultTone = (result: Match['result']) => {
+const getResultTextTone = (result: Match['result']) => {
   if (result === 'win') {
-    return 'border-primary/25 bg-primary/10 text-primary';
+    return 'text-primary';
   }
 
   if (result === 'loss') {
-    return 'border-destructive/25 bg-destructive/10 text-destructive';
+    return 'text-destructive';
   }
 
-  return 'border-border bg-secondary text-muted-foreground';
+  return 'text-muted-foreground';
+};
+
+const getResultRailTone = (result: Match['result']) => {
+  if (result === 'win') {
+    return 'bg-primary';
+  }
+
+  if (result === 'loss') {
+    return 'bg-destructive';
+  }
+
+  return 'bg-muted-foreground/45';
 };
 
 const getSessionMapPreview = (session: MatchSession) => {
@@ -108,7 +120,24 @@ const getSessionMapPreview = (session: MatchSession) => {
     return '기록 없음';
   }
 
-  return maps.length > 3 ? `${visibleMaps} 외 ${maps.length - 3}` : visibleMaps;
+  return maps.length > 3 ? `${visibleMaps} 외 ${maps.length - 3}개` : visibleMaps;
+};
+
+const getSessionModePreview = (session: MatchSession) => {
+  const modes = Array.from(new Set(session.matches.map((match) => getModeLabel(match.modeId))));
+  const visibleModes = modes.slice(0, 2).join(', ');
+
+  if (!visibleModes) {
+    return '모드 없음';
+  }
+
+  return modes.length > 2 ? `${visibleModes} 외 ${modes.length - 2}개` : visibleModes;
+};
+
+const formatResultRecord = (summary: ReturnType<typeof summarizeResults>) => {
+  const draws = summary.draws > 0 ? ` ${summary.draws}무` : '';
+
+  return `${summary.wins}승 ${summary.losses}패${draws}`;
 };
 
 const getSessionSearchText = (session: MatchSession, accountById: Map<string, PlayerAccount>) => {
@@ -255,6 +284,11 @@ const SessionsPage = () => {
 
   const metrics = [
     {
+      detail: '필터 전',
+      label: '전체 세션',
+      value: sessions.length.toLocaleString('ko-KR'),
+    },
+    {
       detail: '월요일 이후',
       label: '이번 주 세션',
       value: weekSessions.length.toLocaleString('ko-KR'),
@@ -289,27 +323,30 @@ const SessionsPage = () => {
         }
       />
 
-      <section className="border-y border-border/70">
-        <div className="metric-strip grid-cols-3 divide-x divide-border/70">
+      <section className="border-y border-border/70 bg-card">
+        <div className="grid grid-cols-2 divide-x divide-y divide-border/70 bg-[hsl(var(--surface-2))] md:grid-cols-4 md:divide-y-0">
           {metrics.map((metric) => (
             <MetricCell key={metric.label} {...metric} isLoading={isLoading} />
           ))}
         </div>
       </section>
 
-      <section className="grid border-y border-border/70 xl:grid-cols-[420px_minmax(0,1fr)] xl:items-start">
-        <section className="border-b border-border/70 xl:border-b-0 xl:border-r">
-          <div className="flex items-center justify-between gap-3 border-b border-border/70 px-3 py-3 sm:px-5">
-            <div className="min-w-0">
-              <p className="metric-label">인덱스</p>
-              <h2 className="mt-1 truncate text-lg font-bold">세션 목록</h2>
+      <section className="grid overflow-hidden border-y border-border/70 bg-card shadow-[0_24px_80px_-64px_hsl(var(--foreground)/0.38)] xl:grid-cols-[392px_minmax(0,1fr)] xl:items-start">
+        <section className="min-h-0 border-b border-border/70 xl:flex xl:max-h-[calc(100dvh-252px)] xl:flex-col xl:border-b-0 xl:border-r">
+          <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] px-3.5 py-4 sm:px-5">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="metric-label">탐색</p>
+                <h2 className="mt-1 truncate text-xl font-bold">세션 목록</h2>
+              </div>
+              <div className="text-right">
+                <p className="metric-label">표시</p>
+                <p className="mt-1 text-sm font-bold tabular-nums">
+                  {filteredSessions.length.toLocaleString('ko-KR')}
+                </p>
+              </div>
             </div>
-            <Badge variant="outline" className="shrink-0 bg-transparent">
-              {filteredSessions.length.toLocaleString('ko-KR')}
-            </Badge>
-          </div>
 
-          <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] px-3 py-3 sm:px-5">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -325,7 +362,7 @@ const SessionsPage = () => {
             </div>
 
             <div className="mt-3 flex items-center justify-between gap-2">
-              <div className="mobile-scroll flex gap-1 overflow-x-auto pb-1">
+              <div className="mobile-scroll flex gap-1.5 overflow-x-auto pb-1">
                 {periodOptions.map((period) => (
                   <FilterButton
                     key={period.value}
@@ -348,22 +385,19 @@ const SessionsPage = () => {
                 초기화
               </Button>
             </div>
-          </div>
 
-          {isLoading ? (
-            <SessionIndexSkeleton />
-          ) : visibleSessions.length > 0 ? (
-            <div className="max-h-[640px] overflow-y-auto xl:max-h-[calc(100dvh-310px)]">
-              <div className="divide-y divide-border/70">
-                {visibleSessions.map((session) => (
-                  <SessionIndexRow
-                    key={session.sessionId}
-                    selected={session.sessionId === selectedSession?.sessionId}
-                    session={session}
-                    onSelect={() => setSelectedSessionId(session.sessionId)}
-                  />
-                ))}
+            {hasActiveFilters ? (
+              <div className="mt-3 flex flex-wrap gap-x-2 gap-y-1 border-t border-border/70 pt-3 text-xs font-semibold text-muted-foreground">
+                {periodFilter !== 'all' ? (
+                  <span>
+                    {periodOptions.find((period) => period.value === periodFilter)?.label}
+                  </span>
+                ) : null}
+                {searchQuery.trim() ? <span>"{searchQuery.trim()}"</span> : null}
               </div>
+            ) : null}
+
+            {!isLoading && visibleSessions.length > 0 ? (
               <PaginationBar
                 itemLabel="세션"
                 page={currentSessionPage}
@@ -376,7 +410,26 @@ const SessionsPage = () => {
                   setSelectedSessionId(null);
                 }}
               />
-            </div>
+            ) : null}
+          </div>
+
+          {isLoading ? (
+            <SessionIndexSkeleton />
+          ) : visibleSessions.length > 0 ? (
+            <>
+              <div className="max-h-[440px] min-h-0 overflow-y-auto sm:max-h-[540px] xl:max-h-none xl:flex-1">
+                <div className="divide-y divide-border/70">
+                  {visibleSessions.map((session) => (
+                    <SessionIndexRow
+                      key={session.sessionId}
+                      selected={session.sessionId === selectedSession?.sessionId}
+                      session={session}
+                      onSelect={() => setSelectedSessionId(session.sessionId)}
+                    />
+                  ))}
+                </div>
+              </div>
+            </>
           ) : (
             <div className="px-3 py-6 sm:px-5">
               <InlineEmptyState
@@ -399,7 +452,7 @@ const SessionsPage = () => {
           )}
         </section>
 
-        <section className="min-w-0 xl:sticky xl:top-4">
+        <section className="min-w-0 xl:sticky xl:top-4 xl:max-h-[calc(100dvh-252px)] xl:overflow-hidden">
           {isLoading ? (
             <SelectedSessionSkeleton />
           ) : selectedSession ? (
@@ -458,7 +511,7 @@ interface MetricCellProps {
 }
 
 const MetricCell = ({ detail, isLoading = false, label, value }: MetricCellProps) => (
-  <div className="px-3 py-3 sm:px-5 sm:py-4">
+  <div className="min-w-0 px-3.5 py-3.5 sm:px-5">
     <p className="metric-label">{label}</p>
     {isLoading ? (
       <>
@@ -467,7 +520,7 @@ const MetricCell = ({ detail, isLoading = false, label, value }: MetricCellProps
       </>
     ) : (
       <>
-        <p className="mt-2 truncate text-xl font-bold sm:text-2xl">{value}</p>
+        <p className="mt-1 truncate text-base font-bold tabular-nums sm:text-lg">{value}</p>
         <p className="mt-1 truncate text-[10px] text-muted-foreground sm:text-xs">{detail}</p>
       </>
     )}
@@ -484,9 +537,9 @@ const FilterButton = ({ active, children, onClick }: FilterButtonProps) => (
   <button
     type="button"
     className={cn(
-      'h-8 shrink-0 rounded-md border px-2.5 text-xs font-bold transition-[background-color,border-color,color]',
+      'h-8 shrink-0 rounded-md border px-3 text-xs font-bold transition-[background-color,border-color,color]',
       active
-        ? 'border-primary bg-primary text-primary-foreground'
+        ? 'border-primary bg-primary text-primary-foreground shadow-[0_10px_28px_-22px_hsl(var(--primary))]'
         : 'border-border bg-card text-muted-foreground hover:bg-secondary hover:text-foreground',
     )}
     onClick={onClick}
@@ -507,32 +560,39 @@ const SessionIndexRow = ({ onSelect, selected, session }: SessionIndexRowProps) 
   return (
     <button
       type="button"
+      aria-current={selected ? 'true' : undefined}
       className={cn(
-        'grid w-full gap-2 px-3 py-3 text-left transition-colors hover:bg-secondary/70 sm:grid-cols-[minmax(0,1fr)_84px]',
-        selected && 'bg-primary/[0.07]',
+        'group grid w-full gap-2 border-l-[3px] border-l-transparent px-3.5 py-3.5 text-left transition-colors hover:bg-[hsl(var(--surface-2))] sm:grid-cols-[minmax(0,1fr)_104px]',
+        selected && 'border-l-primary bg-primary/[0.055]',
       )}
       onClick={onSelect}
     >
       <div className="min-w-0">
         <div className="flex min-w-0 items-baseline gap-2">
-          <p className="truncate text-sm font-bold">{formatDate(session.startedAt)}</p>
-          <p className="shrink-0 text-xs font-semibold text-muted-foreground">
+          <p className="truncate text-sm font-bold leading-5">{formatDate(session.startedAt)}</p>
+          <p className="shrink-0 text-xs font-semibold tabular-nums text-muted-foreground">
             {formatTime(session.startedAt)}-{formatTime(session.endedAt)}
           </p>
         </div>
-        <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+        <p className="mt-1.5 truncate text-xs font-semibold text-foreground/75">
           {getSessionMapPreview(session)}
+        </p>
+        <p className="mt-1 truncate text-[11px] font-semibold text-muted-foreground">
+          {getSessionModePreview(session)} · {formatDuration(session.startedAt, session.endedAt)}
         </p>
       </div>
 
       <div className="flex items-center justify-between gap-3 sm:block sm:text-right">
-        <p className="text-xs font-bold">{session.matches.length}경기</p>
+        <p className="text-xs font-bold leading-5 tabular-nums">{session.matches.length}경기</p>
         <p className="mt-0 text-xs font-semibold text-muted-foreground sm:mt-1">
+          {formatResultRecord(summary)}
+        </p>
+        <p className="mt-0 text-xs font-bold tabular-nums text-foreground sm:mt-1">
           {formatWinRate(summary.winRate)}
         </p>
       </div>
 
-      <ResultBar summary={summary} className="sm:col-span-2" />
+      <ResultBar summary={summary} className="h-1 sm:col-span-2" />
     </button>
   );
 };
@@ -553,38 +613,51 @@ const SelectedSessionDetail = ({
   const summary = summarizeResults(session.matches);
 
   return (
-    <>
-      <div className="border-b border-border/70 px-3 py-3 sm:px-5">
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center">
-          <div className="min-w-0">
-            <p className="metric-label">선택 세션</p>
-            <h2 className="mt-1 truncate text-xl font-bold">{formatDate(session.startedAt)}</h2>
-            <p className="mt-1 truncate text-sm font-semibold text-muted-foreground">
+    <div className="flex min-h-0 flex-col xl:max-h-[calc(100dvh-252px)]">
+      <div className="border-b border-border/70 px-3.5 py-5 sm:px-5">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
+          <div className="min-w-0 border-l-[3px] border-l-primary pl-3.5">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <p className="metric-label">선택 세션</p>
+              <p className="text-xs font-semibold tabular-nums text-muted-foreground">
+                {formatResultRecord(summary)}
+              </p>
+            </div>
+            <h2 className="mt-1 truncate text-2xl font-bold leading-8">
+              {formatDate(session.startedAt)}
+            </h2>
+            <p className="mt-1 truncate text-sm font-semibold tabular-nums text-muted-foreground">
               {formatTime(session.startedAt)} - {formatTime(session.endedAt)} ·{' '}
               {formatDuration(session.startedAt, session.endedAt)}
             </p>
+            <p className="mt-2 truncate text-xs font-semibold text-muted-foreground">
+              {getSessionMapPreview(session)} · {getSessionModePreview(session)}
+            </p>
           </div>
 
-          <div className="grid grid-cols-4 divide-x divide-border/70 border-y border-border/70 bg-[hsl(var(--surface-2))]">
-            <SummaryCell label="경기" value={session.matches.length.toLocaleString('ko-KR')} />
-            <SummaryCell label="승" value={summary.wins.toLocaleString('ko-KR')} />
-            <SummaryCell label="패" value={summary.losses.toLocaleString('ko-KR')} />
-            <SummaryCell label="승률" value={formatWinRate(summary.winRate)} />
+          <div>
+            <div className="grid grid-cols-4 divide-x divide-border/70 border-y border-border/70 bg-[hsl(var(--surface-2))]">
+              <SummaryCell label="경기" value={session.matches.length.toLocaleString('ko-KR')} />
+              <SummaryCell label="승" value={summary.wins.toLocaleString('ko-KR')} />
+              <SummaryCell label="패" value={summary.losses.toLocaleString('ko-KR')} />
+              <SummaryCell label="승률" value={formatWinRate(summary.winRate)} />
+            </div>
+            <div className="mt-3.5">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="metric-label">결과 구성</p>
+                <p className="text-xs font-semibold tabular-nums text-muted-foreground">
+                  {summary.wins}W {summary.losses}L {summary.draws}D
+                </p>
+              </div>
+              <ResultBar summary={summary} className="h-2.5" />
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="border-b border-border/70 px-3 py-3 sm:px-5">
-        <div className="flex items-center justify-between gap-3">
-          <p className="metric-label">결과 구성</p>
-          <p className="text-xs font-semibold text-muted-foreground">
-            {summary.wins}W {summary.losses}L {summary.draws}D
-          </p>
-        </div>
-        <ResultBar summary={summary} className="mt-2 h-2.5" />
-      </div>
+      <SessionMapTimeline matches={session.matches} />
 
-      <div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[760px] table-fixed border-collapse text-left text-sm">
             <thead className="sticky top-0 z-10 bg-[hsl(var(--surface-2))]">
@@ -592,7 +665,7 @@ const SelectedSessionDetail = ({
                 <th className="w-14 px-3 py-3 font-semibold text-muted-foreground">#</th>
                 <th className="w-20 px-3 py-3 font-semibold text-muted-foreground">시간</th>
                 <th className="px-3 py-3 font-semibold text-muted-foreground">전장</th>
-                <th className="w-24 px-3 py-3 font-semibold text-muted-foreground">결과</th>
+                <th className="w-24 px-3 py-3 font-semibold text-muted-foreground">스코어</th>
                 <th className="w-36 px-3 py-3 font-semibold text-muted-foreground">계정</th>
                 <th className="w-24 px-3 py-3 text-right font-semibold text-muted-foreground">
                   액션
@@ -614,7 +687,7 @@ const SelectedSessionDetail = ({
           </table>
         </div>
 
-        <div className="divide-y divide-border/70 md:hidden">
+        <div className="md:hidden">
           {session.matches.map((match, index) => (
             <SessionMatchMobileRow
               key={match.id}
@@ -627,7 +700,7 @@ const SelectedSessionDetail = ({
           ))}
         </div>
       </div>
-    </>
+    </div>
   );
 };
 
@@ -637,9 +710,53 @@ interface SummaryCellProps {
 }
 
 const SummaryCell = ({ label, value }: SummaryCellProps) => (
-  <div className="min-w-0 px-2 py-2 text-center">
+  <div className="min-w-0 px-2 py-2.5 text-center">
     <p className="metric-label">{label}</p>
-    <p className="mt-1 truncate text-sm font-bold">{value}</p>
+    <p className="mt-1 truncate text-sm font-bold tabular-nums">{value}</p>
+  </div>
+);
+
+interface SessionMapTimelineProps {
+  matches: Match[];
+}
+
+const SessionMapTimeline = ({ matches }: SessionMapTimelineProps) => (
+  <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] px-3.5 py-3.5 sm:px-5">
+    <div className="mb-2.5 flex items-center justify-between gap-3">
+      <p className="metric-label">전장 흐름</p>
+      <p className="text-xs font-semibold tabular-nums text-muted-foreground">
+        {matches.length.toLocaleString('ko-KR')}경기
+      </p>
+    </div>
+    <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1">
+      {matches.map((match, index) => (
+        <div key={match.id} className="w-[98px] shrink-0 sm:w-[112px]">
+          <div className="relative aspect-[16/9] overflow-hidden border border-border/60 bg-secondary">
+            <img
+              alt={getMapLabel(match.mapId)}
+              className="h-full w-full object-cover"
+              loading="lazy"
+              src={getMapScreenshotPath(match.mapId)}
+            />
+            <span
+              className={cn('absolute inset-x-0 top-0 h-0.5', getResultRailTone(match.result))}
+            />
+            <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-black/55 px-1.5 py-1 text-[10px] font-bold tabular-nums text-white">
+              <span>{index + 1}</span>
+              <span>
+                {match.teamScore}:{match.enemyScore}
+              </span>
+            </div>
+          </div>
+          <p className="mt-1.5 truncate text-[11px] font-bold">{getMapLabel(match.mapId)}</p>
+          <p
+            className={cn('mt-0.5 truncate text-[10px] font-bold', getResultTextTone(match.result))}
+          >
+            {getResultLabel(match.result)}
+          </p>
+        </div>
+      ))}
+    </div>
   </div>
 );
 
@@ -661,16 +778,19 @@ const SessionMatchTableRow = ({
   const heroSummary = getHeroSummary(match);
 
   return (
-    <tr className="border-b border-border/70 last:border-b-0 hover:bg-[hsl(var(--surface-2))]">
-      <td className="px-3 py-3 align-middle text-xs font-bold text-muted-foreground">
-        {index + 1}
+    <tr className="border-b border-border/70 transition-colors last:border-b-0 hover:bg-[hsl(var(--surface-2))]">
+      <td className="px-3 py-3 align-middle">
+        <div className="flex items-center gap-2">
+          <span className={cn('h-8 w-0.5 shrink-0', getResultRailTone(match.result))} />
+          <span className="text-xs font-bold tabular-nums text-muted-foreground">{index + 1}</span>
+        </div>
       </td>
-      <td className="px-3 py-3 align-middle text-xs font-semibold text-muted-foreground">
+      <td className="px-3 py-3 align-middle text-xs font-semibold tabular-nums text-muted-foreground">
         {formatTime(match.playedAt)}
       </td>
       <td className="min-w-0 px-3 py-3 align-middle">
         <div className="grid min-w-0 grid-cols-[58px_minmax(0,1fr)] items-center gap-3">
-          <div className="aspect-[16/10] overflow-hidden bg-secondary">
+          <div className="aspect-[16/10] overflow-hidden border border-border/60 bg-secondary">
             <img
               alt={getMapLabel(match.mapId)}
               className="h-full w-full object-cover"
@@ -687,14 +807,12 @@ const SessionMatchTableRow = ({
         </div>
       </td>
       <td className="px-3 py-3 align-middle">
-        <span
-          className={cn(
-            'inline-flex h-8 min-w-16 items-center justify-center rounded-md border px-2 text-xs font-bold',
-            getResultTone(match.result),
-          )}
-        >
+        <p className="text-sm font-bold tabular-nums">
           {match.teamScore}:{match.enemyScore}
-        </span>
+        </p>
+        <p className={cn('mt-1 text-xs font-bold', getResultTextTone(match.result))}>
+          {getResultLabel(match.result)}
+        </p>
       </td>
       <td className="min-w-0 px-3 py-3 align-middle">
         <p className="truncate text-sm font-semibold">{accountLabel}</p>
@@ -704,14 +822,14 @@ const SessionMatchTableRow = ({
       </td>
       <td className="px-3 py-3 align-middle">
         <div className="flex justify-end gap-1">
-          <Button type="button" size="icon" variant="ghost" className="h-9 w-9" onClick={onEdit}>
+          <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={onEdit}>
             <Pencil className="h-4 w-4" />
           </Button>
           <Button
             type="button"
             size="icon"
             variant="ghost"
-            className="h-9 w-9 text-destructive hover:text-destructive"
+            className="h-8 w-8 text-destructive hover:text-destructive"
             onClick={onDelete}
           >
             <Trash2 className="h-4 w-4" />
@@ -732,50 +850,53 @@ const SessionMatchMobileRow = ({
   const heroSummary = getHeroSummary(match);
 
   return (
-    <div className="border-b border-border/70 px-3 py-2.5">
-      <div className="grid grid-cols-[72px_minmax(0,1fr)_auto] gap-3">
-        <div className="aspect-[16/10] overflow-hidden bg-secondary">
-          <img
-            alt={getMapLabel(match.mapId)}
-            className="h-full w-full object-cover"
-            loading="lazy"
-            src={getMapScreenshotPath(match.mapId)}
-          />
+    <div className="grid grid-cols-[3px_minmax(0,1fr)] border-b border-border/70 last:border-b-0">
+      <span className={cn('block', getResultRailTone(match.result))} />
+      <div className="px-3.5 py-3">
+        <div className="grid grid-cols-[72px_minmax(0,1fr)_auto] gap-3">
+          <div className="aspect-[16/10] overflow-hidden border border-border/60 bg-secondary">
+            <img
+              alt={getMapLabel(match.mapId)}
+              className="h-full w-full object-cover"
+              loading="lazy"
+              src={getMapScreenshotPath(match.mapId)}
+            />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold">
+              {index + 1}. {getMapLabel(match.mapId)}
+            </p>
+            <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+              {formatTime(match.playedAt)} · {getModeLabel(match.modeId)}
+            </p>
+            <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+              {heroSummary ? `${accountLabel} · ${heroSummary}` : accountLabel}
+            </p>
+          </div>
+          <span className="shrink-0 text-sm font-bold tabular-nums">
+            {match.teamScore}:{match.enemyScore}
+          </span>
         </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-bold">
-            {index + 1}. {getMapLabel(match.mapId)}
-          </p>
-          <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-            {formatTime(match.playedAt)} · {getModeLabel(match.modeId)}
-          </p>
-          <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-            {heroSummary ? `${accountLabel} · ${heroSummary}` : accountLabel}
-          </p>
-        </div>
-        <span
-          className={cn(
-            'inline-flex h-8 min-w-14 items-center justify-center rounded-md border px-2 text-xs font-bold',
-            getResultTone(match.result),
-          )}
-        >
-          {match.teamScore}:{match.enemyScore}
-        </span>
-      </div>
 
-      <div className="mt-2 flex justify-end gap-1">
-        <Button type="button" size="icon" variant="ghost" className="h-9 w-9" onClick={onEdit}>
-          <Pencil className="h-4 w-4" />
-        </Button>
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          className="h-9 w-9 text-destructive hover:text-destructive"
-          onClick={onDelete}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <p className={cn('truncate text-xs font-bold', getResultTextTone(match.result))}>
+            {getResultLabel(match.result)}
+          </p>
+          <div className="flex shrink-0 justify-end gap-1">
+            <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={onEdit}>
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 text-destructive hover:text-destructive"
+              onClick={onDelete}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -808,35 +929,37 @@ const PaginationBar = ({
   const end = start + visibleCount - 1;
 
   return (
-    <div className="border-t border-border/70 p-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xs font-semibold text-muted-foreground">
+    <div className="mt-3 border-t border-border/70 pt-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 truncate text-xs font-semibold tabular-nums text-muted-foreground">
           {start.toLocaleString('ko-KR')}-{end.toLocaleString('ko-KR')} /{' '}
           {totalCount.toLocaleString('ko-KR')} {itemLabel}
         </p>
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:flex">
+        <div className="grid shrink-0 grid-cols-[28px_auto_28px] items-center gap-1.5">
           <Button
             type="button"
             variant="outline"
-            size="sm"
-            className="bg-transparent"
+            size="icon"
+            className="h-7 w-7 bg-card"
             disabled={page <= 1}
+            aria-label="이전 페이지"
             onClick={() => onPageChange(page - 1)}
           >
-            이전
+            <ChevronLeft className="h-4 w-4" />
           </Button>
-          <span className="px-2 text-center text-xs font-bold text-muted-foreground">
+          <span className="px-1 text-center text-xs font-bold tabular-nums text-muted-foreground">
             {page} / {pageCount}
           </span>
           <Button
             type="button"
             variant="outline"
-            size="sm"
-            className="bg-transparent"
+            size="icon"
+            className="h-7 w-7 bg-card"
             disabled={page >= pageCount}
+            aria-label="다음 페이지"
             onClick={() => onPageChange(page + 1)}
           >
-            다음
+            <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
       </div>
