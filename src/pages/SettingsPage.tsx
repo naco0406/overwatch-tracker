@@ -4,12 +4,15 @@ import {
   Database,
   Download,
   LogOut,
+  Pencil,
   Plus,
+  Save,
   ShieldCheck,
   Star,
   Trash2,
   Upload,
   UserRound,
+  X,
 } from 'lucide-react';
 import { useRef, useState, type ChangeEvent } from 'react';
 
@@ -28,6 +31,7 @@ import {
   useUpdatePlayerAccount,
 } from '@/hooks/usePlayerAccounts';
 import { buildMatchesCsv, createCsvFileName, parseMatchesCsv } from '@/lib/matchCsv';
+import type { PlayerAccount } from '@/types/playerAccount';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
 
 const SettingsPage = () => {
@@ -42,9 +46,17 @@ const SettingsPage = () => {
   const importInputRef = useRef<HTMLInputElement>(null);
   const [battleTag, setBattleTag] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const [editingBattleTag, setEditingBattleTag] = useState('');
+  const [editingDisplayName, setEditingDisplayName] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const activeAccounts = playerAccounts.filter((account) => account.isActive);
   const inactiveAccounts = playerAccounts.filter((account) => !account.isActive);
+  const isAccountMutating =
+    createPlayerAccount.isPending ||
+    updatePlayerAccount.isPending ||
+    deletePlayerAccount.isPending ||
+    restorePlayerAccount.isPending;
 
   const handleSignOut = async () => {
     try {
@@ -86,10 +98,50 @@ const SettingsPage = () => {
     }
   };
 
-  const handleSetMain = async (accountId: string) => {
+  const startEditAccount = (account: PlayerAccount) => {
+    setEditingAccountId(account.id);
+    setEditingBattleTag(account.battleTag);
+    setEditingDisplayName(account.displayName);
+  };
+
+  const cancelEditAccount = () => {
+    setEditingAccountId(null);
+    setEditingBattleTag('');
+    setEditingDisplayName('');
+  };
+
+  const handleSaveAccount = async (accountId: string) => {
+    const normalizedBattleTag = editingBattleTag.trim();
+
+    if (!normalizedBattleTag) {
+      toast({
+        title: '배틀태그를 입력하세요.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     try {
-      await updatePlayerAccount.mutateAsync({ id: accountId, isMain: true });
-      toast({ title: '본계 변경 완료' });
+      await updatePlayerAccount.mutateAsync({
+        battleTag: normalizedBattleTag,
+        displayName: editingDisplayName.trim(),
+        id: accountId,
+      });
+      cancelEditAccount();
+      toast({ title: '계정 수정 완료' });
+    } catch (error) {
+      toast({
+        title: '계정 수정 실패',
+        description: error instanceof Error ? error.message : '잠시 후 다시 시도하세요.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleToggleMain = async (account: PlayerAccount) => {
+    try {
+      await updatePlayerAccount.mutateAsync({ id: account.id, isMain: !account.isMain });
+      toast({ title: account.isMain ? '본계 지정 해제 완료' : '본계 지정 완료' });
     } catch (error) {
       toast({
         title: '본계 변경 실패',
@@ -101,16 +153,12 @@ const SettingsPage = () => {
 
   const handleDeleteAccount = async (accountId: string) => {
     const targetAccount = activeAccounts.find((account) => account.id === accountId);
-    const replacementExists = activeAccounts.some((account) => account.id !== accountId);
 
     try {
       await deletePlayerAccount.mutateAsync(accountId);
       toast({
         title: '계정 삭제 완료',
-        description:
-          targetAccount?.isMain && replacementExists
-            ? '남은 계정 중 하나를 본계로 지정했습니다.'
-            : undefined,
+        description: targetAccount?.isMain ? '본계 지정도 함께 해제했습니다.' : undefined,
       });
     } catch (error) {
       toast({
@@ -257,51 +305,118 @@ const SettingsPage = () => {
 
               <div className="subpanel">
                 {activeAccounts.length > 0 ? (
-                  activeAccounts.map((account) => (
-                    <div
-                      key={account.id}
-                      className="flat-row grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_auto]"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="truncate text-sm font-bold">
-                            {getPlayerAccountLabel(account)}
-                          </p>
-                          {account.isMain ? (
-                            <Badge className="gap-1 bg-primary/10 text-primary" variant="outline">
-                              <Star className="h-3 w-3" />
-                              본계
-                            </Badge>
-                          ) : null}
+                  activeAccounts.map((account) => {
+                    const editing = editingAccountId === account.id;
+
+                    return (
+                      <div
+                        key={account.id}
+                        className="flat-row grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_auto]"
+                      >
+                        {editing ? (
+                          <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+                            <Input
+                              aria-label="배틀태그"
+                              className="bg-card"
+                              placeholder="BattleTag#1234"
+                              value={editingBattleTag}
+                              onChange={(event) => setEditingBattleTag(event.target.value)}
+                            />
+                            <Input
+                              aria-label="표시명"
+                              className="bg-card"
+                              placeholder="표시명"
+                              value={editingDisplayName}
+                              onChange={(event) => setEditingDisplayName(event.target.value)}
+                            />
+                          </div>
+                        ) : (
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="truncate text-sm font-bold">
+                                {getPlayerAccountLabel(account)}
+                              </p>
+                              {account.isMain ? (
+                                <Badge
+                                  className="gap-1 bg-primary/10 text-primary"
+                                  variant="outline"
+                                >
+                                  <Star className="h-3 w-3" />
+                                  본계
+                                </Badge>
+                              ) : null}
+                            </div>
+                            <p className="mt-1 truncate text-xs text-muted-foreground">
+                              {account.battleTag}
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap gap-2 sm:justify-end">
+                          {editing ? (
+                            <>
+                              <Button
+                                disabled={isAccountMutating || !editingBattleTag.trim()}
+                                size="sm"
+                                type="button"
+                                onClick={() => handleSaveAccount(account.id)}
+                              >
+                                <Save className="h-4 w-4" />
+                                저장
+                              </Button>
+                              <Button
+                                className="bg-transparent"
+                                disabled={isAccountMutating}
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                                onClick={cancelEditAccount}
+                              >
+                                <X className="h-4 w-4" />
+                                취소
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button
+                                className="bg-transparent"
+                                disabled={isAccountMutating}
+                                size="sm"
+                                type="button"
+                                variant={account.isMain ? 'secondary' : 'outline'}
+                                onClick={() => handleToggleMain(account)}
+                              >
+                                <CheckCircle2 className="h-4 w-4" />
+                                {account.isMain ? '본계 해제' : '본계'}
+                              </Button>
+                              <Button
+                                className="bg-transparent"
+                                disabled={isAccountMutating}
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                                onClick={() => startEditAccount(account)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                                수정
+                              </Button>
+                              <Button
+                                className="bg-transparent"
+                                disabled={isAccountMutating}
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                                onClick={() => handleDeleteAccount(account.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                삭제
+                              </Button>
+                            </>
+                          )}
                         </div>
-                        <p className="mt-1 truncate text-xs text-muted-foreground">
-                          {account.battleTag}
-                        </p>
                       </div>
-                      <div className="flex gap-2">
-                        <Button
-                          className="bg-transparent"
-                          disabled={account.isMain || updatePlayerAccount.isPending}
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleSetMain(account.id)}
-                        >
-                          <CheckCircle2 className="h-4 w-4" />
-                          본계
-                        </Button>
-                        <Button
-                          className="bg-transparent"
-                          disabled={deletePlayerAccount.isPending}
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleDeleteAccount(account.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          삭제
-                        </Button>
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className="p-4 text-sm text-muted-foreground">
                     등록된 배틀태그가 없습니다.

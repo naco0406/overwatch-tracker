@@ -72,6 +72,9 @@ const getResultTone = (result: MatchResult, selected: boolean) => {
   return 'border-border bg-card text-primary hover:border-primary/40 hover:bg-primary/10';
 };
 
+const getDefaultAccountId = (accounts: PlayerAccount[]) =>
+  accounts.find((account) => account.isMain)?.id ?? accounts[0]?.id ?? '';
+
 const QuickMatchEntry = ({
   accounts = [],
   defaultSettings,
@@ -85,8 +88,13 @@ const QuickMatchEntry = ({
   const [enemyScore, setEnemyScore] = useState('');
   const [result, setResult] = useState<ResultValue>('');
   const [error, setError] = useState('');
-  const mainAccount = accounts.find((account) => account.isMain);
-  const defaultAccount = mainAccount ?? accounts[0];
+  const [selectedAccountId, setSelectedAccountId] = useState(() => getDefaultAccountId(accounts));
+  const defaultAccountId = getDefaultAccountId(accounts);
+  const effectiveSelectedAccountId = accounts.some((account) => account.id === selectedAccountId)
+    ? selectedAccountId
+    : defaultAccountId;
+  const selectedAccount =
+    accounts.find((account) => account.id === effectiveSelectedAccountId) ?? null;
   const selectedMap = mapOptions.find((map) => map.value === mapId);
   const defaultQueueType = defaultSettings?.defaultQueueType ?? 'solo';
 
@@ -158,8 +166,8 @@ const QuickMatchEntry = ({
     }
 
     await onSubmit({
-      account: defaultAccount?.isMain === false ? 'sub' : 'main',
-      accountId: defaultAccount?.id ?? null,
+      account: selectedAccount?.isMain === false ? 'sub' : 'main',
+      accountId: selectedAccount?.id ?? null,
       enemyScore: Number(enemyScore),
       mapId: selectedMap.value,
       memo: '',
@@ -188,10 +196,45 @@ const QuickMatchEntry = ({
           <p className="metric-label">빠른 기록</p>
           <h2 className="mt-1 truncate text-lg font-bold tracking-normal">새 경기</h2>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="outline" className="w-fit bg-transparent">
-            {defaultAccount ? getPlayerAccountLabel(defaultAccount) : '계정 미지정'}
-          </Badge>
+        <div className="flex min-w-0 flex-col gap-2 sm:items-end">
+          {accounts.length > 0 ? (
+            <div className="mobile-scroll flex max-w-full gap-1 overflow-x-auto pb-0.5">
+              {accounts.map((account) => {
+                const selected = account.id === effectiveSelectedAccountId;
+
+                return (
+                  <button
+                    key={account.id}
+                    type="button"
+                    title={account.battleTag}
+                    className={cn(
+                      'flex h-8 max-w-36 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-bold transition-colors',
+                      selected
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border bg-card text-muted-foreground hover:bg-secondary hover:text-foreground',
+                    )}
+                    onClick={() => setSelectedAccountId(account.id)}
+                  >
+                    <span className="truncate">{getPlayerAccountLabel(account)}</span>
+                    {account.isMain ? (
+                      <span
+                        className={cn(
+                          'shrink-0 text-[10px] font-bold',
+                          selected ? 'text-primary-foreground/75' : 'text-primary',
+                        )}
+                      >
+                        본계
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <Badge variant="outline" className="w-fit bg-transparent">
+              계정 미지정
+            </Badge>
+          )}
           <Badge variant="outline" className="w-fit bg-transparent">
             {getOptionLabel(queueOptions, defaultQueueType)}
           </Badge>

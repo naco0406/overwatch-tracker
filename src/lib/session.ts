@@ -1,3 +1,4 @@
+import { compareMatchesByTimelineAsc } from '@/lib/matchStats';
 import type { Match } from '@/types/match';
 
 export const SESSION_CONTINUATION_WINDOW_MS = 30 * 60 * 1000;
@@ -44,9 +45,7 @@ export const groupMatchesBySession = (matches: Match[]): MatchSession[] => {
 
   return Array.from(sessions.entries())
     .map(([sessionId, sessionMatches]) => {
-      const sortedMatches = [...sessionMatches].sort(
-        (a, b) => new Date(a.playedAt).getTime() - new Date(b.playedAt).getTime(),
-      );
+      const sortedMatches = [...sessionMatches].sort(compareMatchesByTimelineAsc);
 
       return {
         draws: sortedMatches.filter((match) => match.result === 'draw').length,

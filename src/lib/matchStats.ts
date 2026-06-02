@@ -1,5 +1,17 @@
 import type { Match } from '@/types/match';
 
+const getMatchSortTime = (value?: string | null) => (value ? new Date(value).getTime() : 0);
+
+export const compareMatchesByTimelineAsc = (a: Match, b: Match) =>
+  getMatchSortTime(a.playedAt) - getMatchSortTime(b.playedAt) ||
+  getMatchSortTime(a.createdAt) - getMatchSortTime(b.createdAt) ||
+  a.id.localeCompare(b.id);
+
+export const compareMatchesByTimelineDesc = (a: Match, b: Match) =>
+  getMatchSortTime(b.playedAt) - getMatchSortTime(a.playedAt) ||
+  getMatchSortTime(b.createdAt) - getMatchSortTime(a.createdAt) ||
+  b.id.localeCompare(a.id);
+
 export interface ResultSummary {
   decisive: number;
   draws: number;
@@ -34,7 +46,7 @@ export const formatWinRate = (winRate: number | null) => (winRate === null ? '--
 export const getLongestStreak = (matches: Match[]) => {
   const sortedMatches = [...matches]
     .filter((match) => match.result !== 'draw')
-    .sort((a, b) => new Date(a.playedAt).getTime() - new Date(b.playedAt).getTime());
+    .sort(compareMatchesByTimelineAsc);
 
   if (sortedMatches.length === 0) {
     return null;
@@ -85,9 +97,7 @@ export const getPeakHour = (matches: Match[]) => {
 };
 
 export const getCurrentStreak = (matches: Match[]) => {
-  const sortedMatches = [...matches].sort(
-    (a, b) => new Date(b.playedAt).getTime() - new Date(a.playedAt).getTime(),
-  );
+  const sortedMatches = [...matches].sort(compareMatchesByTimelineDesc);
   const firstDecisiveMatch = sortedMatches.find((match) => match.result !== 'draw');
 
   if (!firstDecisiveMatch) {

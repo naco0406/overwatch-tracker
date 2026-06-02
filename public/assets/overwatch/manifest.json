@@ -282,6 +282,10 @@
       "source": "https://overfast-api.tekrop.fr/static/maps/watchpoint-gibraltar.jpg",
       "file": "/assets/overwatch/maps/watchpoint-gibraltar.jpg"
     },
+    "aatlis": {
+      "source": "https://overfast-api.tekrop.fr/static/maps/aatlis.jpg",
+      "file": "/assets/overwatch/maps/aatlis.jpg"
+    },
     "new-junk-city": {
       "source": "https://overfast-api.tekrop.fr/static/maps/new-junk-city.jpg",
       "file": "/assets/overwatch/maps/new-junk-city.jpg"

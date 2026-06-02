@@ -19,8 +19,9 @@ export const modeOptions = [
   { label: '밀기', value: 'push' },
   { label: '호위', value: 'escort' },
   { label: '플래시포인트', value: 'flashpoint' },
-  { label: '격돌', value: 'clash' },
 ] satisfies MatchOption<ModeId>[];
+
+const legacyModeOptions = [{ label: '격돌', value: 'clash' }] satisfies MatchOption<ModeId>[];
 
 export const resultOptions = [
   { label: '승리', value: 'win' },
@@ -92,8 +93,12 @@ export const mapOptions = [
   { label: '66번 국도', modeId: 'escort', value: 'route-66' },
   { label: '샴발리 수도원', modeId: 'escort', value: 'shambali-monastery' },
   { label: '감시 기지: 지브롤터', modeId: 'escort', value: 'watchpoint-gibraltar' },
+  { label: '아틀리스', modeId: 'flashpoint', value: 'aatlis' },
   { label: '뉴 정크 시티', modeId: 'flashpoint', value: 'new-junk-city' },
   { label: '수라바사', modeId: 'flashpoint', value: 'suravasa' },
+] satisfies MapOption[];
+
+const legacyMapOptions = [
   { label: '하나오카', modeId: 'clash', value: 'hanaoka' },
   { label: '아누비스의 왕좌', modeId: 'clash', value: 'throne-of-anubis' },
 ] satisfies MapOption[];
@@ -150,9 +155,13 @@ export const getOptionLabel = <TValue extends string>(
   value: TValue | string | undefined,
 ) => options.find((option) => option.value === value)?.label ?? value ?? '-';
 
-export const getMapLabel = (mapId: string | undefined) => getOptionLabel(mapOptions, mapId);
+const modeLabelOptions = [...modeOptions, ...legacyModeOptions];
+const mapLabelOptions = [...mapOptions, ...legacyMapOptions];
 
-export const getModeLabel = (modeId: ModeId | undefined) => getOptionLabel(modeOptions, modeId);
+export const getMapLabel = (mapId: string | undefined) => getOptionLabel(mapLabelOptions, mapId);
+
+export const getModeLabel = (modeId: ModeId | undefined) =>
+  getOptionLabel(modeLabelOptions, modeId);
 
 export const getHeroLabel = (heroId: string | undefined) => getOptionLabel(heroOptions, heroId);
 

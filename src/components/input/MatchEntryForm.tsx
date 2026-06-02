@@ -39,12 +39,12 @@ import type { UserSettings } from '@/types/userSettings';
 
 const modeValues = modeOptions.map((option) => option.value);
 const resultValues = resultOptions.map((option) => option.value);
+type CurrentModeId = (typeof modeOptions)[number]['value'];
 
-const isModeValue = (value: string): value is MatchCreateInput['modeId'] =>
-  modeValues.includes(value as MatchCreateInput['modeId']);
+const isModeValue = (value: string): value is CurrentModeId =>
+  modeValues.includes(value as CurrentModeId);
 
-const isValidModeValue = (value: string): boolean =>
-  modeValues.includes(value as MatchCreateInput['modeId']);
+const isValidModeValue = (value: string): boolean => modeValues.includes(value as CurrentModeId);
 
 const isValidResultValue = (value: string): boolean =>
   resultValues.includes(value as MatchCreateInput['result']);

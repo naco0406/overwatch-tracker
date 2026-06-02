@@ -114,6 +114,8 @@ const resolveSessionId = async (userId: string, playedAt: string) => {
     .eq('user_id', userId)
     .lte('played_at', playedAt)
     .order('played_at', { ascending: false })
+    .order('created_at', { ascending: false })
+    .order('session_id', { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -198,7 +200,9 @@ export const listMatches = async (filters: MatchFilters = {}) => {
     .from('matches')
     .select('*')
     .eq('user_id', user.id)
-    .order('played_at', { ascending: false });
+    .order('played_at', { ascending: false })
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false });
 
   if (filters.account) query = query.eq('account', filters.account);
   if (filters.accountId) query = query.eq('account_id', filters.accountId);

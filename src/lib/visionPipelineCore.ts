@@ -144,7 +144,6 @@ const modeLabels = [
   { label: '밀기', value: 'push' },
   { label: '호위', value: 'escort' },
   { label: '플래시포인트', value: 'flashpoint' },
-  { label: '격돌', value: 'clash' },
 ] as const;
 
 const cloneVisionRegions = (): VisionRegionSet => ({

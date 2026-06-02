@@ -28,7 +28,12 @@ import { useCreateMatch, useDeleteMatch, useMatches, useUpdateMatch } from '@/ho
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { getMapLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
-import { calculateWinRate, getCurrentStreak, getTodayRange } from '@/lib/matchStats';
+import {
+  calculateWinRate,
+  compareMatchesByTimelineDesc,
+  getCurrentStreak,
+  getTodayRange,
+} from '@/lib/matchStats';
 import {
   extractMatchFromScreenshot,
   type VisionExtractionProgress,
@@ -123,10 +128,7 @@ const HomePage = () => {
   const deleteMatchMutation = useDeleteMatch();
 
   const sortedTodayMatches = useMemo(
-    () =>
-      [...todayMatches].sort(
-        (a, b) => new Date(b.playedAt).getTime() - new Date(a.playedAt).getTime(),
-      ),
+    () => [...todayMatches].sort(compareMatchesByTimelineDesc),
     [todayMatches],
   );
   const summaryMetrics = useMemo(() => getSummaryMetrics(todayMatches), [todayMatches]);

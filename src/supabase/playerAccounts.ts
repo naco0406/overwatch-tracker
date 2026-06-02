@@ -66,6 +66,19 @@ export const updatePlayerAccount = async (input: PlayerAccountUpdateInput) => {
   const user = await getCurrentUserOrThrow();
   const row: PlayerAccountUpdate = {};
 
+  if (input.isMain === true) {
+    const { error: unsetError } = await supabase
+      .from('player_accounts')
+      .update({ is_main: false })
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+      .neq('id', input.id);
+
+    if (unsetError) {
+      throw unsetError;
+    }
+  }
+
   if (input.battleTag !== undefined) row.battle_tag = input.battleTag.trim();
   if (input.displayName !== undefined) row.display_name = input.displayName.trim();
   if (input.isActive !== undefined) row.is_active = input.isActive;
