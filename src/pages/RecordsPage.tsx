@@ -361,7 +361,7 @@ const RecordsPage = () => {
         }
       />
 
-      <section className="workspace-panel overflow-hidden">
+      <section className="border-y border-border/70">
         <div className="metric-strip grid-cols-3 divide-x divide-border/70">
           <MetricCell label="표시 기록" value={filteredMatches.length.toLocaleString('ko-KR')} />
           <MetricCell label="승률" value={formatWinRate(summary.winRate)} />
@@ -369,8 +369,8 @@ const RecordsPage = () => {
         </div>
       </section>
 
-      <section className="workspace-panel overflow-hidden">
-        <div className="section-divider section-pad">
+      <section className="border-y border-border/70">
+        <div className="border-b border-border/70 px-3 py-3 sm:px-5">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
             <div className="relative col-span-2 sm:col-span-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -404,7 +404,7 @@ const RecordsPage = () => {
           </div>
 
           {selectedMatches.length > 0 ? (
-            <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-primary/20 bg-primary/[0.06] px-3 py-2">
+            <div className="mt-3 flex items-center justify-between gap-3 border-l-2 border-l-primary bg-primary/[0.06] px-3 py-2">
               <p className="text-sm font-bold">
                 {selectedMatches.length.toLocaleString('ko-KR')}개 선택
               </p>
@@ -421,14 +421,14 @@ const RecordsPage = () => {
           ) : null}
         </div>
 
-        <div className="section-pad">
+        <div className="px-0 py-0">
           {isLoading ? (
             <RecordsSkeleton />
           ) : filteredMatches.length > 0 ? (
             <>
-              <div className="subpanel hidden md:block">
-                <table className="w-full table-fixed border-collapse text-left text-sm">
-                  <thead className="bg-[hsl(var(--surface-2))]">
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full min-w-[760px] table-fixed border-collapse text-left text-sm">
+                  <thead className="sticky top-0 z-10 bg-[hsl(var(--surface-2))]">
                     <tr className="border-b border-border/70">
                       <th className="w-12 px-3 py-3">
                         <input
@@ -464,8 +464,8 @@ const RecordsPage = () => {
                 </table>
               </div>
 
-              <div className="subpanel md:hidden">
-                <div className="flat-row flex items-center justify-between gap-3 p-3">
+              <div className="divide-y divide-border/70 md:hidden">
+                <div className="flex items-center justify-between gap-3 border-b border-border/70 px-3 py-2">
                   <span className="text-sm font-bold">
                     {visibleMatches.length.toLocaleString('ko-KR')}개 표시
                   </span>
@@ -504,21 +504,19 @@ const RecordsPage = () => {
               />
             </>
           ) : (
-            <div className="subpanel">
-              <div className="flat-row p-3">
-                <InlineEmptyState
-                  title="기록 없음"
-                  description="필터 결과가 비어 있습니다."
-                  action={
-                    activeFilterCount > 0 ? (
-                      <Button variant="outline" className="bg-transparent" onClick={resetFilters}>
-                        <RotateCcw className="h-4 w-4" />
-                        초기화
-                      </Button>
-                    ) : undefined
-                  }
-                />
-              </div>
+            <div className="px-3 py-6 sm:px-5">
+              <InlineEmptyState
+                title="기록 없음"
+                description="필터 결과가 비어 있습니다."
+                action={
+                  activeFilterCount > 0 ? (
+                    <Button variant="outline" className="bg-transparent" onClick={resetFilters}>
+                      <RotateCcw className="h-4 w-4" />
+                      초기화
+                    </Button>
+                  ) : undefined
+                }
+              />
             </div>
           )}
         </div>
@@ -835,14 +833,14 @@ const BulkActionBar = ({
         </Button>
       </div>
 
-      <div className="mb-4 rounded-md border border-border/70 bg-card p-3">
-        <p className="metric-label">적용 예정</p>
+      <div className="mb-4 border-y border-border/70 bg-card py-3">
+        <p className="px-3 metric-label">적용 예정</p>
         <div className="mt-2 grid gap-2 sm:grid-cols-3">
           {summaryItems.map((item) => (
             <div
               key={item.label}
               className={cn(
-                'min-w-0 rounded-md border px-3 py-2',
+                'min-w-0 border-y px-3 py-2 sm:border-y-0 sm:border-l',
                 item.changed
                   ? 'border-primary/25 bg-primary/[0.06]'
                   : 'border-border/70 bg-[hsl(var(--surface-2))]',
@@ -1016,7 +1014,7 @@ const RecordTableRow = ({
 );
 
 const RecordCard = ({ account, match, onDelete, onEdit, onSelect, selected }: RecordRowProps) => (
-  <div className={cn('flat-row bg-card p-3', selected && 'bg-primary/5')}>
+  <div className={cn('border-b border-border/70 px-3 py-2.5', selected && 'bg-primary/5')}>
     <div className="grid grid-cols-[24px_minmax(0,1fr)_auto] items-start gap-3">
       <label className="pt-1">
         <input
@@ -1132,11 +1130,11 @@ const PaginationBar = ({
 };
 
 const RecordsSkeleton = () => (
-  <div className="subpanel">
+  <div className="divide-y divide-border/70">
     {Array.from({ length: 8 }, (_, index) => (
       <div
         key={index}
-        className="flat-row grid gap-3 p-3 md:grid-cols-[32px_120px_minmax(0,1fr)_80px_120px_80px]"
+        className="grid gap-3 px-3 py-3 md:grid-cols-[32px_120px_minmax(0,1fr)_80px_120px_80px]"
       >
         <SkeletonBlock className="h-4 w-4" />
         <div>

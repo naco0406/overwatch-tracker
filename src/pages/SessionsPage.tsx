@@ -289,7 +289,7 @@ const SessionsPage = () => {
         }
       />
 
-      <section className="workspace-panel overflow-hidden">
+      <section className="border-y border-border/70">
         <div className="metric-strip grid-cols-3 divide-x divide-border/70">
           {metrics.map((metric) => (
             <MetricCell key={metric.label} {...metric} isLoading={isLoading} />
@@ -297,9 +297,9 @@ const SessionsPage = () => {
         </div>
       </section>
 
-      <section className="grid gap-3 xl:grid-cols-[420px_minmax(0,1fr)] xl:items-start xl:gap-4">
-        <section className="workspace-panel overflow-hidden">
-          <div className="section-header flex items-center justify-between gap-3">
+      <section className="grid border-y border-border/70 xl:grid-cols-[420px_minmax(0,1fr)] xl:items-start">
+        <section className="border-b border-border/70 xl:border-b-0 xl:border-r">
+          <div className="flex items-center justify-between gap-3 border-b border-border/70 px-3 py-3 sm:px-5">
             <div className="min-w-0">
               <p className="metric-label">인덱스</p>
               <h2 className="mt-1 truncate text-lg font-bold">세션 목록</h2>
@@ -309,7 +309,7 @@ const SessionsPage = () => {
             </Badge>
           </div>
 
-          <div className="section-pad border-y border-border/70 bg-[hsl(var(--surface-2))]">
+          <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] px-3 py-3 sm:px-5">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -378,7 +378,7 @@ const SessionsPage = () => {
               />
             </div>
           ) : (
-            <div className="section-pad">
+            <div className="px-3 py-6 sm:px-5">
               <InlineEmptyState
                 title="세션 없음"
                 description={
@@ -399,7 +399,7 @@ const SessionsPage = () => {
           )}
         </section>
 
-        <section className="workspace-panel min-w-0 overflow-hidden xl:sticky xl:top-4">
+        <section className="min-w-0 xl:sticky xl:top-4">
           {isLoading ? (
             <SelectedSessionSkeleton />
           ) : selectedSession ? (
@@ -410,7 +410,7 @@ const SessionsPage = () => {
               onEditMatch={setEditingMatch}
             />
           ) : (
-            <div className="section-pad">
+            <div className="px-3 py-6 sm:px-5">
               <InlineEmptyState
                 title="선택된 세션 없음"
                 description="왼쪽에서 세션을 선택하세요."
@@ -554,7 +554,7 @@ const SelectedSessionDetail = ({
 
   return (
     <>
-      <div className="section-header border-b border-border/70">
+      <div className="border-b border-border/70 px-3 py-3 sm:px-5">
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center">
           <div className="min-w-0">
             <p className="metric-label">선택 세션</p>
@@ -565,7 +565,7 @@ const SelectedSessionDetail = ({
             </p>
           </div>
 
-          <div className="grid grid-cols-4 divide-x divide-border/70 rounded-md border border-border/70 bg-[hsl(var(--surface-2))]">
+          <div className="grid grid-cols-4 divide-x divide-border/70 border-y border-border/70 bg-[hsl(var(--surface-2))]">
             <SummaryCell label="경기" value={session.matches.length.toLocaleString('ko-KR')} />
             <SummaryCell label="승" value={summary.wins.toLocaleString('ko-KR')} />
             <SummaryCell label="패" value={summary.losses.toLocaleString('ko-KR')} />
@@ -584,10 +584,10 @@ const SelectedSessionDetail = ({
         <ResultBar summary={summary} className="mt-2 h-2.5" />
       </div>
 
-      <div className="section-pad">
-        <div className="subpanel hidden md:block">
-          <table className="w-full table-fixed border-collapse text-left text-sm">
-            <thead className="bg-[hsl(var(--surface-2))]">
+      <div>
+        <div className="hidden overflow-x-auto md:block">
+          <table className="w-full min-w-[760px] table-fixed border-collapse text-left text-sm">
+            <thead className="sticky top-0 z-10 bg-[hsl(var(--surface-2))]">
               <tr className="border-b border-border/70">
                 <th className="w-14 px-3 py-3 font-semibold text-muted-foreground">#</th>
                 <th className="w-20 px-3 py-3 font-semibold text-muted-foreground">시간</th>
@@ -614,7 +614,7 @@ const SelectedSessionDetail = ({
           </table>
         </div>
 
-        <div className="subpanel md:hidden">
+        <div className="divide-y divide-border/70 md:hidden">
           {session.matches.map((match, index) => (
             <SessionMatchMobileRow
               key={match.id}
@@ -670,7 +670,7 @@ const SessionMatchTableRow = ({
       </td>
       <td className="min-w-0 px-3 py-3 align-middle">
         <div className="grid min-w-0 grid-cols-[58px_minmax(0,1fr)] items-center gap-3">
-          <div className="aspect-[16/10] overflow-hidden rounded-md border border-border/70 bg-secondary">
+          <div className="aspect-[16/10] overflow-hidden bg-secondary">
             <img
               alt={getMapLabel(match.mapId)}
               className="h-full w-full object-cover"
@@ -732,9 +732,9 @@ const SessionMatchMobileRow = ({
   const heroSummary = getHeroSummary(match);
 
   return (
-    <div className="flat-row p-3">
+    <div className="border-b border-border/70 px-3 py-2.5">
       <div className="grid grid-cols-[72px_minmax(0,1fr)_auto] gap-3">
-        <div className="aspect-[16/10] overflow-hidden rounded-md border border-border/70 bg-secondary">
+        <div className="aspect-[16/10] overflow-hidden bg-secondary">
           <img
             alt={getMapLabel(match.mapId)}
             className="h-full w-full object-cover"
@@ -872,7 +872,7 @@ const SessionIndexSkeleton = () => (
 
 const SelectedSessionSkeleton = () => (
   <>
-    <div className="section-header border-b border-border/70">
+    <div className="border-b border-border/70 px-3 py-3 sm:px-5">
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div>
           <SkeletonBlock className="h-3 w-20" />
@@ -882,25 +882,23 @@ const SelectedSessionSkeleton = () => (
         <SkeletonBlock className="h-16 w-full" />
       </div>
     </div>
-    <div className="section-pad">
-      <div className="subpanel">
-        {Array.from({ length: 6 }, (_, index) => (
-          <div
-            key={index}
-            className="flat-row grid gap-3 p-3 md:grid-cols-[48px_64px_minmax(0,1fr)_72px_120px_80px]"
-          >
-            <SkeletonBlock className="h-4 w-6" />
-            <SkeletonBlock className="h-4 w-12" />
-            <div>
-              <SkeletonBlock className="h-4 w-44 max-w-full" />
-              <SkeletonBlock className="mt-2 h-3 w-28" />
-            </div>
-            <SkeletonBlock className="h-8 w-16" />
-            <SkeletonBlock className="h-4 w-24" />
-            <SkeletonBlock className="h-9 w-20" />
+    <div className="divide-y divide-border/70">
+      {Array.from({ length: 6 }, (_, index) => (
+        <div
+          key={index}
+          className="grid gap-3 px-3 py-3 md:grid-cols-[48px_64px_minmax(0,1fr)_72px_120px_80px]"
+        >
+          <SkeletonBlock className="h-4 w-6" />
+          <SkeletonBlock className="h-4 w-12" />
+          <div>
+            <SkeletonBlock className="h-4 w-44 max-w-full" />
+            <SkeletonBlock className="mt-2 h-3 w-28" />
           </div>
-        ))}
-      </div>
+          <SkeletonBlock className="h-8 w-16" />
+          <SkeletonBlock className="h-4 w-24" />
+          <SkeletonBlock className="h-9 w-20" />
+        </div>
+      ))}
     </div>
   </>
 );
