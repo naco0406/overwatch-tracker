@@ -28,12 +28,8 @@ import { useCreateMatch, useDeleteMatch, useMatches, useUpdateMatch } from '@/ho
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { getMapLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
-import {
-  calculateWinRate,
-  compareMatchesByTimelineDesc,
-  getCurrentStreak,
-  getTodayRange,
-} from '@/lib/matchStats';
+import { calculateWinRate, compareMatchesByTimelineDesc, getCurrentStreak } from '@/lib/matchStats';
+import { groupMatchesBySession, shouldReuseSession } from '@/lib/session';
 import {
   extractMatchFromScreenshot,
   type VisionExtractionProgress,
@@ -88,8 +84,8 @@ const getSummaryMetrics = (matches: Match[]) => {
 
   return [
     {
-      detail: matches.length > 0 ? '오늘 저장됨' : '저장 대기',
-      label: '오늘 경기',
+      detail: matches.length > 0 ? '현재 세션' : '새 세션 대기',
+      label: '세션 경기',
       value: String(matches.length),
     },
     {
@@ -98,7 +94,7 @@ const getSummaryMetrics = (matches: Match[]) => {
       value: winRate === null ? '--' : `${winRate}%`,
     },
     {
-      detail: streak ? (streak.result === 'win' ? '연승 중' : '연패 중') : '세션 시작 전',
+      detail: streak ? (streak.result === 'win' ? '연승 중' : '연패 중') : '흐름 없음',
       label: '현재 흐름',
       value: streak ? `${streak.count}${streak.result === 'win' ? 'W' : 'L'}` : '--',
     },
@@ -116,22 +112,29 @@ const HomePage = () => {
   const [visionResult, setVisionResult] = useState<VisionExtractionResult | null>(null);
   const [isExtractingVision, setIsExtractingVision] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const todayRange = useMemo(() => getTodayRange(), []);
-  const { data: todayMatches = [], isLoading } = useMatches({
-    playedFrom: todayRange.start,
-    playedTo: todayRange.end,
-  });
+  const { data: matches = [], isLoading } = useMatches();
   const { data: userSettings } = useUserSettings();
   const { data: playerAccounts = [] } = usePlayerAccounts();
   const createMatchMutation = useCreateMatch();
   const updateMatchMutation = useUpdateMatch();
   const deleteMatchMutation = useDeleteMatch();
+  const sessions = useMemo(() => groupMatchesBySession(matches), [matches]);
+  const activeSession = useMemo(() => {
+    const latestSession = sessions[0];
 
-  const sortedTodayMatches = useMemo(
-    () => [...todayMatches].sort(compareMatchesByTimelineDesc),
-    [todayMatches],
+    if (!latestSession) {
+      return null;
+    }
+
+    return shouldReuseSession(latestSession.endedAt, new Date()) ? latestSession : null;
+  }, [sessions]);
+  const sessionMatches = useMemo(() => activeSession?.matches ?? [], [activeSession]);
+
+  const sortedSessionMatches = useMemo(
+    () => [...sessionMatches].sort(compareMatchesByTimelineDesc),
+    [sessionMatches],
   );
-  const summaryMetrics = useMemo(() => getSummaryMetrics(todayMatches), [todayMatches]);
+  const summaryMetrics = useMemo(() => getSummaryMetrics(sessionMatches), [sessionMatches]);
   const activePlayerAccounts = useMemo(
     () => playerAccounts.filter((account) => account.isActive),
     [playerAccounts],
@@ -156,7 +159,7 @@ const HomePage = () => {
       setVisionProgress(null);
       setVisionResult(null);
       toast({
-        description: '오늘 세션에 새 경기가 추가됐습니다.',
+        description: '이번 세션에 새 경기가 추가됐습니다.',
         title: '경기 저장 완료',
       });
     } catch (error) {
@@ -434,17 +437,17 @@ const HomePage = () => {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="metric-label">세션</p>
-              <h2 className="mt-1 text-lg font-bold tracking-normal">오늘 세션</h2>
+              <h2 className="mt-1 text-lg font-bold tracking-normal">이번 세션</h2>
             </div>
-            <Badge variant="secondary">{todayMatches.length} 경기</Badge>
+            <Badge variant="secondary">{sessionMatches.length} 경기</Badge>
           </div>
           <div className="grid grid-cols-6 gap-2 lg:grid-cols-3">
             {isLoading
               ? emptySessionSlots.map((_, index) => (
                   <SkeletonBlock key={index} className="h-14 rounded-md" />
                 ))
-              : todayMatches.length > 0
-                ? sortedTodayMatches.slice(0, 9).map((match, index) => (
+              : sessionMatches.length > 0
+                ? sessionMatches.slice(0, 9).map((match, index) => (
                     <div
                       key={match.id}
                       className={`flex h-14 flex-col items-center justify-center rounded-md border text-xs font-bold ${getResultTone(
@@ -470,14 +473,14 @@ const HomePage = () => {
           <div className="mb-2 hidden items-center justify-between gap-3 lg:flex">
             <p className="metric-label">최근 기록</p>
             <span className="text-xs font-semibold text-muted-foreground">
-              {formatTime(sortedTodayMatches[0]?.playedAt)}
+              {formatTime(sortedSessionMatches[0]?.playedAt)}
             </span>
           </div>
           {isLoading ? (
             <TodayMatchRowsSkeleton />
-          ) : todayMatches.length > 0 ? (
+          ) : sessionMatches.length > 0 ? (
             <div className="subpanel">
-              {sortedTodayMatches.slice(0, 6).map((match) => (
+              {sortedSessionMatches.slice(0, 6).map((match) => (
                 <div
                   key={match.id}
                   className="flat-row grid gap-3 p-3 sm:grid-cols-[72px_minmax(0,1fr)_80px_auto]"
@@ -528,7 +531,7 @@ const HomePage = () => {
               <div className="flat-row p-3">
                 <InlineEmptyState
                   title="저장된 경기 없음"
-                  description="오늘 저장된 경기 기록이 없습니다."
+                  description="현재 세션에 저장된 경기 기록이 없습니다."
                   action={
                     <Button variant="outline" className="bg-transparent" disabled>
                       <Plus className="h-4 w-4" />

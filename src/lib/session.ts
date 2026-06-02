@@ -1,7 +1,7 @@
 import { compareMatchesByTimelineAsc } from '@/lib/matchStats';
 import type { Match } from '@/types/match';
 
-export const SESSION_CONTINUATION_WINDOW_MS = 30 * 60 * 1000;
+export const SESSION_CONTINUATION_WINDOW_MS = 60 * 60 * 1000;
 
 export interface MatchSession {
   draws: number;
@@ -35,24 +35,36 @@ export const shouldReuseSession = (
 };
 
 export const groupMatchesBySession = (matches: Match[]): MatchSession[] => {
-  const sessions = new Map<string, Match[]>();
+  const sortedInputMatches = [...matches].sort(compareMatchesByTimelineAsc);
+  const sessionGroups: Match[][] = [];
 
-  for (const match of matches) {
-    const current = sessions.get(match.sessionId) ?? [];
-    current.push(match);
-    sessions.set(match.sessionId, current);
+  for (const match of sortedInputMatches) {
+    const currentGroup = sessionGroups.at(-1);
+    const previousMatch = currentGroup?.at(-1);
+
+    if (
+      currentGroup &&
+      previousMatch &&
+      shouldReuseSession(previousMatch.playedAt, match.playedAt)
+    ) {
+      currentGroup.push(match);
+      continue;
+    }
+
+    sessionGroups.push([match]);
   }
 
-  return Array.from(sessions.entries())
-    .map(([sessionId, sessionMatches]) => {
+  return sessionGroups
+    .map((sessionMatches) => {
       const sortedMatches = [...sessionMatches].sort(compareMatchesByTimelineAsc);
+      const firstMatch = sortedMatches[0];
 
       return {
         draws: sortedMatches.filter((match) => match.result === 'draw').length,
         endedAt: sortedMatches.at(-1)?.playedAt ?? '',
         losses: sortedMatches.filter((match) => match.result === 'loss').length,
         matches: sortedMatches,
-        sessionId,
+        sessionId: firstMatch ? `${firstMatch.sessionId}:${firstMatch.id}` : 'session_empty',
         startedAt: sortedMatches[0]?.playedAt ?? '',
         wins: sortedMatches.filter((match) => match.result === 'win').length,
       };
