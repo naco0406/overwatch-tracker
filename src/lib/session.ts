@@ -1,7 +1,7 @@
 import { compareMatchesByTimelineAsc } from '@/lib/matchStats';
 import type { Match } from '@/types/match';
 
-export const SESSION_CONTINUATION_WINDOW_MS = 60 * 60 * 1000;
+export const SESSION_CONTINUATION_WINDOW_MS = 6 * 60 * 60 * 1000;
 
 export interface MatchSession {
   draws: number;

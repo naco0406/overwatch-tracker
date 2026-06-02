@@ -1,4 +1,15 @@
-import { Clipboard, ImagePlus, Loader2, Pencil, Plus, Trash2, Wand2, X } from 'lucide-react';
+import {
+  Clipboard,
+  ImagePlus,
+  Loader2,
+  Pencil,
+  Play,
+  Plus,
+  Square,
+  Trash2,
+  Wand2,
+  X,
+} from 'lucide-react';
 import {
   useEffect,
   useMemo,
@@ -20,6 +31,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -29,7 +41,7 @@ import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { getMapLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
 import { calculateWinRate, compareMatchesByTimelineDesc, getCurrentStreak } from '@/lib/matchStats';
-import { groupMatchesBySession, shouldReuseSession } from '@/lib/session';
+import { createSessionId, groupMatchesBySession, shouldReuseSession } from '@/lib/session';
 import {
   extractMatchFromScreenshot,
   type VisionExtractionProgress,
@@ -39,6 +51,8 @@ import type { Match, MatchCreateInput } from '@/types/match';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
 
 const emptySessionSlots = Array.from({ length: 6 });
+const activeSessionStorageKey = 'overwatch-tracker:active-session-id';
+const sessionIdStartedAtPattern = /^session_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})_/;
 
 interface ScreenshotPreview {
   file: File;
@@ -66,6 +80,18 @@ const formatFileSize = (size: number) => {
   return `${(size / 1024 / 1024).toFixed(1)}MB`;
 };
 
+const getSessionIdStartedAt = (sessionId: string) => {
+  const parts = sessionId.match(sessionIdStartedAtPattern);
+
+  if (!parts) {
+    return null;
+  }
+
+  const [, year, month, day, hour, minute, second] = parts;
+
+  return new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}.000Z`);
+};
+
 const getResultTone = (result: Match['result']) => {
   if (result === 'win') {
     return 'border-primary/25 bg-primary/10 text-primary';
@@ -78,13 +104,18 @@ const getResultTone = (result: Match['result']) => {
   return 'border-border bg-secondary text-muted-foreground';
 };
 
-const getSummaryMetrics = (matches: Match[]) => {
+const getSummaryMetrics = (matches: Match[], isManualSessionActive: boolean) => {
   const winRate = calculateWinRate(matches);
   const streak = getCurrentStreak(matches);
 
   return [
     {
-      detail: matches.length > 0 ? '현재 세션' : '새 세션 대기',
+      detail:
+        matches.length > 0
+          ? '현재 세션'
+          : isManualSessionActive
+            ? '수동 세션 진행중'
+            : '새 세션 대기',
       label: '세션 경기',
       value: String(matches.length),
     },
@@ -111,6 +142,20 @@ const HomePage = () => {
   const [visionProgress, setVisionProgress] = useState<VisionExtractionProgress | null>(null);
   const [visionResult, setVisionResult] = useState<VisionExtractionResult | null>(null);
   const [isExtractingVision, setIsExtractingVision] = useState(false);
+  const [manualSessionId, setManualSessionId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+
+    return window.localStorage.getItem(activeSessionStorageKey);
+  });
+  const [pendingSessionDecision, setPendingSessionDecision] = useState<{
+    input: MatchCreateInput;
+    previousEndedAt: string;
+    previousSessionId: string;
+    source: 'active' | 'latest';
+  } | null>(null);
+  const [quickEntryResetKey, setQuickEntryResetKey] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { data: matches = [], isLoading } = useMatches();
   const { data: userSettings } = useUserSettings();
@@ -120,6 +165,10 @@ const HomePage = () => {
   const deleteMatchMutation = useDeleteMatch();
   const sessions = useMemo(() => groupMatchesBySession(matches), [matches]);
   const activeSession = useMemo(() => {
+    if (manualSessionId) {
+      return sessions.find((session) => session.sessionId === manualSessionId) ?? null;
+    }
+
     const latestSession = sessions[0];
 
     if (!latestSession) {
@@ -127,14 +176,17 @@ const HomePage = () => {
     }
 
     return shouldReuseSession(latestSession.endedAt, new Date()) ? latestSession : null;
-  }, [sessions]);
+  }, [manualSessionId, sessions]);
   const sessionMatches = useMemo(() => activeSession?.matches ?? [], [activeSession]);
 
   const sortedSessionMatches = useMemo(
     () => [...sessionMatches].sort(compareMatchesByTimelineDesc),
     [sessionMatches],
   );
-  const summaryMetrics = useMemo(() => getSummaryMetrics(sessionMatches), [sessionMatches]);
+  const summaryMetrics = useMemo(
+    () => getSummaryMetrics(sessionMatches, Boolean(manualSessionId)),
+    [manualSessionId, sessionMatches],
+  );
   const activePlayerAccounts = useMemo(
     () => playerAccounts.filter((account) => account.isActive),
     [playerAccounts],
@@ -152,7 +204,18 @@ const HomePage = () => {
     [screenshotPreview?.imageUrl],
   );
 
-  const handleCreateMatch = async (input: MatchCreateInput) => {
+  const setActiveManualSession = (sessionId: string | null) => {
+    setManualSessionId(sessionId);
+
+    if (sessionId) {
+      window.localStorage.setItem(activeSessionStorageKey, sessionId);
+      return;
+    }
+
+    window.localStorage.removeItem(activeSessionStorageKey);
+  };
+
+  const saveMatch = async (input: MatchCreateInput) => {
     try {
       await createMatchMutation.mutateAsync(input);
       setScreenshotPreview(null);
@@ -170,6 +233,105 @@ const HomePage = () => {
       });
       throw error;
     }
+  };
+
+  const handleCreateMatch = async (input: MatchCreateInput) => {
+    const playedAt = input.playedAt ?? new Date().toISOString();
+    const manualSession = manualSessionId
+      ? sessions.find((session) => session.sessionId === manualSessionId)
+      : null;
+    const manualSessionStartedAt = manualSessionId ? getSessionIdStartedAt(manualSessionId) : null;
+    const latestSession = sessions[0];
+
+    if (manualSessionId && manualSession && !shouldReuseSession(manualSession.endedAt, playedAt)) {
+      setPendingSessionDecision({
+        input,
+        previousEndedAt: manualSession.endedAt,
+        previousSessionId: manualSessionId,
+        source: 'active',
+      });
+      return false;
+    }
+
+    if (
+      manualSessionId &&
+      !manualSession &&
+      manualSessionStartedAt &&
+      !shouldReuseSession(manualSessionStartedAt, playedAt)
+    ) {
+      setPendingSessionDecision({
+        input,
+        previousEndedAt: manualSessionStartedAt.toISOString(),
+        previousSessionId: manualSessionId,
+        source: 'active',
+      });
+      return false;
+    }
+
+    if (manualSessionId) {
+      await saveMatch({
+        ...input,
+        sessionId: manualSessionId,
+      });
+      return;
+    }
+
+    if (latestSession && !shouldReuseSession(latestSession.endedAt, playedAt)) {
+      setPendingSessionDecision({
+        input,
+        previousEndedAt: latestSession.endedAt,
+        previousSessionId: latestSession.sessionId,
+        source: 'latest',
+      });
+      return false;
+    }
+
+    await saveMatch(input);
+  };
+
+  const handleStartSession = () => {
+    const latestSession = sessions[0];
+    const sessionId =
+      latestSession && shouldReuseSession(latestSession.endedAt, new Date())
+        ? latestSession.sessionId
+        : createSessionId();
+
+    setActiveManualSession(sessionId);
+    toast({
+      description:
+        latestSession?.sessionId === sessionId
+          ? '최근 세션을 이어서 기록합니다.'
+          : '새 세션으로 기록을 시작합니다.',
+      title: '세션 시작',
+    });
+  };
+
+  const handleStopSession = () => {
+    setActiveManualSession(null);
+    toast({
+      description: '다음 기록부터는 시간 간격 기준으로 세션을 판단합니다.',
+      title: '세션 종료',
+    });
+  };
+
+  const savePendingSessionDecision = async (mode: 'continue' | 'new') => {
+    if (!pendingSessionDecision) {
+      return;
+    }
+
+    const input = pendingSessionDecision.input;
+    const nextSessionId =
+      mode === 'continue'
+        ? pendingSessionDecision.previousSessionId
+        : createSessionId(input.playedAt ?? new Date());
+
+    await saveMatch({
+      ...input,
+      sessionId: nextSessionId,
+    });
+    setActiveManualSession(nextSessionId);
+    setPendingSessionDecision(null);
+    setQuickEntryResetKey((value) => value + 1);
   };
 
   const handleUpdateMatch = async (input: MatchCreateInput) => {
@@ -426,6 +588,7 @@ const HomePage = () => {
 
         <div className="section-pad">
           <QuickMatchEntry
+            key={quickEntryResetKey}
             accounts={activePlayerAccounts}
             defaultSettings={userSettings}
             isSubmitting={createMatchMutation.isPending}
@@ -442,7 +605,21 @@ const HomePage = () => {
               <p className="metric-label">세션</p>
               <h2 className="mt-1 text-lg font-bold tracking-normal">이번 세션</h2>
             </div>
-            <Badge variant="secondary">{sessionMatches.length} 경기</Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant={manualSessionId ? 'default' : 'secondary'}>
+                {manualSessionId ? '진행중' : `${sessionMatches.length} 경기`}
+              </Badge>
+              <Button
+                type="button"
+                size="sm"
+                variant={manualSessionId ? 'outline' : 'default'}
+                className={manualSessionId ? 'bg-transparent' : ''}
+                onClick={manualSessionId ? handleStopSession : handleStartSession}
+              >
+                {manualSessionId ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                {manualSessionId ? '종료' : '시작'}
+              </Button>
+            </div>
           </div>
           <div className="grid grid-cols-6 gap-1.5 sm:gap-2 lg:grid-cols-3">
             {isLoading
@@ -743,6 +920,56 @@ const HomePage = () => {
           }
         }}
       />
+
+      <Dialog
+        open={Boolean(pendingSessionDecision)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingSessionDecision(null);
+          }
+        }}
+      >
+        <DialogContent className="gap-0 p-0 sm:max-w-md">
+          <DialogHeader className="border-b border-border/70 px-4 py-4 pr-12 sm:px-5">
+            <DialogTitle>세션을 이어서 저장할까요?</DialogTitle>
+            <DialogDescription>
+              마지막 경기와 6시간 이상 차이가 납니다. 이전 세션에 이어 넣거나 새 세션으로 저장할 수
+              있습니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="px-4 py-4 sm:px-5">
+            <div className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3">
+              <p className="metric-label">
+                {pendingSessionDecision?.source === 'active' ? '켜져 있던 세션' : '최근 세션'}
+              </p>
+              <p className="mt-2 text-sm font-bold">
+                마지막 경기 {formatTime(pendingSessionDecision?.previousEndedAt)}
+              </p>
+              <p className="mt-1 text-xs font-semibold leading-5 text-muted-foreground">
+                게임 종료를 깜빡했거나 늦게 입력하는 기록이면 이어서 저장하세요.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="grid gap-2 border-t border-border/70 px-4 py-4 sm:grid-cols-2 sm:px-5">
+            <Button
+              type="button"
+              variant="outline"
+              className="bg-transparent"
+              disabled={createMatchMutation.isPending}
+              onClick={() => void savePendingSessionDecision('new')}
+            >
+              새 세션
+            </Button>
+            <Button
+              type="button"
+              disabled={createMatchMutation.isPending}
+              onClick={() => void savePendingSessionDecision('continue')}
+            >
+              이전 세션에 저장
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

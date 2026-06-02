@@ -117,7 +117,7 @@ interface MatchEntryFormProps {
   initialMatch?: Match;
   isSubmitting?: boolean;
   onSaved?: () => void;
-  onSubmit: (input: MatchCreateInput) => Promise<void>;
+  onSubmit: (input: MatchCreateInput) => Promise<boolean | void>;
   source?: MatchCreateInput['source'];
   submitLabel?: string;
 }
@@ -319,7 +319,7 @@ const MatchEntryForm = ({
   };
 
   const submit = form.handleSubmit(async (values) => {
-    await onSubmit({
+    const didSubmit = await onSubmit({
       account: selectedAccount?.isMain === false ? 'sub' : 'main',
       accountId: selectedAccount?.id ?? null,
       enemyScore: Number(values.enemyScore),
@@ -334,6 +334,10 @@ const MatchEntryForm = ({
       tags: [],
       teamScore: Number(values.teamScore),
     });
+
+    if (didSubmit === false) {
+      return;
+    }
 
     if (!initialMatch) {
       resetForm();

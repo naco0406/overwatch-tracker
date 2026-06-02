@@ -23,7 +23,7 @@ interface MatchEntryDialogProps {
   match?: Match | null;
   onOpenChange: (open: boolean) => void;
   onSaved?: () => void;
-  onSubmit: (input: MatchCreateInput) => Promise<void>;
+  onSubmit: (input: MatchCreateInput) => Promise<boolean | void>;
   open: boolean;
   screenshot?: ScreenshotContext | null;
   source?: MatchCreateInput['source'];

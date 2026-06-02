@@ -179,6 +179,7 @@ const RecordsPage = () => {
     resultFilter !== 'all',
     accountFilter !== 'all',
   ].filter(Boolean).length;
+  const hasBulkUpdates = bulkResult !== 'keep' || bulkMapId !== 'keep' || bulkAccountId !== 'keep';
 
   const resetFilters = () => {
     setSearchQuery('');
@@ -602,6 +603,7 @@ const RecordsPage = () => {
             bulkMapId={bulkMapId}
             bulkResult={bulkResult}
             disabled={selectedMatches.length === 0 || isBulkSaving}
+            hasUpdates={hasBulkUpdates}
             isSaving={isBulkSaving}
             selectedCount={selectedMatches.length}
             onApply={handleBulkUpdate}
@@ -715,6 +717,7 @@ interface BulkActionBarProps {
   bulkMapId: string;
   bulkResult: MatchResult | 'keep';
   disabled: boolean;
+  hasUpdates: boolean;
   isSaving: boolean;
   onApply: () => void;
   onBulkAccountChange: (value: string) => void;
@@ -731,6 +734,7 @@ const BulkActionBar = ({
   bulkMapId,
   bulkResult,
   disabled,
+  hasUpdates,
   isSaving,
   onApply,
   onBulkAccountChange,
@@ -739,88 +743,157 @@ const BulkActionBar = ({
   onBulkResultChange,
   onClearSelection,
   selectedCount,
-}: BulkActionBarProps) => (
-  <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] p-4 sm:p-5">
-    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <p className="metric-label">선택 수정</p>
-        <p className="mt-1 text-sm font-bold">{selectedCount.toLocaleString('ko-KR')}개 선택</p>
+}: BulkActionBarProps) => {
+  const selectedMap =
+    bulkMapId === 'keep' ? null : mapOptions.find((map) => map.value === bulkMapId);
+  const selectedAccount =
+    bulkAccountId === 'keep' || bulkAccountId === 'unassigned'
+      ? null
+      : accounts.find((account) => account.id === bulkAccountId);
+  const summaryItems = [
+    {
+      changed: bulkResult !== 'keep',
+      label: '결과',
+      value: bulkResult === 'keep' ? '유지' : getResultLabel(bulkResult),
+    },
+    {
+      changed: bulkMapId !== 'keep',
+      label: '맵',
+      value: selectedMap ? `${selectedMap.label} · ${getModeLabel(selectedMap.modeId)}` : '유지',
+    },
+    {
+      changed: bulkAccountId !== 'keep',
+      label: '계정',
+      value:
+        bulkAccountId === 'unassigned'
+          ? '미지정'
+          : selectedAccount
+            ? getPlayerAccountLabel(selectedAccount)
+            : '유지',
+    },
+  ];
+
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto bg-[hsl(var(--surface-2))] p-4 sm:p-5">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="metric-label">선택 수정</p>
+          <p className="mt-1 text-sm font-bold">{selectedCount.toLocaleString('ko-KR')}개 선택</p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-fit bg-transparent"
+          disabled={selectedCount === 0}
+          onClick={onClearSelection}
+        >
+          해제
+        </Button>
       </div>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="w-fit bg-transparent"
-        disabled={selectedCount === 0}
-        onClick={onClearSelection}
-      >
-        해제
-      </Button>
+
+      <div className="mb-4 rounded-md border border-border/70 bg-card p-3">
+        <p className="metric-label">적용 예정</p>
+        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+          {summaryItems.map((item) => (
+            <div
+              key={item.label}
+              className={cn(
+                'min-w-0 rounded-md border px-3 py-2',
+                item.changed
+                  ? 'border-primary/25 bg-primary/[0.06]'
+                  : 'border-border/70 bg-[hsl(var(--surface-2))]',
+              )}
+            >
+              <p className="metric-label">{item.label}</p>
+              <p
+                className={cn(
+                  'mt-1 truncate text-sm font-bold',
+                  item.changed ? 'text-foreground' : 'text-muted-foreground',
+                )}
+              >
+                {item.value}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[180px_minmax(0,1fr)_220px]">
+        <div>
+          <p className="metric-label mb-2">결과</p>
+          <Select value={bulkResult} onValueChange={onBulkResultChange}>
+            <SelectTrigger className="h-10 bg-card">
+              <SelectValue placeholder="결과" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="keep">결과 유지</SelectItem>
+              {resultOptions.map((result) => (
+                <SelectItem key={result.value} value={result.value}>
+                  {result.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <p className="metric-label mb-2">맵</p>
+          <Select value={bulkMapId} onValueChange={onBulkMapChange}>
+            <SelectTrigger className="h-10 bg-card">
+              <SelectValue placeholder="맵" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="keep">맵 유지</SelectItem>
+              {mapOptions.map((map) => (
+                <SelectItem key={map.value} value={map.value}>
+                  {map.label} · {getModeLabel(map.modeId)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <p className="metric-label mb-2">계정</p>
+          <Select value={bulkAccountId} onValueChange={onBulkAccountChange}>
+            <SelectTrigger className="h-10 bg-card">
+              <SelectValue placeholder="계정" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="keep">계정 유지</SelectItem>
+              <SelectItem value="unassigned">미지정</SelectItem>
+              {accounts.map((account) => (
+                <SelectItem key={account.id} value={account.id}>
+                  {getPlayerAccountLabel(account)}
+                  {account.isMain ? ' · 본계' : ''}
+                  {!account.isActive ? ' · 비활성' : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <Button
+          type="button"
+          variant="outline"
+          className="bg-transparent text-destructive hover:text-destructive"
+          disabled={selectedCount === 0}
+          onClick={onBulkDelete}
+        >
+          <Trash2 className="h-4 w-4" />
+          삭제
+        </Button>
+        <Button type="button" disabled={disabled || !hasUpdates} onClick={onApply}>
+          <Save className="h-4 w-4" />
+          {isSaving ? '저장 중' : hasUpdates ? '변경 적용' : '변경값 선택'}
+        </Button>
+      </div>
     </div>
-
-    <div className="grid gap-2 lg:grid-cols-[180px_minmax(0,1fr)_220px_auto_auto]">
-      <Select value={bulkResult} onValueChange={onBulkResultChange}>
-        <SelectTrigger className="h-10 bg-card">
-          <SelectValue placeholder="결과" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="keep">결과 유지</SelectItem>
-          {resultOptions.map((result) => (
-            <SelectItem key={result.value} value={result.value}>
-              {result.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Select value={bulkMapId} onValueChange={onBulkMapChange}>
-        <SelectTrigger className="h-10 bg-card">
-          <SelectValue placeholder="맵" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="keep">맵 유지</SelectItem>
-          {mapOptions.map((map) => (
-            <SelectItem key={map.value} value={map.value}>
-              {map.label} · {getModeLabel(map.modeId)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Select value={bulkAccountId} onValueChange={onBulkAccountChange}>
-        <SelectTrigger className="h-10 bg-card">
-          <SelectValue placeholder="계정" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="keep">계정 유지</SelectItem>
-          <SelectItem value="unassigned">미지정</SelectItem>
-          {accounts.map((account) => (
-            <SelectItem key={account.id} value={account.id}>
-              {getPlayerAccountLabel(account)}
-              {account.isMain ? ' · 본계' : ''}
-              {!account.isActive ? ' · 비활성' : ''}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Button type="button" disabled={disabled} onClick={onApply}>
-        <Save className="h-4 w-4" />
-        {isSaving ? '저장 중' : '적용'}
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        className="bg-transparent text-destructive hover:text-destructive"
-        disabled={selectedCount === 0}
-        onClick={onBulkDelete}
-      >
-        <Trash2 className="h-4 w-4" />
-        삭제
-      </Button>
-    </div>
-  </div>
-);
+  );
+};
 
 interface RecordRowProps {
   account?: PlayerAccount;

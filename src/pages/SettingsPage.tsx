@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   CheckCircle2,
+  ClipboardPaste,
   Database,
   Download,
   LogOut,
@@ -19,7 +20,22 @@ import { useRef, useState, type ChangeEvent } from 'react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useCreateMatch, useMatches } from '@/hooks/useMatches';
@@ -50,6 +66,9 @@ const SettingsPage = () => {
   const [editingBattleTag, setEditingBattleTag] = useState('');
   const [editingDisplayName, setEditingDisplayName] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+  const [pasteImportOpen, setPasteImportOpen] = useState(false);
+  const [pasteImportText, setPasteImportText] = useState('');
+  const [pasteDefaultAccountId, setPasteDefaultAccountId] = useState('auto');
   const activeAccounts = playerAccounts.filter((account) => account.isActive);
   const inactiveAccounts = playerAccounts.filter((account) => !account.isActive);
   const isAccountMutating =
@@ -204,6 +223,65 @@ const SettingsPage = () => {
     });
   };
 
+  const resolvePasteDefaultAccount = () => {
+    if (pasteDefaultAccountId === 'unassigned') {
+      return null;
+    }
+
+    if (pasteDefaultAccountId !== 'auto') {
+      return activeAccounts.find((account) => account.id === pasteDefaultAccountId) ?? null;
+    }
+
+    return activeAccounts.find((account) => account.isMain) ?? activeAccounts[0] ?? null;
+  };
+
+  const importMatchesFromText = async ({
+    defaultAccount,
+    label,
+    text,
+  }: {
+    defaultAccount?: PlayerAccount | null;
+    label: string;
+    text: string;
+  }) => {
+    const parsed = parseMatchesCsv(text, playerAccounts);
+    const importedMatches = parsed.matches.map((match) => {
+      if (match.accountId || defaultAccount === undefined) {
+        return match;
+      }
+
+      return {
+        ...match,
+        account: defaultAccount?.isMain === false ? ('sub' as const) : ('main' as const),
+        accountId: defaultAccount?.id ?? null,
+      };
+    });
+
+    if (importedMatches.length === 0) {
+      const firstIssue = parsed.issues[0];
+
+      toast({
+        title: '가져올 기록이 없습니다.',
+        description: firstIssue ? `${firstIssue.row}행: ${firstIssue.message}` : undefined,
+        variant: 'destructive',
+      });
+      return false;
+    }
+
+    for (const match of importedMatches) {
+      await createMatch.mutateAsync(match);
+    }
+
+    toast({
+      title: `${label} 가져오기 완료`,
+      description:
+        parsed.issues.length > 0
+          ? `${importedMatches.length.toLocaleString('ko-KR')}개 저장, ${parsed.issues.length.toLocaleString('ko-KR')}개 항목은 확인이 필요합니다.`
+          : `${importedMatches.length.toLocaleString('ko-KR')}개 경기 기록을 저장했습니다.`,
+    });
+    return true;
+  };
+
   const handleImportCsv = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -225,34 +303,47 @@ const SettingsPage = () => {
 
     try {
       const text = await file.text();
-      const parsed = parseMatchesCsv(text, playerAccounts);
-
-      if (parsed.matches.length === 0) {
-        const firstIssue = parsed.issues[0];
-
-        toast({
-          title: '가져올 기록이 없습니다.',
-          description: firstIssue ? `${firstIssue.row}행: ${firstIssue.message}` : undefined,
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      for (const match of parsed.matches) {
-        await createMatch.mutateAsync(match);
-      }
-
-      toast({
-        title: 'CSV 가져오기 완료',
-        description:
-          parsed.issues.length > 0
-            ? `${parsed.matches.length.toLocaleString('ko-KR')}개 저장, ${parsed.issues.length.toLocaleString('ko-KR')}개 항목은 확인이 필요합니다.`
-            : `${parsed.matches.length.toLocaleString('ko-KR')}개 경기 기록을 저장했습니다.`,
-      });
+      await importMatchesFromText({ label: 'CSV', text });
     } catch (error) {
       toast({
         title: 'CSV 가져오기 실패',
         description: error instanceof Error ? error.message : '파일을 다시 확인하세요.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleImportPastedRows = async () => {
+    const text = pasteImportText.trim();
+
+    if (!text) {
+      toast({
+        title: '붙여넣을 표가 없습니다.',
+        description: '스프레드시트의 헤더와 행을 함께 붙여넣으세요.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsImporting(true);
+
+    try {
+      const imported = await importMatchesFromText({
+        defaultAccount: resolvePasteDefaultAccount(),
+        label: '표',
+        text,
+      });
+
+      if (imported) {
+        setPasteImportOpen(false);
+        setPasteImportText('');
+      }
+    } catch (error) {
+      toast({
+        title: '표 가져오기 실패',
+        description: error instanceof Error ? error.message : '입력한 표를 다시 확인하세요.',
         variant: 'destructive',
       });
     } finally {
@@ -486,7 +577,8 @@ const SettingsPage = () => {
             <div className="rounded-md border border-border/70 bg-card p-3">
               <p className="text-sm font-semibold">CSV 백업과 이전</p>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                현재 기록을 CSV로 저장하고, 같은 컬럼 구조의 CSV 파일을 다시 가져옵니다.
+                맵, 결과, 계정은 이름으로 입력할 수 있습니다. 스프레드시트 행을 바로 붙여넣어도
+                됩니다.
               </p>
             </div>
 
@@ -499,6 +591,14 @@ const SettingsPage = () => {
             />
 
             <div className="grid gap-2">
+              <Button
+                variant="outline"
+                className="justify-start bg-transparent"
+                disabled={isImporting || createMatch.isPending}
+                onClick={() => setPasteImportOpen(true)}
+              >
+                <ClipboardPaste className="h-4 w-4" />표 붙여넣기
+              </Button>
               <Button
                 variant="outline"
                 className="justify-start bg-transparent"
@@ -521,6 +621,78 @@ const SettingsPage = () => {
           </div>
         </aside>
       </section>
+
+      <Dialog open={pasteImportOpen} onOpenChange={setPasteImportOpen}>
+        <DialogContent className="flex h-[calc(100dvh-1rem)] max-w-3xl flex-col gap-0 p-0 sm:h-[620px] sm:max-h-[calc(100dvh-3rem)]">
+          <DialogHeader className="border-b border-border/70 px-4 py-4 pr-12 sm:px-5">
+            <DialogTitle>표 붙여넣기</DialogTitle>
+            <DialogDescription>
+              스프레드시트에서 헤더와 행을 복사해 붙여넣습니다. ID 대신 이름을 사용할 수 있습니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
+            <div className="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)]">
+              <div>
+                <p className="metric-label mb-2">빈 계정 기본값</p>
+                <Select value={pasteDefaultAccountId} onValueChange={setPasteDefaultAccountId}>
+                  <SelectTrigger className="h-10 bg-card">
+                    <SelectValue placeholder="계정" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">본계 또는 첫 계정</SelectItem>
+                    <SelectItem value="unassigned">미지정</SelectItem>
+                    {activeAccounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {getPlayerAccountLabel(account)}
+                        {account.isMain ? ' · 본계' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3">
+                <p className="text-xs font-bold text-foreground">권장 헤더</p>
+                <p className="mt-1 text-xs font-semibold leading-5 text-muted-foreground">
+                  시간, 맵, 우리, 상대, 결과, 큐, 계정 순서로 붙여넣으면 됩니다. 결과와 큐는 비워도
+                  점수와 기본값으로 보정됩니다.
+                </p>
+              </div>
+            </div>
+
+            <textarea
+              className="min-h-[280px] w-full resize-none rounded-md border border-input bg-card p-3 font-mono text-sm leading-6 outline-none ring-offset-background placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
+              placeholder={
+                '시간\t맵\t우리\t상대\t결과\t큐\t계정\n2026-06-02 22:10\t네팔\t2\t1\t승리\t솔로\tLUXY\n2026-06-02 22:35\t오아시스\t0\t2\t패배\t솔로\tLUXY'
+              }
+              spellCheck={false}
+              value={pasteImportText}
+              onChange={(event) => setPasteImportText(event.target.value)}
+            />
+          </div>
+
+          <DialogFooter className="border-t border-border/70 px-4 py-4 sm:px-5">
+            <Button
+              type="button"
+              variant="outline"
+              className="bg-transparent"
+              disabled={isImporting}
+              onClick={() => setPasteImportOpen(false)}
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              disabled={isImporting || !pasteImportText.trim()}
+              onClick={handleImportPastedRows}
+            >
+              <Upload className="h-4 w-4" />
+              {isImporting ? '가져오는 중' : '가져오기'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

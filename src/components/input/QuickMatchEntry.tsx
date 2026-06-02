@@ -5,6 +5,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   getModeLabel,
   mapOptions,
   modeOptions,
@@ -26,7 +33,7 @@ interface QuickMatchEntryProps {
   defaultSettings?: UserSettings;
   isSubmitting?: boolean;
   matches?: Match[];
-  onSubmit: (input: MatchCreateInput) => Promise<void>;
+  onSubmit: (input: MatchCreateInput) => Promise<boolean | void>;
 }
 
 const isValidScore = (value: string) => {
@@ -214,7 +221,7 @@ const QuickMatchEntry = ({
       return;
     }
 
-    await onSubmit({
+    const didSubmit = await onSubmit({
       account: selectedAccount?.isMain === false ? 'sub' : 'main',
       accountId: selectedAccount?.id ?? null,
       enemyScore: Number(enemyScore),
@@ -229,6 +236,10 @@ const QuickMatchEntry = ({
       tags: [],
       teamScore: Number(teamScore),
     });
+
+    if (didSubmit === false) {
+      return;
+    }
 
     setMapId('');
     setTeamScore('');
@@ -261,66 +272,65 @@ const QuickMatchEntry = ({
             새 경기
           </h2>
         </div>
-        <div className="flex min-w-0 flex-col gap-2 sm:items-end">
+        <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:min-w-[300px] sm:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)]">
           {accounts.length > 0 ? (
-            <div className="mobile-scroll flex max-w-full gap-1 overflow-x-auto pb-0.5">
-              {accounts.map((account) => {
-                const selected = account.id === effectiveSelectedAccountId;
-
+            <Select
+              value={effectiveSelectedAccountId}
+              onValueChange={(value) => {
+                setSelectedAccountId(value);
+                setError('');
+              }}
+            >
+              <SelectTrigger
+                aria-label="계정 선택"
+                className="h-9 min-w-0 bg-card text-xs font-bold"
+              >
+                <SelectValue placeholder="계정" />
+              </SelectTrigger>
+              <SelectContent align="end">
+                {accounts.map((account) => {
+                  return (
+                    <SelectItem
+                      key={account.id}
+                      value={account.id}
+                      className="text-xs font-semibold"
+                    >
+                      {getPlayerAccountLabel(account)}
+                      {account.isMain ? ' · 본계' : ''}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          ) : (
+            <div className="flex h-9 min-w-0 items-center rounded-md border border-border bg-card px-3 text-xs font-bold text-muted-foreground">
+              계정 미지정
+            </div>
+          )}
+          <Select
+            value={selectedQueueType}
+            onValueChange={(value) => selectQueueType(value as QueueType)}
+          >
+            <SelectTrigger
+              aria-label="큐 종류 선택"
+              className="h-9 min-w-0 bg-card text-xs font-bold"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              {queueOptions.map((queue) => {
                 return (
-                  <button
-                    key={account.id}
-                    type="button"
-                    title={account.battleTag}
-                    className={cn(
-                      'flex h-9 max-w-36 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-bold transition-colors sm:h-8',
-                      selected
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-border bg-card text-muted-foreground hover:bg-secondary hover:text-foreground',
-                    )}
-                    onClick={() => setSelectedAccountId(account.id)}
+                  <SelectItem
+                    key={queue.value}
+                    value={queue.value}
+                    className="text-xs font-semibold"
                   >
-                    <span className="truncate">{getPlayerAccountLabel(account)}</span>
-                    {account.isMain ? (
-                      <span
-                        className={cn(
-                          'shrink-0 text-[10px] font-bold',
-                          selected ? 'text-primary-foreground/75' : 'text-primary',
-                        )}
-                      >
-                        본계
-                      </span>
-                    ) : null}
-                  </button>
+                    {queue.label}
+                  </SelectItem>
                 );
               })}
-            </div>
-          ) : (
-            <Badge variant="outline" className="w-fit bg-transparent">
-              계정 미지정
-            </Badge>
-          )}
-          <div className="mobile-scroll flex max-w-full gap-1 overflow-x-auto pb-0.5">
-            {queueOptions.map((queue) => {
-              const selected = queue.value === selectedQueueType;
-
-              return (
-                <button
-                  key={queue.value}
-                  type="button"
-                  className={cn(
-                    'h-8 shrink-0 rounded-md border px-2.5 text-xs font-bold transition-colors',
-                    selected
-                      ? 'border-foreground bg-foreground text-background'
-                      : 'border-border bg-card text-muted-foreground hover:bg-secondary hover:text-foreground',
-                  )}
-                  onClick={() => selectQueueType(queue.value)}
-                >
-                  {queue.label}
-                </button>
-              );
-            })}
-          </div>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

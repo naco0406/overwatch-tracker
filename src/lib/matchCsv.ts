@@ -88,6 +88,8 @@ const parseCsvRows = (text: string) => {
   let cell = '';
   let row: string[] = [];
   let inQuotes = false;
+  const firstLine = text.split(/\r?\n/, 1)[0] ?? '';
+  const delimiter = firstLine.includes('\t') ? '\t' : ',';
 
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index];
@@ -103,7 +105,7 @@ const parseCsvRows = (text: string) => {
       continue;
     }
 
-    if (char === ',' && !inQuotes) {
+    if (char === delimiter && !inQuotes) {
       row.push(cell);
       cell = '';
       continue;
