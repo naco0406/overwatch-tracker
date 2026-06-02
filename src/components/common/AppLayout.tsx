@@ -59,13 +59,7 @@ const isNavItemActive = (item: NavItem, pathname: string) =>
 
 const AppLayout = () => {
   const { signOut, user } = useAuth();
-  const {
-    errorMessage: liveErrorMessage,
-    isLiveAvailable,
-    startCapture,
-    status: liveStatus,
-    stopCapture,
-  } = useLiveCapture();
+  const { isLiveAvailable, startCapture, status: liveStatus, stopCapture } = useLiveCapture();
   const location = useLocation();
   const navigate = useNavigate();
   const liveNavItem: NavItem = {
@@ -85,6 +79,7 @@ const AppLayout = () => {
         : liveStatus === 'unsupported'
           ? '지원 안 함'
           : '화면 공유';
+  const liveNavStatusLabel = liveStatus === 'error' ? '재시도' : liveStatusLabel[liveStatus];
 
   const handleStartLive = async () => {
     const started = await startCapture();
@@ -208,7 +203,7 @@ const AppLayout = () => {
                 />
                 <span className="truncate text-sm font-bold">LIVE</span>
               </span>
-              <span className="text-xs font-bold">{liveStatusLabel[liveStatus]}</span>
+              <span className="text-xs font-bold">{liveNavStatusLabel}</span>
             </NavLink>
             <Button
               type="button"
@@ -225,9 +220,6 @@ const AppLayout = () => {
               {isLiveAvailable ? <Square className="h-4 w-4" /> : <MonitorUp className="h-4 w-4" />}
               {liveActionLabel}
             </Button>
-            {liveErrorMessage ? (
-              <p className="mt-2 text-xs font-semibold text-destructive">{liveErrorMessage}</p>
-            ) : null}
           </div>
         </div>
         <div className="border-t border-border/70 p-3">
