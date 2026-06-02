@@ -1,0 +1,348 @@
+{
+  "schema": "overwatch-tracker.vision-sample-expectations.v1",
+  "version": 1,
+  "samples": [
+    {
+      "file": "sample.png",
+      "screenType": "scoreboard",
+      "purpose": ["ocr_match_result", "live_result_candidate"],
+      "expected": {
+        "playerName": "LUXY",
+        "mapId": "nepal",
+        "modeId": "control",
+        "result": "win",
+        "score": {
+          "team": 2,
+          "enemy": 1
+        },
+        "heroIds": ["doomfist"]
+      },
+      "assertions": {
+        "accountName": "LUXY",
+        "enemyScore": 1,
+        "mapId": "nepal",
+        "modeId": "control",
+        "myHero": "doomfist",
+        "playedAtLocal": "2026-05-25T02:05",
+        "result": "win",
+        "selfRow": 1,
+        "teamScore": 2
+      }
+    },
+    {
+      "file": "sample2.png",
+      "screenType": "in_game_status",
+      "purpose": ["live_context_detection"],
+      "expected": {
+        "playerName": "LUXY",
+        "mapId": "ilios",
+        "modeId": "control",
+        "heroIds": ["tracer"]
+      },
+      "ignore": ["result", "score"],
+      "assertions": {
+        "accountName": "LUXY",
+        "enemyScore": null,
+        "mapId": "ilios",
+        "modeId": "control",
+        "myHero": "tracer",
+        "playedAtLocal": null,
+        "result": null,
+        "teamScore": null
+      }
+    },
+    {
+      "file": "sample3.png",
+      "screenType": "match_result",
+      "purpose": ["ocr_match_result", "live_result_candidate"],
+      "expected": {
+        "result": "loss",
+        "heroIds": ["tracer"]
+      },
+      "optional": {
+        "mapId": null,
+        "modeId": null,
+        "score": null
+      },
+      "assertions": {
+        "accountName": "LUXY",
+        "enemyScore": null,
+        "mapId": null,
+        "modeId": null,
+        "myHero": "tracer",
+        "playedAtLocal": null,
+        "result": "loss",
+        "teamScore": null
+      }
+    },
+    {
+      "file": "sample4.png",
+      "screenType": "match_history",
+      "purpose": ["ocr_bulk_history"],
+      "expected": {
+        "playerName": "LUXY",
+        "visibleOrder": "newest_first",
+        "persistenceOrder": "oldest_first",
+        "matches": [
+          {
+            "visibleOrder": 1,
+            "mapId": "suravasa",
+            "modeId": "flashpoint",
+            "playlist": "competitive",
+            "result": "loss",
+            "score": {
+              "team": 0,
+              "enemy": 3
+            }
+          },
+          {
+            "visibleOrder": 2,
+            "mapId": "oasis",
+            "modeId": "control",
+            "playlist": "competitive",
+            "result": "win",
+            "score": {
+              "team": 2,
+              "enemy": 0
+            }
+          },
+          {
+            "visibleOrder": 3,
+            "mapId": "esperanca",
+            "modeId": "push",
+            "playlist": "competitive",
+            "result": "win",
+            "score": {
+              "team": 1,
+              "enemy": 0
+            }
+          },
+          {
+            "visibleOrder": 4,
+            "mapId": "nepal",
+            "modeId": "control",
+            "playlist": "competitive",
+            "result": "win",
+            "score": {
+              "team": 2,
+              "enemy": 0
+            }
+          },
+          {
+            "visibleOrder": 5,
+            "mapId": "runasapi",
+            "modeId": "push",
+            "playlist": "competitive",
+            "result": "loss",
+            "score": {
+              "team": 0,
+              "enemy": 1
+            }
+          },
+          {
+            "visibleOrder": 6,
+            "mapId": "lijiang-tower",
+            "modeId": "control",
+            "playlist": "quick_play",
+            "result": "win",
+            "score": {
+              "team": 2,
+              "enemy": 0
+            }
+          },
+          {
+            "visibleOrder": 7,
+            "mapId": "kings-row",
+            "modeId": "hybrid",
+            "playlist": "quick_play",
+            "result": "win",
+            "score": {
+              "team": 3,
+              "enemy": 0
+            }
+          }
+        ],
+        "importFilter": {
+          "playlist": "competitive"
+        }
+      },
+      "requiredFields": [
+        "matches[].mapId",
+        "matches[].modeId",
+        "matches[].playlist",
+        "matches[].result",
+        "matches[].score.team",
+        "matches[].score.enemy"
+      ],
+      "dedupe": {
+        "strategy": "first_existing_match_boundary",
+        "matchFields": ["mapId", "result", "score.team", "score.enemy"],
+        "notes": "화면은 최신순이다. 비슷한 시일 안에 같은 맵/승패/스코어 조합이 반복될 가능성이 낮다는 가정으로 이미 입력된 경기 경계를 추정한다."
+      },
+      "notes": "기록 화면은 경쟁전이 아닌 모드도 섞일 수 있다. DB 저장 후보는 importFilter에 맞는 경쟁전 행만 사용하고, 저장 순서는 오래된 경기부터가 되도록 visibleOrder를 역순으로 변환한다."
+    },
+    {
+      "file": "sample5.png",
+      "screenType": "match_summary",
+      "purpose": ["ocr_match_result", "live_result_candidate"],
+      "expected": {
+        "mapId": "suravasa",
+        "modeId": "flashpoint",
+        "result": "loss",
+        "score": {
+          "team": 0,
+          "enemy": 3
+        },
+        "heroIds": []
+      },
+      "requiredFields": ["mapId", "modeId", "result", "score.team", "score.enemy"],
+      "notes": "게임 분석 요약 화면. 플레이 영웅이 보강되면 heroIds에 추가한다."
+    },
+    {
+      "file": "sample6.png",
+      "screenType": "competitive_progress",
+      "purpose": ["ocr_bulk_progress", "live_result_candidate"],
+      "expected": {
+        "visibleOrder": "newest_first",
+        "persistenceOrder": "oldest_first",
+        "matches": [
+          {
+            "visibleOrder": 1,
+            "mapId": "suravasa",
+            "modeId": "flashpoint",
+            "playlist": "competitive",
+            "heroIds": ["mei", "symmetra", "reaper"],
+            "result": "loss",
+            "score": {
+              "team": 0,
+              "enemy": 3
+            }
+          },
+          {
+            "visibleOrder": 2,
+            "mapId": "oasis",
+            "modeId": "control",
+            "playlist": "competitive",
+            "heroIds": ["cassidy", "symmetra", "tracer"],
+            "result": "win",
+            "score": {
+              "team": 2,
+              "enemy": 0
+            }
+          },
+          {
+            "visibleOrder": 3,
+            "mapId": "esperanca",
+            "modeId": "push",
+            "playlist": "competitive",
+            "heroIds": ["symmetra", "tracer"],
+            "result": "win",
+            "score": {
+              "team": 1,
+              "enemy": 0
+            }
+          },
+          {
+            "visibleOrder": 4,
+            "mapId": "nepal",
+            "modeId": "control",
+            "playlist": "competitive",
+            "heroIds": ["sojourn", "cassidy", "tracer"],
+            "result": "win",
+            "score": {
+              "team": 2,
+              "enemy": 0
+            }
+          },
+          {
+            "visibleOrder": 5,
+            "mapId": "runasapi",
+            "modeId": "push",
+            "playlist": "competitive",
+            "heroIds": ["tracer"],
+            "result": "loss",
+            "score": {
+              "team": 0,
+              "enemy": 1
+            }
+          },
+          {
+            "visibleOrder": 6,
+            "mapId": "new-junk-city",
+            "modeId": "flashpoint",
+            "playlist": "competitive",
+            "heroIds": ["tracer"],
+            "result": "win",
+            "score": {
+              "team": 3,
+              "enemy": 2
+            }
+          },
+          {
+            "visibleOrder": 7,
+            "mapId": "oasis",
+            "modeId": "control",
+            "playlist": "competitive",
+            "heroIds": ["freja", "pharah"],
+            "result": "loss",
+            "score": {
+              "team": 1,
+              "enemy": 2
+            }
+          },
+          {
+            "visibleOrder": 8,
+            "mapId": "ilios",
+            "modeId": "control",
+            "playlist": "competitive",
+            "heroIds": ["symmetra", "reaper"],
+            "result": "win",
+            "score": {
+              "team": 2,
+              "enemy": 0
+            }
+          }
+        ]
+      },
+      "requiredFields": [
+        "matches[].mapId",
+        "matches[].modeId",
+        "matches[].playlist",
+        "matches[].result",
+        "matches[].score.team",
+        "matches[].score.enemy",
+        "matches[].heroIds"
+      ],
+      "dedupe": {
+        "strategy": "first_existing_match_boundary",
+        "matchFields": ["mapId", "result", "score.team", "score.enemy"],
+        "notes": "화면은 최신순이다. DB 저장 후보로 만들 때는 오래된 경기부터 처리하고, 이미 입력된 경기 경계를 찾으면 그보다 오래된 행은 기본적으로 제외한다."
+      },
+      "notes": "경쟁전 진척도 화면이므로 matches의 모든 행은 경쟁전 후보로 취급한다. 저장 순서는 오래된 경기부터가 되도록 visibleOrder를 역순으로 변환한다."
+    },
+    {
+      "file": "sample7.png",
+      "screenType": "map_selection",
+      "purpose": ["live_map_recommendation"],
+      "expected": {
+        "mapCandidates": [
+          {
+            "mapId": "ilios",
+            "label": "일리오스"
+          },
+          {
+            "mapId": "runasapi",
+            "label": "루나사피"
+          },
+          {
+            "mapId": "paraiso",
+            "label": "파라이수"
+          }
+        ]
+      },
+      "ignore": ["result", "score", "heroIds"],
+      "requiredFields": ["mapCandidates[].mapId"],
+      "notes": "LIVE 맵 추천용 샘플. 후보 맵을 인식한 뒤 해당 후보 안에서 승률 추천을 계산한다."
+    }
+  ]
+}

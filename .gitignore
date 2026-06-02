@@ -10,7 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
-samples/vision/
+samples/vision/*
+!samples/vision/expectations.json
 .env
 .env.*
 !.env.example

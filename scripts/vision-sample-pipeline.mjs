@@ -29,44 +29,35 @@ import {
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const defaultSamplePath = resolve(repoRoot, 'samples/vision/sample.png');
 const samplePath = resolve(process.argv[2] ?? defaultSamplePath);
+const expectationsPath = resolve(repoRoot, 'samples/vision/expectations.json');
 const accountName = process.env.OW_SAMPLE_ACCOUNT ?? 'LUXY';
 const tesseractCachePath = process.env.OW_TESSERACT_CACHE ?? join(tmpdir(), 'ow-vision-tesseract');
 const ocrLanguages = ['kor', 'eng'];
 
-const expectedBySampleName = {
-  'sample.png': {
-    accountName,
-    enemyScore: 1,
-    mapId: 'nepal',
-    modeId: 'control',
-    myHero: 'doomfist',
-    playedAtLocal: '2026-05-25T02:05',
-    result: 'win',
-    selfRow: 1,
-    teamScore: 2,
-  },
-  'sample2.png': {
-    accountName,
-    enemyScore: null,
-    mapId: 'ilios',
-    modeId: 'control',
-    myHero: 'tracer',
-    playedAtLocal: null,
-    result: null,
-    teamScore: null,
-  },
-  'sample3.png': {
-    accountName,
-    enemyScore: null,
-    mapId: null,
-    modeId: null,
-    myHero: 'tracer',
-    playedAtLocal: null,
-    result: 'loss',
-    teamScore: null,
-  },
+const loadSampleSpecs = () => {
+  if (!existsSync(expectationsPath)) {
+    return {};
+  }
+
+  try {
+    const config = JSON.parse(readFileSync(expectationsPath, 'utf8'));
+    const samples = Array.isArray(config.samples) ? config.samples : [];
+
+    return Object.fromEntries(
+      samples
+        .filter((sample) => typeof sample.file === 'string')
+        .map((sample) => [sample.file, sample]),
+    );
+  } catch (error) {
+    throw new Error(
+      `Failed to read ${expectationsPath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 };
-const expected = expectedBySampleName[basename(samplePath)] ?? null;
+
+const sampleSpecsByName = loadSampleSpecs();
+const sampleSpec = sampleSpecsByName[basename(samplePath)] ?? null;
+const expected = sampleSpec?.assertions ?? null;
 const supplementalOcrRegions = [
   {
     name: 'top-status',
@@ -766,6 +757,7 @@ const main = async () => {
   try {
     start('pipeline', {
       expected,
+      sampleSpec,
       samplePath,
       tempDir,
     });
@@ -836,7 +828,7 @@ const main = async () => {
       textEvidence,
     });
 
-    console.log(JSON.stringify({ actual, assertion, expected }, null, 2));
+    console.log(JSON.stringify({ actual, assertion, expected, sampleSpec }, null, 2));
     process.exitCode = assertion ? (assertion.ok ? 0 : 1) : 0;
   } finally {
     if (process.env.OW_KEEP_VISION_TMP !== '1') {
