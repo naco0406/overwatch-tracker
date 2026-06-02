@@ -1,6 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
 import {
-  Activity,
   CircleAlert,
   FileCheck2,
   MapIcon,
@@ -10,11 +9,13 @@ import {
   Square,
   TimerReset,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { PageHeader } from '@/components/common/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { getMapLabel, getModeLabel } from '@/data/matchOptions';
+import { getMapScreenshotPath } from '@/data/masterAssets';
 import {
   formatLiveNumber,
   formatLiveSampleTime,
@@ -26,6 +27,9 @@ import {
   type LiveStreamInfo,
   useLiveCapture,
 } from '@/hooks/useLiveCapture';
+import { useMatches } from '@/hooks/useMatches';
+import type { LiveVisionAnalysis } from '@/lib/liveVision';
+import { formatWinRate, rankMapRecommendations, type MapRecommendation } from '@/lib/matchStats';
 import { cn } from '@/lib/utils';
 
 const livePreviewIntervalMs = liveSampleIntervalMs;
@@ -45,8 +49,22 @@ const LivePage = () => {
     status,
     stopCapture,
     streamInfo,
+    visionAnalysis,
   } = useLiveCapture();
+  const { data: matches = [] } = useMatches();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const mapSelectionIds = useMemo(
+    () => visionAnalysis?.mapSelection?.candidates.map((candidate) => candidate.mapId) ?? [],
+    [visionAnalysis],
+  );
+  const mapRecommendations = useMemo(
+    () =>
+      rankMapRecommendations({
+        mapIds: mapSelectionIds,
+        matches,
+      }),
+    [mapSelectionIds, matches],
+  );
 
   const stopLive = useCallback(() => {
     stopCapture('idle');
@@ -222,7 +240,11 @@ const LivePage = () => {
         </div>
 
         <aside className="space-y-3">
-          <LiveInsightPanel frameMetrics={frameMetrics} />
+          <LiveInsightPanel
+            frameMetrics={frameMetrics}
+            recommendations={mapRecommendations}
+            visionAnalysis={visionAnalysis}
+          />
           <StreamStatusPanel streamInfo={streamInfo} />
         </aside>
       </section>
@@ -300,55 +322,122 @@ const LiveErrorNotice = ({ message }: { message: string }) => (
   </div>
 );
 
-const LiveInsightPanel = ({ frameMetrics }: { frameMetrics: LiveFrameMetrics | null }) => (
-  <div className="workspace-panel overflow-hidden">
-    <div className="section-header">
-      <p className="metric-label">게임 중 도움</p>
-      <h2 className="mt-1 text-lg font-bold">분석 대기열</h2>
-    </div>
-    <div className="divide-y divide-border/70">
-      <InsightRow
-        icon={MapIcon}
-        label="맵 선택 추천"
-        status={frameMetrics ? '탐지 대기' : '준비 중'}
-        value="맵 선택 화면이 잡히면 후보 맵을 승률순으로 정렬"
-      />
-      <InsightRow
-        icon={FileCheck2}
-        label="결과 후보 기록"
-        status={frameMetrics ? '탐지 대기' : '준비 중'}
-        value="결과 화면 또는 점수판에서 스코어와 승패 후보 생성"
-      />
-      <InsightRow
-        icon={Activity}
-        label="진행 중 화면"
-        status="저부하"
-        value="일반 진행 화면에서는 무거운 OCR을 쉬고 컨텍스트 유지"
-      />
-    </div>
-  </div>
-);
+const LiveInsightPanel = ({
+  frameMetrics,
+  recommendations,
+  visionAnalysis,
+}: {
+  frameMetrics: LiveFrameMetrics | null;
+  recommendations: MapRecommendation[];
+  visionAnalysis: LiveVisionAnalysis | null;
+}) => {
+  const detectedMapSelection = visionAnalysis?.mapSelection;
+  const bestRecommendation = recommendations.find((recommendation) => recommendation.decisive > 0);
+  const statusLabel = detectedMapSelection
+    ? `${Math.round(visionAnalysis.screen.confidence * 100)}%`
+    : frameMetrics
+      ? '대기'
+      : '준비';
 
-interface InsightRowProps {
-  icon: LucideIcon;
-  label: string;
-  status: string;
-  value: string;
-}
-
-const InsightRow = ({ icon: Icon, label, status, value }: InsightRowProps) => (
-  <div className="grid grid-cols-[36px_minmax(0,1fr)] gap-3 p-3 sm:items-start">
-    <div className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary text-primary">
-      <Icon className="h-4 w-4" />
-    </div>
-    <div className="min-w-0">
-      <div className="flex items-center justify-between gap-3">
-        <p className="truncate text-sm font-bold">{label}</p>
+  return (
+    <div className="workspace-panel overflow-hidden">
+      <div className="section-header flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="metric-label">맵 선택 추천</p>
+          <h2 className="mt-1 truncate text-lg font-bold">
+            {bestRecommendation ? getMapLabel(bestRecommendation.mapId) : '후보 감지 대기'}
+          </h2>
+        </div>
         <Badge variant="outline" className="shrink-0 bg-transparent">
-          {status}
+          {statusLabel}
         </Badge>
       </div>
-      <p className="mt-1 text-xs font-semibold leading-relaxed text-muted-foreground">{value}</p>
+
+      {bestRecommendation ? (
+        <div className="border-y border-border/70">
+          <div className="relative min-h-[172px] overflow-hidden bg-slate-950">
+            <img
+              src={getMapScreenshotPath(bestRecommendation.mapId)}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/55 to-slate-950/10" />
+            <div className="relative flex min-h-[172px] flex-col justify-end p-4 text-white">
+              <p className="text-xs font-bold text-white/70">
+                {getModeLabel(bestRecommendation.modeId)}
+              </p>
+              <div className="mt-2 flex items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-2xl font-black">
+                    {formatWinRate(bestRecommendation.winRate)}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-white/70">
+                    {bestRecommendation.wins}승 {bestRecommendation.losses}패 ·{' '}
+                    {bestRecommendation.decisive}경기
+                  </p>
+                </div>
+                <Badge className="shrink-0 bg-white text-slate-950 hover:bg-white">
+                  추천 {Math.round(bestRecommendation.recommendationScore)}
+                </Badge>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="border-y border-border/70 p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary text-primary">
+              <MapIcon className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold">
+                {detectedMapSelection
+                  ? '후보는 감지됐지만 데이터가 부족합니다'
+                  : '맵 선택 화면 대기 중'}
+              </p>
+              <p className="mt-1 text-xs font-semibold leading-relaxed text-muted-foreground">
+                {detectedMapSelection
+                  ? '해당 후보 맵의 승패 기록이 쌓이면 추천이 표시됩니다.'
+                  : '오버워치 맵 선택 화면이 공유 프레임에 잡히면 후보를 비교합니다.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="divide-y divide-border/70">
+        {recommendations.length > 0 ? (
+          recommendations.map((recommendation) => (
+            <MapRecommendationRow key={recommendation.mapId} recommendation={recommendation} />
+          ))
+        ) : (
+          <div className="p-3 text-sm font-semibold text-muted-foreground">후보 없음</div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const MapRecommendationRow = ({ recommendation }: { recommendation: MapRecommendation }) => (
+  <div className="grid grid-cols-[44px_minmax(0,1fr)_72px] items-center gap-3 p-3">
+    <img
+      src={getMapScreenshotPath(recommendation.mapId)}
+      alt=""
+      className="h-11 w-11 rounded-md object-cover"
+    />
+    <div className="min-w-0">
+      <p className="truncate text-sm font-bold">{getMapLabel(recommendation.mapId)}</p>
+      <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+        {recommendation.decisive > 0
+          ? `${recommendation.wins}승 ${recommendation.losses}패 · ${recommendation.decisive}경기`
+          : '데이터 없음'}
+      </p>
+    </div>
+    <div className="text-right">
+      <p className="text-sm font-black">{formatWinRate(recommendation.winRate)}</p>
+      <p className="mt-1 text-[10px] font-bold text-muted-foreground">
+        {Math.round(recommendation.recommendationScore)}
+      </p>
     </div>
   </div>
 );
@@ -410,7 +499,11 @@ const EvidenceRow = ({ event }: { event: LiveEvidenceEvent }) => (
       <span
         className={cn(
           'h-2 w-2 rounded-full',
-          event.kind === 'capture' ? 'bg-destructive' : 'bg-muted-foreground/60',
+          event.kind === 'capture'
+            ? 'bg-destructive'
+            : event.kind === 'vision'
+              ? 'bg-primary'
+              : 'bg-muted-foreground/60',
         )}
       />
       <p className="text-xs font-bold text-muted-foreground">

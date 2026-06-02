@@ -1,3 +1,4 @@
+import { mapOptions, type MapOption } from '@/data/matchOptions';
 import type { Match } from '@/types/match';
 
 const getMatchSortTime = (value?: string | null) => (value ? new Date(value).getTime() : 0);
@@ -136,4 +137,68 @@ export const getTodayRange = () => {
     end: end.toISOString(),
     start: start.toISOString(),
   };
+};
+
+export interface MapRecommendation {
+  confidence: number;
+  decisive: number;
+  draws: number;
+  losses: number;
+  mapId: MapOption['value'];
+  modeId: MapOption['modeId'];
+  recommendationScore: number;
+  smoothedWinRate: number;
+  total: number;
+  winRate: number | null;
+  wins: number;
+}
+
+const mapOptionById = new Map(mapOptions.map((map) => [map.value, map] as const));
+
+export const rankMapRecommendations = ({
+  mapIds,
+  matches,
+}: {
+  mapIds: string[];
+  matches: Match[];
+}): MapRecommendation[] => {
+  const uniqueMapIds = [...new Set(mapIds)].filter((mapId) => mapOptionById.has(mapId));
+  const baseline = summarizeResults(matches).winRate ?? 50;
+  const baselineRate = baseline / 100;
+  const priorStrength = 4;
+
+  return uniqueMapIds
+    .map((mapId, orderIndex) => {
+      const map = mapOptionById.get(mapId as MapOption['value']);
+      const mapMatches = matches.filter((match) => match.mapId === mapId);
+      const summary = summarizeResults(mapMatches);
+      const smoothed =
+        (summary.wins + baselineRate * priorStrength) /
+        Math.max(1, summary.decisive + priorStrength);
+      const confidence = Math.min(1, summary.decisive / 8);
+
+      return {
+        orderIndex,
+        recommendation: {
+          confidence,
+          decisive: summary.decisive,
+          draws: summary.draws,
+          losses: summary.losses,
+          mapId: mapId as MapOption['value'],
+          modeId: map?.modeId ?? 'control',
+          recommendationScore: Math.round((smoothed * 0.86 + confidence * 0.14) * 1000) / 10,
+          smoothedWinRate: Math.round(smoothed * 100),
+          total: summary.total,
+          winRate: summary.winRate,
+          wins: summary.wins,
+        },
+      };
+    })
+    .sort(
+      (left, right) =>
+        right.recommendation.recommendationScore - left.recommendation.recommendationScore ||
+        right.recommendation.decisive - left.recommendation.decisive ||
+        left.orderIndex - right.orderIndex,
+    )
+    .map((item) => item.recommendation);
 };
