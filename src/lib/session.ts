@@ -35,36 +35,24 @@ export const shouldReuseSession = (
 };
 
 export const groupMatchesBySession = (matches: Match[]): MatchSession[] => {
-  const sortedInputMatches = [...matches].sort(compareMatchesByTimelineAsc);
-  const sessionGroups: Match[][] = [];
+  const sessions = new Map<string, Match[]>();
 
-  for (const match of sortedInputMatches) {
-    const currentGroup = sessionGroups.at(-1);
-    const previousMatch = currentGroup?.at(-1);
-
-    if (
-      currentGroup &&
-      previousMatch &&
-      shouldReuseSession(previousMatch.playedAt, match.playedAt)
-    ) {
-      currentGroup.push(match);
-      continue;
-    }
-
-    sessionGroups.push([match]);
+  for (const match of matches) {
+    const current = sessions.get(match.sessionId) ?? [];
+    current.push(match);
+    sessions.set(match.sessionId, current);
   }
 
-  return sessionGroups
-    .map((sessionMatches) => {
+  return Array.from(sessions.entries())
+    .map(([sessionId, sessionMatches]) => {
       const sortedMatches = [...sessionMatches].sort(compareMatchesByTimelineAsc);
-      const firstMatch = sortedMatches[0];
 
       return {
         draws: sortedMatches.filter((match) => match.result === 'draw').length,
         endedAt: sortedMatches.at(-1)?.playedAt ?? '',
         losses: sortedMatches.filter((match) => match.result === 'loss').length,
         matches: sortedMatches,
-        sessionId: firstMatch ? `${firstMatch.sessionId}:${firstMatch.id}` : 'session_empty',
+        sessionId,
         startedAt: sortedMatches[0]?.playedAt ?? '',
         wins: sortedMatches.filter((match) => match.result === 'win').length,
       };
