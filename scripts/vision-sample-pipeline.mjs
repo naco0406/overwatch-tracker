@@ -27,23 +27,46 @@ import {
 } from '../src/lib/visionPipelineCore.ts';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const defaultSamplePath = resolve(repoRoot, 'sample.png');
+const defaultSamplePath = resolve(repoRoot, 'samples/vision/sample.png');
 const samplePath = resolve(process.argv[2] ?? defaultSamplePath);
 const accountName = process.env.OW_SAMPLE_ACCOUNT ?? 'LUXY';
 const tesseractCachePath = process.env.OW_TESSERACT_CACHE ?? join(tmpdir(), 'ow-vision-tesseract');
 const ocrLanguages = ['kor', 'eng'];
 
-const expectedBySample = {
-  accountName,
-  enemyScore: 1,
-  mapId: 'nepal',
-  modeId: 'control',
-  myHero: 'doomfist',
-  result: 'win',
-  selfRow: 1,
-  teamScore: 2,
+const expectedBySampleName = {
+  'sample.png': {
+    accountName,
+    enemyScore: 1,
+    mapId: 'nepal',
+    modeId: 'control',
+    myHero: 'doomfist',
+    playedAtLocal: '2026-05-25T02:05',
+    result: 'win',
+    selfRow: 1,
+    teamScore: 2,
+  },
+  'sample2.png': {
+    accountName,
+    enemyScore: null,
+    mapId: 'ilios',
+    modeId: 'control',
+    myHero: 'tracer',
+    playedAtLocal: null,
+    result: null,
+    teamScore: null,
+  },
+  'sample3.png': {
+    accountName,
+    enemyScore: null,
+    mapId: null,
+    modeId: null,
+    myHero: 'tracer',
+    playedAtLocal: null,
+    result: 'loss',
+    teamScore: null,
+  },
 };
-const expected = basename(samplePath) === 'sample.png' ? expectedBySample : null;
+const expected = expectedBySampleName[basename(samplePath)] ?? null;
 const supplementalOcrRegions = [
   {
     name: 'top-status',
@@ -716,21 +739,16 @@ const assertResult = (actual) => {
     return null;
   }
 
-  const checks = [
-    ['mapId', actual.mapId, expected.mapId],
-    ['modeId', actual.modeId, expected.modeId],
-    ['teamScore', actual.teamScore, expected.teamScore],
-    ['enemyScore', actual.enemyScore, expected.enemyScore],
-    ['result', actual.result, expected.result],
-    ['selfRow', actual.selfRow, expected.selfRow],
-    ['accountName', actual.accountName, expected.accountName],
-    ['myHero', actual.myHero, expected.myHero],
-  ].map(([field, received, wanted]) => ({
-    field,
-    ok: received === wanted,
-    received,
-    wanted,
-  }));
+  const checks = Object.entries(expected).map(([field, wanted]) => {
+    const received = actual[field];
+
+    return {
+      field,
+      ok: received === wanted,
+      received,
+      wanted,
+    };
+  });
 
   return {
     checks,
