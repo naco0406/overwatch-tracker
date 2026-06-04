@@ -172,11 +172,12 @@ const SessionsPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
   const [sessionPage, setSessionPage] = useState(1);
-  const { data: matches = [], isLoading } = useMatches();
-  const { data: playerAccounts = [] } = usePlayerAccounts();
+  const { data: matches = [], isLoading: isMatchesLoading } = useMatches();
+  const { data: playerAccounts = [], isLoading: isAccountsLoading } = usePlayerAccounts();
   const { data: userSettings } = useUserSettings();
   const updateMatchMutation = useUpdateMatch();
   const deleteMatchMutation = useDeleteMatch();
+  const isSessionsLoading = isMatchesLoading || isAccountsLoading;
   const sessions = useMemo(() => groupMatchesBySession(matches), [matches]);
   const accountById = useMemo(
     () => new Map(playerAccounts.map((account) => [account.id, account])),
@@ -318,7 +319,7 @@ const SessionsPage = () => {
         title="세션"
         actions={
           <Badge variant="secondary">
-            {isLoading ? '불러오는 중' : `${sessions.length.toLocaleString('ko-KR')} 세션`}
+            {isSessionsLoading ? '불러오는 중' : `${sessions.length.toLocaleString('ko-KR')} 세션`}
           </Badge>
         }
       />
@@ -326,7 +327,7 @@ const SessionsPage = () => {
       <section className="border-y border-border/70 bg-card">
         <div className="grid grid-cols-2 divide-x divide-y divide-border/70 bg-[hsl(var(--surface-2))] md:grid-cols-4 md:divide-y-0">
           {metrics.map((metric) => (
-            <MetricCell key={metric.label} {...metric} isLoading={isLoading} />
+            <MetricCell key={metric.label} {...metric} isLoading={isSessionsLoading} />
           ))}
         </div>
       </section>
@@ -341,9 +342,13 @@ const SessionsPage = () => {
               </div>
               <div className="text-right">
                 <p className="metric-label">표시</p>
-                <p className="mt-1 text-sm font-bold tabular-nums">
-                  {filteredSessions.length.toLocaleString('ko-KR')}
-                </p>
+                {isSessionsLoading ? (
+                  <SkeletonBlock className="mt-2 h-4 w-10 sm:ml-auto" />
+                ) : (
+                  <p className="mt-1 text-sm font-bold tabular-nums">
+                    {filteredSessions.length.toLocaleString('ko-KR')}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -397,7 +402,7 @@ const SessionsPage = () => {
               </div>
             ) : null}
 
-            {!isLoading && visibleSessions.length > 0 ? (
+            {!isSessionsLoading && visibleSessions.length > 0 ? (
               <PaginationBar
                 itemLabel="세션"
                 page={currentSessionPage}
@@ -413,7 +418,7 @@ const SessionsPage = () => {
             ) : null}
           </div>
 
-          {isLoading ? (
+          {isSessionsLoading ? (
             <SessionIndexSkeleton />
           ) : visibleSessions.length > 0 ? (
             <>
@@ -453,7 +458,7 @@ const SessionsPage = () => {
         </section>
 
         <section className="min-w-0 xl:sticky xl:top-4 xl:max-h-[calc(100dvh-252px)] xl:overflow-hidden">
-          {isLoading ? (
+          {isSessionsLoading ? (
             <SelectedSessionSkeleton />
           ) : selectedSession ? (
             <SelectedSessionDetail

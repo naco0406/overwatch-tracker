@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ChevronDown, ChevronUp, Minus, Plus, RotateCcw, Save, Search, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
@@ -113,9 +113,11 @@ type MatchEntryFormValues = z.infer<typeof matchEntrySchema>;
 interface MatchEntryFormProps {
   accounts?: PlayerAccount[];
   defaultSettings?: UserSettings;
+  headerContent?: ReactNode;
   initialDraft?: Partial<MatchCreateInput>;
   initialMatch?: Match;
   isSubmitting?: boolean;
+  layout?: 'default' | 'dialog';
   onSaved?: () => void;
   onSubmit: (input: MatchCreateInput) => Promise<boolean | void>;
   source?: MatchCreateInput['source'];
@@ -171,14 +173,17 @@ const getDefaultFormValues = (
 const MatchEntryForm = ({
   accounts = [],
   defaultSettings,
+  headerContent,
   initialDraft,
   initialMatch,
   isSubmitting = false,
+  layout = 'default',
   onSaved,
   onSubmit,
   source,
   submitLabel,
 }: MatchEntryFormProps) => {
+  const isDialogLayout = layout === 'dialog';
   const mainAccount = accounts.find((account) => account.isMain);
   const fallbackAccountId = mainAccount?.id ?? accounts[0]?.id ?? '';
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
@@ -347,362 +352,382 @@ const MatchEntryForm = ({
 
   return (
     <Form {...form}>
-      <form className="space-y-4" onSubmit={submit}>
-        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_310px] lg:items-start">
-          <div className="min-w-0">
-            <div className="mb-3 grid gap-2 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)] lg:items-center">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  aria-label="맵 검색"
-                  className="h-9 pl-9 text-sm font-semibold"
-                  placeholder="맵 검색"
-                  value={mapQuery}
-                  onChange={(event) => setMapQuery(event.target.value)}
-                />
-              </div>
-              <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1">
-                {modeOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={cn(
-                      'h-9 shrink-0 rounded-md border px-3 text-xs font-bold transition-colors',
-                      watchedModeId === option.value
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-border bg-card text-muted-foreground hover:bg-secondary',
-                    )}
-                    onClick={() => form.setValue('modeId', option.value, { shouldValidate: true })}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+      <form className={cn(isDialogLayout && 'flex min-h-0 flex-1 flex-col')} onSubmit={submit}>
+        <div
+          className={cn(
+            'space-y-4',
+            isDialogLayout && 'min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5',
+          )}
+        >
+          {headerContent}
 
-            <div className="mobile-scroll h-[228px] overflow-x-auto pb-2 sm:h-[244px]">
-              {filteredMaps.length > 0 ? (
-                <div className="grid h-full auto-cols-[144px] grid-flow-col grid-rows-2 gap-2 sm:auto-cols-[164px]">
-                  {filteredMaps.map((map) => {
-                    const selected = watchedMapId === map.value;
-
-                    return (
-                      <button
-                        key={map.value}
-                        type="button"
-                        className={cn(
-                          'overflow-hidden rounded-md border bg-card text-left transition-[background-color,border-color,color] hover:border-primary/35 hover:bg-secondary',
-                          selected && 'border-primary bg-primary/[0.06] text-primary',
-                        )}
-                        onClick={() => {
-                          form.setValue('modeId', map.modeId, { shouldValidate: true });
-                          form.setValue('mapId', map.value, { shouldValidate: true });
-                        }}
-                      >
-                        <span className="block h-16 overflow-hidden bg-secondary">
-                          <img
-                            alt={map.label}
-                            className="h-full w-full object-cover"
-                            loading="lazy"
-                            src={getMapScreenshotPath(map.value)}
-                          />
-                        </span>
-                        <span className="block min-w-0 px-2 py-1.5">
-                          <span className="block truncate text-xs font-bold">{map.label}</span>
-                          <span
-                            className={cn(
-                              'mt-0.5 block truncate text-[11px] font-semibold',
-                              selected ? 'text-primary/70' : 'text-muted-foreground',
-                            )}
-                          >
-                            {getModeLabel(map.modeId)}
-                          </span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="flex h-full items-center justify-center rounded-md border border-dashed border-border bg-[hsl(var(--surface-2))] px-4 text-center text-sm font-semibold text-muted-foreground">
-                  검색 결과 없음
-                </div>
-              )}
-            </div>
-            {form.formState.errors.mapId ? (
-              <p className="mt-2 text-sm font-medium text-destructive">
-                {form.formState.errors.mapId.message}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="border-t border-border/70 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
-            <div className="mb-4 min-h-12">
-              <p className="metric-label">맵</p>
-              <div className="mt-1 flex items-start justify-between gap-3">
-                <p className="min-w-0 truncate text-base font-bold">
-                  {selectedMap ? selectedMap.label : '선택'}
-                </p>
-                {selectedMap ? (
-                  <Badge variant="outline" className="shrink-0 bg-transparent">
-                    {getModeLabel(selectedMap.modeId)}
-                  </Badge>
-                ) : null}
-              </div>
-            </div>
-
-            <section className="space-y-3">
-              <Label>스코어</Label>
-              <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
-                <FormField
-                  control={form.control}
-                  name="teamScore"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormControl>
-                        <ScoreStepper
-                          label="우리"
-                          value={field.value}
-                          onAdjust={(delta) => adjustScore('teamScore', delta)}
-                          onChange={(value) => updateScore('teamScore', value)}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="pt-9 text-lg font-bold text-muted-foreground">:</div>
-                <FormField
-                  control={form.control}
-                  name="enemyScore"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormControl>
-                        <ScoreStepper
-                          label="상대"
-                          value={field.value}
-                          onAdjust={(delta) => adjustScore('enemyScore', delta)}
-                          onChange={(value) => updateScore('enemyScore', value)}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </section>
-
-            <section className="mt-4 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <Label>결과</Label>
-                {selectedModeId && !modeAllowsDraw(selectedModeId) ? (
-                  <span className="text-xs font-semibold text-muted-foreground">무승부 없음</span>
-                ) : null}
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {availableResultOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={cn(
-                      'h-11 rounded-md border px-3 text-sm font-bold transition-colors',
-                      getResultTone(option.value, watchedResult === option.value),
-                    )}
-                    onClick={() => form.setValue('result', option.value, { shouldValidate: true })}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-              {form.formState.errors.result ? (
-                <p className="text-sm font-medium text-destructive">
-                  {form.formState.errors.result.message}
-                </p>
-              ) : null}
-            </section>
-          </div>
-        </section>
-
-        <section className="rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] p-3 sm:p-4">
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
-            <FormField
-              control={form.control}
-              name="playedAt"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>플레이 시간</FormLabel>
-                  <FormControl>
-                    <Input className="bg-card" type="datetime-local" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="queueType"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>큐</FormLabel>
-                  <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5 lg:grid-cols-1">
-                    {queueOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        className={cn(
-                          'h-9 rounded-md border px-2 text-xs font-bold transition-colors',
-                          field.value === option.value
-                            ? 'border-primary bg-primary text-primary-foreground'
-                            : 'border-border bg-card text-muted-foreground hover:bg-secondary',
-                        )}
-                        onClick={() => field.onChange(option.value)}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </FormItem>
-              )}
-            />
-          </div>
-
-          <div className="mt-4 space-y-3">
-            <Label>계정</Label>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                className={cn(
-                  'h-9 rounded-md border px-3 text-sm font-bold transition-colors',
-                  effectiveSelectedAccountId === ''
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-border bg-card text-muted-foreground hover:bg-secondary',
-                )}
-                onClick={() => setSelectedAccountId('')}
-              >
-                미지정
-              </button>
-              {accounts.map((account) => (
-                <button
-                  key={account.id}
-                  type="button"
-                  className={cn(
-                    'h-9 rounded-md border px-3 text-sm font-bold transition-colors',
-                    effectiveSelectedAccountId === account.id && selectedAccountId !== ''
-                      ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-border bg-card text-muted-foreground hover:bg-secondary',
-                  )}
-                  onClick={() => setSelectedAccountId(account.id)}
-                >
-                  {getPlayerAccountLabel(account)}
-                  {account.isMain ? ' · 본계' : ''}
-                  {!account.isActive ? ' · 비활성' : ''}
-                </button>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-lg border border-border/70 bg-card">
-          <button
-            type="button"
-            className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left sm:px-4"
-            aria-expanded={showHeroPicker}
-            onClick={() => setShowHeroPicker((current) => !current)}
-          >
+          <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_310px] lg:items-start">
             <div className="min-w-0">
-              <p className="metric-label">선택 영웅</p>
-              <p className="mt-1 truncate text-sm font-bold">
-                {selectedHeroes.length > 0
-                  ? selectedHeroes.map((heroId) => getHeroLabel(heroId)).join(', ')
-                  : '없음'}
-              </p>
-            </div>
-            {showHeroPicker ? (
-              <ChevronUp className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            )}
-          </button>
-
-          {selectedHeroes.length > 0 ? (
-            <div className="flex flex-wrap gap-2 border-t border-border/70 px-3 py-3 sm:px-4">
-              {selectedHeroes.map((heroId) => (
-                <Badge
-                  key={heroId}
-                  className="gap-1 border-primary/20 bg-primary/[0.08] text-primary hover:bg-primary/10"
-                  variant="outline"
-                >
-                  {getHeroLabel(heroId)}
-                  <button
-                    aria-label={`${getHeroLabel(heroId)} 제거`}
-                    className="rounded-sm p-0.5 hover:bg-primary/10"
-                    type="button"
-                    onClick={() => toggleHero(heroId)}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </Badge>
-              ))}
-            </div>
-          ) : null}
-
-          {showHeroPicker ? (
-            <div className="space-y-3 border-t border-border/70 p-3 sm:p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div className="flex flex-wrap gap-1.5">
-                  {roleOptions.map((option) => (
+              <div className="mb-3 grid gap-2 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)] lg:items-center">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    aria-label="맵 검색"
+                    className="h-9 pl-9 text-sm font-semibold"
+                    placeholder="맵 검색"
+                    value={mapQuery}
+                    onChange={(event) => setMapQuery(event.target.value)}
+                  />
+                </div>
+                <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1">
+                  {modeOptions.map((option) => (
                     <button
                       key={option.value}
                       type="button"
                       className={cn(
-                        'h-8 rounded-md border px-2.5 text-xs font-bold transition-colors',
-                        roleFilter === option.value
+                        'h-9 shrink-0 rounded-md border px-3 text-xs font-bold transition-colors',
+                        watchedModeId === option.value
                           ? 'border-primary bg-primary text-primary-foreground'
                           : 'border-border bg-card text-muted-foreground hover:bg-secondary',
                       )}
-                      onClick={() => setRoleFilter(option.value)}
+                      onClick={() =>
+                        form.setValue('modeId', option.value, { shouldValidate: true })
+                      }
                     >
                       {option.label}
                     </button>
                   ))}
                 </div>
-                <Input
-                  className="sm:w-56"
-                  placeholder="영웅 검색"
-                  value={heroQuery}
-                  onChange={(event) => setHeroQuery(event.target.value)}
-                />
               </div>
 
-              <div className="grid max-h-52 gap-2 overflow-y-auto rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-2 sm:grid-cols-2 lg:grid-cols-3">
-                {filteredHeroes.map((hero) => {
-                  const selected = selectedHeroes.includes(hero.value);
+              <div className="mobile-scroll h-[228px] overflow-x-auto pb-2 sm:h-[244px]">
+                {filteredMaps.length > 0 ? (
+                  <div className="grid h-full auto-cols-[144px] grid-flow-col grid-rows-2 gap-2 sm:auto-cols-[164px]">
+                    {filteredMaps.map((map) => {
+                      const selected = watchedMapId === map.value;
 
-                  return (
+                      return (
+                        <button
+                          key={map.value}
+                          type="button"
+                          className={cn(
+                            'overflow-hidden rounded-md border bg-card text-left transition-[background-color,border-color,color] hover:border-primary/35 hover:bg-secondary',
+                            selected && 'border-primary bg-primary/[0.06] text-primary',
+                          )}
+                          onClick={() => {
+                            form.setValue('modeId', map.modeId, { shouldValidate: true });
+                            form.setValue('mapId', map.value, { shouldValidate: true });
+                          }}
+                        >
+                          <span className="block h-16 overflow-hidden bg-secondary">
+                            <img
+                              alt={map.label}
+                              className="h-full w-full object-cover"
+                              loading="lazy"
+                              src={getMapScreenshotPath(map.value)}
+                            />
+                          </span>
+                          <span className="block min-w-0 px-2 py-1.5">
+                            <span className="block truncate text-xs font-bold">{map.label}</span>
+                            <span
+                              className={cn(
+                                'mt-0.5 block truncate text-[11px] font-semibold',
+                                selected ? 'text-primary/70' : 'text-muted-foreground',
+                              )}
+                            >
+                              {getModeLabel(map.modeId)}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex h-full items-center justify-center rounded-md border border-dashed border-border bg-[hsl(var(--surface-2))] px-4 text-center text-sm font-semibold text-muted-foreground">
+                    검색 결과 없음
+                  </div>
+                )}
+              </div>
+              {form.formState.errors.mapId ? (
+                <p className="mt-2 text-sm font-medium text-destructive">
+                  {form.formState.errors.mapId.message}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="border-t border-border/70 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+              <div className="mb-4 min-h-12">
+                <p className="metric-label">맵</p>
+                <div className="mt-1 flex items-start justify-between gap-3">
+                  <p className="min-w-0 truncate text-base font-bold">
+                    {selectedMap ? selectedMap.label : '선택'}
+                  </p>
+                  {selectedMap ? (
+                    <Badge variant="outline" className="shrink-0 bg-transparent">
+                      {getModeLabel(selectedMap.modeId)}
+                    </Badge>
+                  ) : null}
+                </div>
+              </div>
+
+              <section className="space-y-3">
+                <Label>스코어</Label>
+                <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
+                  <FormField
+                    control={form.control}
+                    name="teamScore"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <ScoreStepper
+                            label="우리"
+                            value={field.value}
+                            onAdjust={(delta) => adjustScore('teamScore', delta)}
+                            onChange={(value) => updateScore('teamScore', value)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div className="pt-9 text-lg font-bold text-muted-foreground">:</div>
+                  <FormField
+                    control={form.control}
+                    name="enemyScore"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <ScoreStepper
+                            label="상대"
+                            value={field.value}
+                            onAdjust={(delta) => adjustScore('enemyScore', delta)}
+                            onChange={(value) => updateScore('enemyScore', value)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </section>
+
+              <section className="mt-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <Label>결과</Label>
+                  {selectedModeId && !modeAllowsDraw(selectedModeId) ? (
+                    <span className="text-xs font-semibold text-muted-foreground">무승부 없음</span>
+                  ) : null}
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {availableResultOptions.map((option) => (
                     <button
-                      key={hero.value}
+                      key={option.value}
                       type="button"
                       className={cn(
-                        'min-h-10 rounded-md border px-3 py-2 text-left text-sm font-bold transition-colors',
-                        selected
-                          ? 'border-primary bg-primary text-primary-foreground'
-                          : 'border-border bg-card text-foreground hover:bg-secondary',
+                        'h-11 rounded-md border px-3 text-sm font-bold transition-colors',
+                        getResultTone(option.value, watchedResult === option.value),
                       )}
-                      onClick={() => toggleHero(hero.value)}
+                      onClick={() =>
+                        form.setValue('result', option.value, { shouldValidate: true })
+                      }
                     >
-                      {hero.label}
-                      <span className="ml-2 text-xs font-semibold opacity-70">
-                        {roleLabels[hero.role]}
-                      </span>
+                      {option.label}
                     </button>
-                  );
-                })}
+                  ))}
+                </div>
+                {form.formState.errors.result ? (
+                  <p className="text-sm font-medium text-destructive">
+                    {form.formState.errors.result.message}
+                  </p>
+                ) : null}
+              </section>
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] p-3 sm:p-4">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+              <FormField
+                control={form.control}
+                name="playedAt"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>플레이 시간</FormLabel>
+                    <FormControl>
+                      <Input className="bg-card" type="datetime-local" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="queueType"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>큐</FormLabel>
+                    <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5 lg:grid-cols-1">
+                      {queueOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={cn(
+                            'h-9 rounded-md border px-2 text-xs font-bold transition-colors',
+                            field.value === option.value
+                              ? 'border-primary bg-primary text-primary-foreground'
+                              : 'border-border bg-card text-muted-foreground hover:bg-secondary',
+                          )}
+                          onClick={() => field.onChange(option.value)}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <Label>계정</Label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className={cn(
+                    'h-9 rounded-md border px-3 text-sm font-bold transition-colors',
+                    effectiveSelectedAccountId === ''
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-border bg-card text-muted-foreground hover:bg-secondary',
+                  )}
+                  onClick={() => setSelectedAccountId('')}
+                >
+                  미지정
+                </button>
+                {accounts.map((account) => (
+                  <button
+                    key={account.id}
+                    type="button"
+                    className={cn(
+                      'h-9 rounded-md border px-3 text-sm font-bold transition-colors',
+                      effectiveSelectedAccountId === account.id && selectedAccountId !== ''
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border bg-card text-muted-foreground hover:bg-secondary',
+                    )}
+                    onClick={() => setSelectedAccountId(account.id)}
+                  >
+                    {getPlayerAccountLabel(account)}
+                    {account.isMain ? ' · 본계' : ''}
+                    {!account.isActive ? ' · 비활성' : ''}
+                  </button>
+                ))}
               </div>
             </div>
-          ) : null}
-        </section>
+          </section>
 
-        <div className="flex flex-col-reverse gap-2 border-t border-border/70 pt-4 sm:flex-row sm:items-center sm:justify-end">
+          <section className="rounded-lg border border-border/70 bg-card">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left sm:px-4"
+              aria-expanded={showHeroPicker}
+              onClick={() => setShowHeroPicker((current) => !current)}
+            >
+              <div className="min-w-0">
+                <p className="metric-label">선택 영웅</p>
+                <p className="mt-1 truncate text-sm font-bold">
+                  {selectedHeroes.length > 0
+                    ? selectedHeroes.map((heroId) => getHeroLabel(heroId)).join(', ')
+                    : '없음'}
+                </p>
+              </div>
+              {showHeroPicker ? (
+                <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              )}
+            </button>
+
+            {selectedHeroes.length > 0 ? (
+              <div className="flex flex-wrap gap-2 border-t border-border/70 px-3 py-3 sm:px-4">
+                {selectedHeroes.map((heroId) => (
+                  <Badge
+                    key={heroId}
+                    className="gap-1 border-primary/20 bg-primary/[0.08] text-primary hover:bg-primary/10"
+                    variant="outline"
+                  >
+                    {getHeroLabel(heroId)}
+                    <button
+                      aria-label={`${getHeroLabel(heroId)} 제거`}
+                      className="rounded-sm p-0.5 hover:bg-primary/10"
+                      type="button"
+                      onClick={() => toggleHero(heroId)}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
+
+            {showHeroPicker ? (
+              <div className="space-y-3 border-t border-border/70 p-3 sm:p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="flex flex-wrap gap-1.5">
+                    {roleOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={cn(
+                          'h-8 rounded-md border px-2.5 text-xs font-bold transition-colors',
+                          roleFilter === option.value
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-border bg-card text-muted-foreground hover:bg-secondary',
+                        )}
+                        onClick={() => setRoleFilter(option.value)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <Input
+                    className="sm:w-56"
+                    placeholder="영웅 검색"
+                    value={heroQuery}
+                    onChange={(event) => setHeroQuery(event.target.value)}
+                  />
+                </div>
+
+                <div className="grid max-h-52 gap-2 overflow-y-auto rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {filteredHeroes.map((hero) => {
+                    const selected = selectedHeroes.includes(hero.value);
+
+                    return (
+                      <button
+                        key={hero.value}
+                        type="button"
+                        className={cn(
+                          'min-h-10 rounded-md border px-3 py-2 text-left text-sm font-bold transition-colors',
+                          selected
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-border bg-card text-foreground hover:bg-secondary',
+                        )}
+                        onClick={() => toggleHero(hero.value)}
+                      >
+                        {hero.label}
+                        <span className="ml-2 text-xs font-semibold opacity-70">
+                          {roleLabels[hero.role]}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </section>
+        </div>
+
+        <div
+          className={cn(
+            'flex flex-col-reverse gap-2 border-t border-border/70 sm:flex-row sm:items-center sm:justify-end',
+            isDialogLayout
+              ? 'shrink-0 bg-card px-4 py-3 shadow-[0_-18px_42px_-34px_hsl(var(--foreground)/0.45)] sm:px-5 sm:py-4'
+              : 'pt-4',
+          )}
+        >
           <Button type="button" variant="outline" onClick={resetForm}>
             <RotateCcw className="h-4 w-4" />
             초기화

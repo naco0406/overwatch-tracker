@@ -31,8 +31,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  getHeroLabel,
-  getMapLabel,
   getModeLabel,
   heroOptions,
   mapOptions,
@@ -43,7 +41,12 @@ import {
 import { getHeroPortraitPath, getMapScreenshotPath } from '@/data/masterAssets';
 import { useMatches } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
-import { formatWinRate, summarizeResults } from '@/lib/matchStats';
+import {
+  compareMatchesByTimelineDesc,
+  formatWinRate,
+  summarizeResults,
+  type ResultSummary,
+} from '@/lib/matchStats';
 import { groupMatchesBySession } from '@/lib/session';
 import { cn } from '@/lib/utils';
 import type { Match, ModeId, QueueType } from '@/types/match';
@@ -116,10 +119,21 @@ const getPeriodStart = (period: PeriodFilter) => {
 
 const formatHour = (hour: number) => `${String(hour).padStart(2, '0')}:00`;
 
+const formatHourRange = (hour: number) => `${formatHour(hour)}-${formatHour((hour + 1) % 24)}`;
+
 const formatShare = (value: number) => `${value}%`;
 
 const getShare = (count: number, total: number) =>
   total === 0 ? 0 : Math.round((count / total) * 100);
+
+const getEmptyResultSummary = (): ResultSummary => ({
+  decisive: 0,
+  draws: 0,
+  losses: 0,
+  total: 0,
+  winRate: null,
+  wins: 0,
+});
 
 const getBestWinRate = <TItem extends { total: number; winRate: number | null }>(
   items: TItem[],
@@ -149,6 +163,10 @@ const chartColors = {
   text: 'hsl(var(--muted-foreground))',
   win: 'hsl(var(--primary))',
 };
+
+type HeroRole = keyof typeof roleLabels;
+
+const heroRoles = ['tank', 'damage', 'support'] as const satisfies HeroRole[];
 
 const legendStyle = {
   fontFamily: chartFontFamily,
@@ -242,8 +260,10 @@ const StatsPage = () => {
   const [modeFilter, setModeFilter] = useState<ModeId | 'all'>('all');
   const [queueFilter, setQueueFilter] = useState<QueueType | 'all'>('all');
   const [accountFilter, setAccountFilter] = useState('all');
-  const { data: matches = [], isLoading } = useMatches();
-  const { data: playerAccounts = [] } = usePlayerAccounts();
+  const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
+  const { data: matches = [], isLoading: isMatchesLoading } = useMatches();
+  const { data: playerAccounts = [], isLoading: isAccountsLoading } = usePlayerAccounts();
+  const isStatsLoading = isMatchesLoading || isAccountsLoading;
   const shouldApplyModeFilter = activeSection !== 'modes' && modeFilter !== 'all';
   const heroRoleById = useMemo(
     () => new Map(heroOptions.map((hero) => [hero.value, hero.role])),
@@ -343,6 +363,7 @@ const StatsPage = () => {
             ...summarizeResults(mapMatches),
             label: map.label,
             modeId: map.modeId,
+            pickRate: getShare(mapMatches.length, filteredMatches.length),
             value: map.value,
           };
         })
@@ -361,7 +382,8 @@ const StatsPage = () => {
           return {
             ...summarizeResults(heroMatches),
             label: hero.label,
-            role: hero.role,
+            pickRate: getShare(heroMatches.length, filteredMatches.length),
+            role: hero.role as HeroRole,
             value: hero.value,
           };
         })
@@ -372,7 +394,7 @@ const StatsPage = () => {
 
   const roleStats = useMemo(
     () =>
-      ['tank', 'damage', 'support']
+      heroRoles
         .map((role) => {
           const roleMatches = filteredMatches.filter((match) =>
             match.myHeroes.some((heroId) => heroRoleById.get(heroId) === role),
@@ -380,7 +402,8 @@ const StatsPage = () => {
 
           return {
             ...summarizeResults(roleMatches),
-            label: roleLabels[role as keyof typeof roleLabels],
+            label: roleLabels[role],
+            pickRate: getShare(roleMatches.length, filteredMatches.length),
             value: role,
           };
         })
@@ -405,6 +428,19 @@ const StatsPage = () => {
       }))
       .filter((bucket) => bucket.total > 0);
   }, [filteredMatches]);
+
+  const fullHourlyStats = useMemo(() => {
+    const hourlyStatsByHour = new Map(hourlyStats.map((stat) => [stat.hour, stat]));
+
+    return Array.from(
+      { length: 24 },
+      (_, hour) =>
+        hourlyStatsByHour.get(hour) ?? {
+          ...getEmptyResultSummary(),
+          hour,
+        },
+    );
+  }, [hourlyStats]);
 
   const orderStats = useMemo(() => {
     const buckets = new Map<number, Match[]>();
@@ -431,6 +467,30 @@ const StatsPage = () => {
     [modeStats],
   );
 
+  const modeRecentFormStats = useMemo(
+    () =>
+      modeWinRateStats.map((modeStat) => {
+        const recentMatches = filteredMatches
+          .filter((match) => match.modeId === modeStat.value)
+          .sort(compareMatchesByTimelineDesc)
+          .slice(0, 8);
+        const recentSummary = summarizeResults(recentMatches);
+        const trend =
+          recentSummary.winRate === null || modeStat.winRate === null
+            ? null
+            : recentSummary.winRate - modeStat.winRate;
+
+        return {
+          ...recentSummary,
+          label: modeStat.label,
+          matches: [...recentMatches].reverse(),
+          trend,
+          value: modeStat.value,
+        };
+      }),
+    [filteredMatches, modeWinRateStats],
+  );
+
   const modeChartData = useMemo(
     () =>
       modeWinRateStats.map((stat) => ({
@@ -447,13 +507,18 @@ const StatsPage = () => {
   const mapWinRateChartData = useMemo(
     () =>
       mapStats.slice(0, 14).map((stat) => ({
-        name: stat.label,
-        mode: getModeLabel(stat.modeId),
         경기: stat.total,
+        mode: getModeLabel(stat.modeId),
+        name: stat.label,
+        선택률: stat.pickRate,
         승률: stat.winRate ?? 0,
         전적: `${stat.wins}승 ${stat.losses}패 ${stat.draws}무`,
       })),
     [mapStats],
+  );
+  const selectedMapStat = useMemo(
+    () => mapStats.find((stat) => stat.value === selectedMapId) ?? mapStats[0] ?? null,
+    [mapStats, selectedMapId],
   );
   const heroChartData = useMemo(
     () =>
@@ -464,21 +529,13 @@ const StatsPage = () => {
       })),
     [heroStats],
   );
-  const roleChartData = useMemo(
-    () =>
-      roleStats.map((stat) => ({
-        name: stat.label,
-        경기: stat.total,
-        승률: stat.winRate ?? 0,
-      })),
-    [roleStats],
-  );
   const hourlyChartData = useMemo(
     () =>
       hourlyStats.map((stat) => ({
         name: formatHour(stat.hour),
         경기: stat.total,
         승률: stat.winRate ?? 0,
+        전적: `${stat.wins}승 ${stat.losses}패 ${stat.draws}무`,
       })),
     [hourlyStats],
   );
@@ -488,16 +545,15 @@ const StatsPage = () => {
         name: `${stat.order}번째`,
         경기: stat.total,
         승률: stat.winRate ?? 0,
+        전적: `${stat.wins}승 ${stat.losses}패 ${stat.draws}무`,
       })),
     [orderStats],
   );
 
-  const maxModeCount = Math.max(1, ...modeStats.map((stat) => stat.total));
-  const maxHeroCount = Math.max(1, ...heroStats.map((stat) => stat.total));
-  const maxOrderCount = Math.max(1, ...orderStats.map((stat) => stat.total));
+  const maxHourCount = Math.max(1, ...hourlyStats.map((stat) => stat.total));
   const topMap = [...mapStats].sort((a, b) => b.total - a.total)[0] ?? null;
   const topMode = [...modeStats].sort((a, b) => b.total - a.total)[0] ?? null;
-  const bestMap = getBestWinRate(mapStats, 2);
+  const bestMap = getBestWinRate(mapStats);
   const bestMode = getBestWinRate(modeStats, 2);
   const topHero = heroStats[0] ?? null;
   const bestHero = getBestWinRate(heroStats, 2);
@@ -563,16 +619,18 @@ const StatsPage = () => {
         value: topMap ? topMap.label : '--',
       },
       {
-        detail: bestMap ? `${bestMap.total}경기 기준` : '표본 2경기 이상',
+        detail: bestMap
+          ? `${bestMap.wins}승 ${bestMap.losses}패 ${bestMap.draws}무 · ${bestMap.total}경기 표본`
+          : '기록 대기',
         icon: Target,
         label: '최고 승률',
         value: bestMap ? `${bestMap.label} ${formatWinRate(bestMap.winRate)}` : '--',
       },
       {
-        detail: '기록이 있는 모드 수',
+        detail: `${summary.wins}승 ${summary.losses}패 ${summary.draws}무`,
         icon: MapIcon,
-        label: '모드 범위',
-        value: modeMapStats.length.toLocaleString('ko-KR'),
+        label: '분석 경기',
+        value: summary.total.toLocaleString('ko-KR'),
       },
     ],
     modes: [
@@ -659,6 +717,26 @@ const StatsPage = () => {
     return <Navigate to="/stats/maps" replace />;
   }
 
+  if (isStatsLoading) {
+    return (
+      <div className="page-stack">
+        <PageHeader
+          eyebrow={activeSectionMeta.eyebrow}
+          title={activeSectionMeta.title}
+          description={activeSectionMeta.description}
+          actions={
+            <Button variant="outline" className="bg-transparent" disabled>
+              <RotateCcw className="h-4 w-4" />
+              초기화
+            </Button>
+          }
+        />
+
+        <StatsSectionSkeleton section={activeSection} />
+      </div>
+    );
+  }
+
   return (
     <div className="page-stack">
       <PageHeader
@@ -699,8 +777,8 @@ const StatsPage = () => {
               <div className="space-y-4">
                 <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
                   <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-                    <p className="metric-label">맵별 승률</p>
-                    <h2 className="mt-1 text-lg font-bold">승률이 높은 전장부터 비교</h2>
+                    <p className="metric-label">전장 승률</p>
+                    <h2 className="mt-1 text-lg font-bold">승률과 표본을 같이 비교</h2>
                   </div>
                   <div className="section-pad">
                     {mapStats.length > 0 ? (
@@ -738,47 +816,19 @@ const StatsPage = () => {
                     ) : (
                       <TabEmpty
                         icon={MapIcon}
-                        isLoading={isLoading}
+                        isLoading={isStatsLoading}
                         title="필터에 해당하는 전장 기록이 없습니다."
                       />
                     )}
                   </div>
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-2">
-                  {modeMapStats.map((mode) => (
-                    <div
-                      key={mode.value}
-                      className="overflow-hidden rounded-lg border border-border/70 bg-card/75"
-                    >
-                      <div className="flex items-start justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
-                        <div>
-                          <p className="metric-label">{mode.total}경기</p>
-                          <h3 className="mt-1 text-base font-bold">{mode.label}</h3>
-                        </div>
-                        <Badge variant="outline" className="bg-transparent">
-                          {formatWinRate(mode.winRate)}
-                        </Badge>
-                      </div>
-                      <div className="px-4 py-1 sm:px-5">
-                        {mode.maps.map((stat) => (
-                          <MediaStatRow
-                            key={stat.value}
-                            barPercent={stat.winRate ?? 0}
-                            count={stat.total}
-                            detail={`${stat.wins}승 ${stat.losses}패 ${stat.draws}무 · 기록 비중 ${formatShare(
-                              stat.pickRate,
-                            )}`}
-                            imageSrc={getMapScreenshotPath(stat.value)}
-                            label={getMapLabel(stat.value)}
-                            maxCount={Math.max(1, mode.total)}
-                            winRate={stat.winRate}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <MapAtlasPanel
+                  isLoading={isStatsLoading}
+                  selectedMap={selectedMapStat}
+                  stats={mapStats}
+                  onSelectMap={setSelectedMapId}
+                />
               </div>
 
               <aside className="space-y-4">
@@ -794,9 +844,17 @@ const StatsPage = () => {
                     </div>
                     <div className="section-pad">
                       <p className="metric-label">최고 승률 전장</p>
-                      <h3 className="mt-1 text-lg font-bold">{bestMap.label}</h3>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <h3 className="min-w-0 text-lg font-bold">{bestMap.label}</h3>
+                        {bestMap.total < 2 ? (
+                          <Badge variant="outline" className="bg-transparent">
+                            표본 적음
+                          </Badge>
+                        ) : null}
+                      </div>
                       <p className="mt-2 text-sm font-semibold text-muted-foreground">
-                        {bestMap.total}경기 · {getModeLabel(bestMap.modeId)} · 승률{' '}
+                        {bestMap.wins}승 {bestMap.losses}패 {bestMap.draws}무 · {bestMap.total}
+                        경기 · {getModeLabel(bestMap.modeId)} · 승률{' '}
                         {formatWinRate(bestMap.winRate)}
                       </p>
                     </div>
@@ -827,7 +885,7 @@ const StatsPage = () => {
             <div className="space-y-4">
               <MetricGrid metrics={sectionMetrics.modes} />
 
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
                 <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
                   <div className="border-b border-border/60 px-4 py-3 sm:px-5">
                     <p className="metric-label">모드별 승률</p>
@@ -835,38 +893,46 @@ const StatsPage = () => {
                   </div>
                   <div className="section-pad">
                     {modeStats.length > 0 ? (
-                      <ChartShell className="h-[320px] sm:h-[380px]">
-                        <BarChart
-                          data={modeChartData}
-                          margin={{ bottom: 0, left: -18, right: 8, top: 12 }}
-                        >
-                          <CartesianGrid
-                            stroke={chartColors.grid}
-                            strokeDasharray="3 3"
-                            vertical={false}
-                          />
-                          <XAxis
-                            dataKey="name"
-                            tick={getAxisTick()}
-                            tickLine={false}
-                            axisLine={false}
-                            interval={0}
-                          />
-                          <YAxis
-                            domain={[0, 100]}
-                            tick={getAxisTick()}
-                            tickFormatter={(value) => `${value}%`}
-                            tickLine={false}
-                            axisLine={false}
-                          />
-                          <ChartTooltipLayer />
-                          <Bar dataKey="승률" fill={chartColors.primary} radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                      </ChartShell>
+                      <>
+                        <ChartShell className="h-[220px] sm:h-[260px]">
+                          <BarChart
+                            data={modeChartData}
+                            margin={{ bottom: 0, left: -18, right: 8, top: 8 }}
+                          >
+                            <CartesianGrid
+                              stroke={chartColors.grid}
+                              strokeDasharray="3 3"
+                              vertical={false}
+                            />
+                            <XAxis
+                              dataKey="name"
+                              tick={getAxisTick()}
+                              tickLine={false}
+                              axisLine={false}
+                              interval={0}
+                            />
+                            <YAxis
+                              domain={[0, 100]}
+                              tick={getAxisTick()}
+                              tickFormatter={(value) => `${value}%`}
+                              tickLine={false}
+                              axisLine={false}
+                            />
+                            <ChartTooltipLayer />
+                            <Bar
+                              dataKey="승률"
+                              fill={chartColors.primary}
+                              maxBarSize={44}
+                              radius={[4, 4, 0, 0]}
+                            />
+                          </BarChart>
+                        </ChartShell>
+                        <ModeRecentFormPanel stats={modeRecentFormStats} />
+                      </>
                     ) : (
                       <TabEmpty
                         icon={BarChart3}
-                        isLoading={isLoading}
+                        isLoading={isStatsLoading}
                         title="필터에 해당하는 모드 기록이 없습니다."
                       />
                     )}
@@ -876,78 +942,25 @@ const StatsPage = () => {
                 <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
                   <div className="border-b border-border/60 px-4 py-3 sm:px-5">
                     <p className="metric-label">승률 순위</p>
-                    <h2 className="mt-1 text-lg font-bold">모드별 비교</h2>
+                    <h2 className="mt-1 text-lg font-bold">모드별 판단 요약</h2>
                   </div>
                   <div className="px-4 py-1 sm:px-5">
-                    {modeWinRateStats.map((stat) => (
-                      <StatRow
-                        key={stat.value}
-                        count={stat.total}
-                        detail={`${stat.wins}승 ${stat.losses}패 ${stat.draws}무`}
-                        label={stat.label}
-                        maxCount={maxModeCount}
-                        progressPercent={stat.winRate ?? 0}
-                        winRate={stat.winRate}
+                    {modeWinRateStats.length > 0 ? (
+                      modeWinRateStats.map((stat) => (
+                        <ModeInsightRow
+                          key={stat.value}
+                          modeMapStats={modeMapStats.find((mode) => mode.value === stat.value)}
+                          stat={stat}
+                        />
+                      ))
+                    ) : (
+                      <TabEmpty
+                        icon={BarChart3}
+                        isLoading={isStatsLoading}
+                        title="필터에 해당하는 모드 기록이 없습니다."
                       />
-                    ))}
+                    )}
                   </div>
-                </div>
-              </div>
-
-              <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
-                <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-                  <p className="metric-label">승/패/무 구성</p>
-                  <h2 className="mt-1 text-lg font-bold">모드별 결과 분포</h2>
-                </div>
-                <div className="section-pad">
-                  {modeStats.length > 0 ? (
-                    <ChartShell className="h-[300px] sm:h-[320px]">
-                      <BarChart
-                        data={modeChartData}
-                        margin={{ bottom: 0, left: -18, right: 8, top: 12 }}
-                      >
-                        <CartesianGrid
-                          stroke={chartColors.grid}
-                          strokeDasharray="3 3"
-                          vertical={false}
-                        />
-                        <XAxis
-                          dataKey="name"
-                          tick={getAxisTick()}
-                          tickLine={false}
-                          axisLine={false}
-                          interval={0}
-                        />
-                        <YAxis
-                          allowDecimals={false}
-                          tick={getAxisTick()}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <ChartTooltipLayer />
-                        <Legend wrapperStyle={legendStyle} />
-                        <Bar
-                          dataKey="승리"
-                          stackId="result"
-                          fill={chartColors.win}
-                          radius={[0, 0, 4, 4]}
-                        />
-                        <Bar dataKey="무승부" stackId="result" fill={chartColors.draw} />
-                        <Bar
-                          dataKey="패배"
-                          stackId="result"
-                          fill={chartColors.loss}
-                          radius={[4, 4, 0, 0]}
-                        />
-                      </BarChart>
-                    </ChartShell>
-                  ) : (
-                    <TabEmpty
-                      icon={BarChart3}
-                      isLoading={isLoading}
-                      title="필터에 해당하는 모드 기록이 없습니다."
-                    />
-                  )}
                 </div>
               </div>
             </div>
@@ -970,17 +983,19 @@ const StatsPage = () => {
               queueFilter={queueFilter}
               title="영웅 사용 분석 기준"
             />
-            <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
-              <div className="space-y-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-                  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
-                    <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-                      <p className="metric-label">영웅 사용량</p>
-                      <h2 className="mt-1 text-lg font-bold">상위 영웅 경기 수와 승률</h2>
-                    </div>
-                    <div className="section-pad">
-                      {heroStats.length > 0 ? (
-                        <ChartShell className="h-[320px] sm:h-[360px]">
+            {heroStats.length > 0 ? (
+              <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
+                <div className="space-y-4">
+                  <HeroSpotlightPanel bestHero={bestHero} topHero={topHero} />
+
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+                    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+                      <div className="border-b border-border/60 px-4 py-3 sm:px-5">
+                        <p className="metric-label">영웅 사용량</p>
+                        <h2 className="mt-1 text-lg font-bold">많이 꺼낸 영웅과 승률</h2>
+                      </div>
+                      <div className="section-pad">
+                        <ChartShell className="h-[280px] sm:h-[320px]">
                           <ComposedChart
                             data={heroChartData}
                             margin={{ bottom: 8, left: -18, right: 8, top: 12 }}
@@ -993,8 +1008,8 @@ const StatsPage = () => {
                             <XAxis
                               dataKey="name"
                               tick={getAxisTick(11)}
-                              angle={-32}
-                              height={58}
+                              angle={-30}
+                              height={54}
                               tickLine={false}
                               axisLine={false}
                               interval={0}
@@ -1022,6 +1037,7 @@ const StatsPage = () => {
                               yAxisId="left"
                               dataKey="경기"
                               fill={chartColors.primary}
+                              maxBarSize={40}
                               radius={[4, 4, 0, 0]}
                             />
                             <Line
@@ -1034,110 +1050,29 @@ const StatsPage = () => {
                             />
                           </ComposedChart>
                         </ChartShell>
-                      ) : (
-                        <TabEmpty
-                          icon={Swords}
-                          isLoading={isLoading}
-                          title="필터에 해당하는 영웅 기록이 없습니다."
-                        />
-                      )}
+                      </div>
                     </div>
+
+                    <HeroRolePanel roleStats={roleStats} />
                   </div>
 
-                  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
-                    <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-                      <p className="metric-label">역할</p>
-                      <h2 className="mt-1 text-lg font-bold">역할별 기록</h2>
-                    </div>
-                    <div className="section-pad">
-                      {roleStats.length > 0 ? (
-                        <ChartShell className="h-[320px] sm:h-[360px]">
-                          <ComposedChart
-                            data={roleChartData}
-                            margin={{ bottom: 8, left: -18, right: 8, top: 12 }}
-                          >
-                            <CartesianGrid
-                              stroke={chartColors.grid}
-                              strokeDasharray="3 3"
-                              vertical={false}
-                            />
-                            <XAxis
-                              dataKey="name"
-                              tick={getAxisTick()}
-                              tickLine={false}
-                              axisLine={false}
-                            />
-                            <YAxis
-                              yAxisId="left"
-                              allowDecimals={false}
-                              tick={getAxisTick()}
-                              tickLine={false}
-                              axisLine={false}
-                            />
-                            <YAxis
-                              yAxisId="right"
-                              orientation="right"
-                              domain={[0, 100]}
-                              tick={getAxisTick()}
-                              tickFormatter={(value) => `${value}%`}
-                              tickLine={false}
-                              axisLine={false}
-                            />
-                            <ChartTooltipLayer />
-                            <Legend wrapperStyle={legendStyle} />
-                            <Bar
-                              yAxisId="left"
-                              dataKey="경기"
-                              fill={chartColors.primary}
-                              radius={[4, 4, 0, 0]}
-                            />
-                            <Line
-                              yAxisId="right"
-                              type="monotone"
-                              dataKey="승률"
-                              stroke="hsl(var(--success))"
-                              strokeWidth={2}
-                              dot={{ fill: 'hsl(var(--success))', r: 3 }}
-                            />
-                          </ComposedChart>
-                        </ChartShell>
-                      ) : (
-                        <TabEmpty
-                          icon={Swords}
-                          isLoading={isLoading}
-                          title="필터에 해당하는 역할 기록이 없습니다."
-                        />
-                      )}
-                    </div>
-                  </div>
+                  <HeroRosterPanel heroStats={heroStats} />
                 </div>
 
-                <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
-                  <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-                    <p className="metric-label">영웅별 표</p>
-                    <h3 className="mt-1 text-lg font-bold">상위 영웅 상세</h3>
-                  </div>
-                  <div className="grid gap-x-6 px-4 py-1 sm:px-5 lg:grid-cols-2">
-                    {heroStats.slice(0, 16).map((stat) => (
-                      <MediaStatRow
-                        key={stat.value}
-                        count={stat.total}
-                        detail={roleLabels[stat.role]}
-                        imageClassName="object-top"
-                        imageSrc={getHeroPortraitPath(stat.value)}
-                        label={getHeroLabel(stat.value)}
-                        maxCount={maxHeroCount}
-                        winRate={stat.winRate}
-                      />
-                    ))}
-                  </div>
-                </div>
+                <aside className="space-y-4">
+                  <SectionMetricStack metrics={sectionMetrics.heroes} />
+                  {bestHero ? <HeroBestPanel hero={bestHero} /> : null}
+                </aside>
               </div>
-
-              <aside>
-                <SectionMetricStack metrics={sectionMetrics.heroes} />
-              </aside>
-            </div>
+            ) : (
+              <div className="rounded-lg border border-border/70 bg-card/75 section-pad">
+                <TabEmpty
+                  icon={Swords}
+                  isLoading={isStatsLoading}
+                  title="필터에 해당하는 영웅 기록이 없습니다."
+                />
+              </div>
+            )}
           </div>
         ) : null}
 
@@ -1157,76 +1092,89 @@ const StatsPage = () => {
               queueFilter={queueFilter}
               title="시간대 분석 기준"
             />
-            <div className="space-y-4">
-              <MetricGrid metrics={sectionMetrics.time} />
-              <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
-                <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-                  <p className="metric-label">시간대</p>
-                  <h2 className="mt-1 text-lg font-bold">시간대별 경기 수와 승률</h2>
+            {hourlyStats.length > 0 ? (
+              <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_340px]">
+                <div className="space-y-4">
+                  <TimeSpotlightPanel bestHour={bestHour} summary={summary} topHour={topHour} />
+
+                  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+                    <div className="border-b border-border/60 px-4 py-3 sm:px-5">
+                      <p className="metric-label">시간대 흐름</p>
+                      <h2 className="mt-1 text-lg font-bold">경기 수와 승률 변화</h2>
+                    </div>
+                    <div className="section-pad">
+                      <ChartShell className="h-[280px] sm:h-[340px]">
+                        <ComposedChart
+                          data={hourlyChartData}
+                          margin={{ bottom: 8, left: -18, right: 8, top: 12 }}
+                        >
+                          <CartesianGrid
+                            stroke={chartColors.grid}
+                            strokeDasharray="3 3"
+                            vertical={false}
+                          />
+                          <XAxis
+                            dataKey="name"
+                            tick={getAxisTick(11)}
+                            tickLine={false}
+                            axisLine={false}
+                            interval={0}
+                          />
+                          <YAxis
+                            yAxisId="left"
+                            allowDecimals={false}
+                            tick={getAxisTick()}
+                            tickLine={false}
+                            axisLine={false}
+                          />
+                          <YAxis
+                            yAxisId="right"
+                            orientation="right"
+                            domain={[0, 100]}
+                            tick={getAxisTick()}
+                            tickFormatter={(value) => `${value}%`}
+                            tickLine={false}
+                            axisLine={false}
+                          />
+                          <ChartTooltipLayer />
+                          <Legend wrapperStyle={legendStyle} />
+                          <Bar
+                            yAxisId="left"
+                            dataKey="경기"
+                            fill={chartColors.primary}
+                            maxBarSize={34}
+                            radius={[4, 4, 0, 0]}
+                          />
+                          <Line
+                            yAxisId="right"
+                            type="monotone"
+                            dataKey="승률"
+                            stroke="hsl(var(--success))"
+                            strokeWidth={2}
+                            dot={{ fill: 'hsl(var(--success))', r: 3 }}
+                          />
+                        </ComposedChart>
+                      </ChartShell>
+                    </div>
+                  </div>
+
+                  <TimeClockBoard stats={fullHourlyStats} maxCount={maxHourCount} />
                 </div>
-                <div className="section-pad">
-                  {filteredMatches.length > 0 ? (
-                    <ChartShell className="h-[360px] sm:h-[460px]">
-                      <ComposedChart
-                        data={hourlyChartData}
-                        margin={{ bottom: 8, left: -18, right: 8, top: 12 }}
-                      >
-                        <CartesianGrid
-                          stroke={chartColors.grid}
-                          strokeDasharray="3 3"
-                          vertical={false}
-                        />
-                        <XAxis
-                          dataKey="name"
-                          tick={getAxisTick(11)}
-                          tickLine={false}
-                          axisLine={false}
-                          interval={1}
-                        />
-                        <YAxis
-                          yAxisId="left"
-                          allowDecimals={false}
-                          tick={getAxisTick()}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <YAxis
-                          yAxisId="right"
-                          orientation="right"
-                          domain={[0, 100]}
-                          tick={getAxisTick()}
-                          tickFormatter={(value) => `${value}%`}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <ChartTooltipLayer />
-                        <Legend wrapperStyle={legendStyle} />
-                        <Bar
-                          yAxisId="left"
-                          dataKey="경기"
-                          fill={chartColors.primary}
-                          radius={[4, 4, 0, 0]}
-                        />
-                        <Line
-                          yAxisId="right"
-                          type="monotone"
-                          dataKey="승률"
-                          stroke="hsl(var(--success))"
-                          strokeWidth={2}
-                          dot={{ fill: 'hsl(var(--success))', r: 3 }}
-                        />
-                      </ComposedChart>
-                    </ChartShell>
-                  ) : (
-                    <TabEmpty
-                      icon={Clock3}
-                      isLoading={isLoading}
-                      title="필터에 해당하는 시간대 기록이 없습니다."
-                    />
-                  )}
-                </div>
+
+                <aside className="space-y-4">
+                  <SectionMetricStack metrics={sectionMetrics.time} />
+                  <TimeRankPanel stats={hourlyStats} />
+                </aside>
               </div>
-            </div>
+            ) : (
+              <div className="rounded-lg border border-border/70 bg-card/75 section-pad">
+                <TabEmpty
+                  icon={Clock3}
+                  isLoading={isStatsLoading}
+                  title="필터에 해당하는 시간대 기록이 없습니다."
+                />
+              </div>
+            )}
           </div>
         ) : null}
 
@@ -1246,96 +1194,100 @@ const StatsPage = () => {
               queueFilter={queueFilter}
               title="세션 순서 분석 기준"
             />
-            <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
-              <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
-                <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-                  <p className="metric-label">세션 순서</p>
-                  <h2 className="mt-1 text-lg font-bold">몇 번째 경기에서 흔들리는지</h2>
-                </div>
-                <div className="section-pad">
-                  {orderStats.length > 0 ? (
-                    <ChartShell className="h-[360px] sm:h-[460px]">
-                      <ComposedChart
-                        data={orderChartData}
-                        margin={{ bottom: 8, left: -18, right: 8, top: 12 }}
-                      >
-                        <CartesianGrid
-                          stroke={chartColors.grid}
-                          strokeDasharray="3 3"
-                          vertical={false}
-                        />
-                        <XAxis
-                          dataKey="name"
-                          tick={getAxisTick()}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <YAxis
-                          yAxisId="left"
-                          allowDecimals={false}
-                          tick={getAxisTick()}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <YAxis
-                          yAxisId="right"
-                          orientation="right"
-                          domain={[0, 100]}
-                          tick={getAxisTick()}
-                          tickFormatter={(value) => `${value}%`}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <ChartTooltipLayer />
-                        <Legend wrapperStyle={legendStyle} />
-                        <Bar
-                          yAxisId="left"
-                          dataKey="경기"
-                          fill={chartColors.primary}
-                          radius={[4, 4, 0, 0]}
-                        />
-                        <Line
-                          yAxisId="right"
-                          type="monotone"
-                          dataKey="승률"
-                          stroke="hsl(var(--success))"
-                          strokeWidth={2}
-                          dot={{ fill: 'hsl(var(--success))', r: 3 }}
-                        />
-                      </ComposedChart>
-                    </ChartShell>
-                  ) : (
-                    <TabEmpty
-                      icon={ListOrdered}
-                      isLoading={isLoading}
-                      title="필터에 해당하는 세션 순서 기록이 없습니다."
-                    />
-                  )}
-                </div>
-              </div>
+            {orderStats.length > 0 ? (
+              <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
+                <div className="space-y-4">
+                  <OrderSpotlightPanel
+                    bestOrder={bestOrder}
+                    topOrder={topOrder}
+                    worstOrder={worstOrder}
+                  />
 
-              <aside className="space-y-4">
-                <SectionMetricStack metrics={sectionMetrics.order} />
-                <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
-                  <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-                    <p className="metric-label">순서별 표</p>
-                    <h3 className="mt-1 text-lg font-bold">구간 비교</h3>
+                  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+                    <div className="border-b border-border/60 px-4 py-3 sm:px-5">
+                      <p className="metric-label">세션 순서</p>
+                      <h2 className="mt-1 text-lg font-bold">몇 번째 경기에서 흔들리는지</h2>
+                    </div>
+                    <div className="section-pad">
+                      <ChartShell className="h-[280px] sm:h-[340px]">
+                        <ComposedChart
+                          data={orderChartData}
+                          margin={{ bottom: 8, left: -18, right: 8, top: 12 }}
+                        >
+                          <CartesianGrid
+                            stroke={chartColors.grid}
+                            strokeDasharray="3 3"
+                            vertical={false}
+                          />
+                          <XAxis
+                            dataKey="name"
+                            tick={getAxisTick()}
+                            tickLine={false}
+                            axisLine={false}
+                          />
+                          <YAxis
+                            yAxisId="left"
+                            allowDecimals={false}
+                            tick={getAxisTick()}
+                            tickLine={false}
+                            axisLine={false}
+                          />
+                          <YAxis
+                            yAxisId="right"
+                            orientation="right"
+                            domain={[0, 100]}
+                            tick={getAxisTick()}
+                            tickFormatter={(value) => `${value}%`}
+                            tickLine={false}
+                            axisLine={false}
+                          />
+                          <ChartTooltipLayer />
+                          <Legend wrapperStyle={legendStyle} />
+                          <Bar
+                            yAxisId="left"
+                            dataKey="경기"
+                            fill={chartColors.primary}
+                            maxBarSize={42}
+                            radius={[4, 4, 0, 0]}
+                          />
+                          <Line
+                            yAxisId="right"
+                            type="monotone"
+                            dataKey="승률"
+                            stroke="hsl(var(--success))"
+                            strokeWidth={2}
+                            dot={{ fill: 'hsl(var(--success))', r: 3 }}
+                          />
+                        </ComposedChart>
+                      </ChartShell>
+                    </div>
                   </div>
-                  <div className="px-4 py-1 sm:px-5">
-                    {orderStats.slice(0, 12).map((stat) => (
-                      <StatRow
-                        key={stat.order}
-                        count={stat.total}
-                        detail={`${stat.wins}승 ${stat.losses}패 ${stat.draws}무`}
-                        label={`${stat.order}번째 경기`}
-                        maxCount={maxOrderCount}
-                        winRate={stat.winRate}
-                      />
-                    ))}
-                  </div>
+
+                  <OrderFlowPanel
+                    bestOrder={bestOrder}
+                    stats={orderStats}
+                    worstOrder={worstOrder}
+                  />
                 </div>
-              </aside>
-            </div>
+
+                <aside className="space-y-4">
+                  <SectionMetricStack metrics={sectionMetrics.order} />
+                  <OrderJudgePanel
+                    bestOrder={bestOrder}
+                    stats={orderStats}
+                    worstOrder={worstOrder}
+                  />
+                </aside>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-border/70 bg-card/75 section-pad">
+                <TabEmpty
+                  icon={ListOrdered}
+                  isLoading={isStatsLoading}
+                  title="필터에 해당하는 세션 순서 기록이 없습니다."
+                />
+              </div>
+            )}
           </div>
         ) : null}
       </section>
@@ -1650,94 +1602,1395 @@ const ChartShell = ({ children, className }: ChartShellProps) => (
   </div>
 );
 
-interface StatRowProps {
-  count: number;
-  detail: string;
-  label: string;
-  maxCount: number;
-  progressPercent?: number;
-  winRate: number | null;
-}
+const chartSkeletonHeights = [
+  'h-[42%]',
+  'h-[68%]',
+  'h-[54%]',
+  'h-[82%]',
+  'h-[61%]',
+  'h-[73%]',
+  'h-[48%]',
+  'h-[88%]',
+  'h-[58%]',
+  'h-[76%]',
+];
 
-const StatRow = ({ count, detail, label, maxCount, progressPercent, winRate }: StatRowProps) => (
-  <div className="grid gap-3 border-b border-border/60 py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-center">
-    <div className="min-w-0">
-      <div className="flex items-center justify-between gap-3">
-        <p className="min-w-0 flex-1 break-words text-sm font-bold leading-snug">{label}</p>
-        <span className="shrink-0 text-xs font-semibold text-muted-foreground">{count}경기</span>
+const chartSkeletonWidths = [
+  'w-[72%]',
+  'w-[58%]',
+  'w-[84%]',
+  'w-[66%]',
+  'w-[78%]',
+  'w-[52%]',
+  'w-[88%]',
+  'w-[63%]',
+];
+
+const StatsSectionSkeleton = ({ section }: { section: StatsSection }) => (
+  <section className="min-w-0 space-y-4">
+    <StatsFilterPanelSkeleton includeMode={section !== 'modes'} />
+    {section === 'maps' ? <MapStatsSkeleton /> : null}
+    {section === 'modes' ? <ModeStatsSkeleton /> : null}
+    {section === 'heroes' ? <HeroStatsSkeleton /> : null}
+    {section === 'time' ? <TimeStatsSkeleton /> : null}
+    {section === 'order' ? <OrderStatsSkeleton /> : null}
+  </section>
+);
+
+const StatsFilterPanelSkeleton = ({ includeMode }: { includeMode: boolean }) => (
+  <div className="rounded-lg border border-border/70 bg-card/55 px-3.5 py-3 sm:px-5">
+    <div className="grid gap-3 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start xl:gap-4">
+      <div className="flex items-start justify-between gap-3 xl:block">
+        <div>
+          <SkeletonBlock className="h-3 w-16" />
+          <SkeletonBlock className="mt-2 h-5 w-36" />
+        </div>
+        <SkeletonBlock className="h-6 w-16 shrink-0 xl:mt-3" />
       </div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-secondary">
-        <div
-          className="h-full rounded-full bg-primary"
-          style={{ width: `${Math.max(5, progressPercent ?? (count / maxCount) * 100)}%` }}
-        />
+      <div
+        className={cn(
+          'grid gap-3',
+          includeMode ? 'lg:grid-cols-2 2xl:grid-cols-4' : 'lg:grid-cols-3',
+        )}
+      >
+        {Array.from({ length: includeMode ? 4 : 3 }, (_, groupIndex) => (
+          <div key={groupIndex}>
+            <SkeletonBlock className="mb-2 h-3 w-12" />
+            <div className="flex flex-wrap gap-1.5">
+              {Array.from({ length: groupIndex === 1 ? 1 : 4 }, (_, itemIndex) => (
+                <SkeletonBlock
+                  key={itemIndex}
+                  className={cn('h-9', itemIndex === 0 ? 'w-20' : 'w-16')}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
-    <div className="flex items-center justify-between gap-3 sm:justify-end">
-      <span className="min-w-0 break-words text-xs font-semibold leading-snug text-muted-foreground">
-        {detail}
-      </span>
-      <Badge variant="outline" className="w-[64px] justify-center bg-transparent">
-        {formatWinRate(winRate)}
+  </div>
+);
+
+const MapStatsSkeleton = () => (
+  <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_340px]">
+    <div className="space-y-4">
+      <StatsChartPanelSkeleton heightClassName="h-[360px] sm:h-[420px]" variant="horizontal" />
+      <StatsAtlasSkeleton />
+    </div>
+    <aside className="space-y-4">
+      <StatsMetricStackSkeleton />
+      <StatsImageFeatureSkeleton />
+    </aside>
+  </div>
+);
+
+const ModeStatsSkeleton = () => (
+  <div className="space-y-4">
+    <StatsMetricGridSkeleton />
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
+      <StatsChartPanelSkeleton heightClassName="h-[220px] sm:h-[260px]" />
+      <StatsListPanelSkeleton rows={4} />
+    </div>
+  </div>
+);
+
+const HeroStatsSkeleton = () => (
+  <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="space-y-4">
+      <StatsHeroSpotlightSkeleton />
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <StatsChartPanelSkeleton heightClassName="h-[280px] sm:h-[320px]" />
+        <StatsListPanelSkeleton rows={3} />
+      </div>
+      <StatsMediaRowsSkeleton />
+    </div>
+    <aside className="space-y-4">
+      <StatsMetricStackSkeleton />
+      <StatsImageFeatureSkeleton />
+    </aside>
+  </div>
+);
+
+const TimeStatsSkeleton = () => (
+  <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_340px]">
+    <div className="space-y-4">
+      <StatsSignalPanelSkeleton sideWidthClassName="lg:grid-cols-[minmax(0,1fr)_320px]" />
+      <StatsChartPanelSkeleton heightClassName="h-[280px] sm:h-[340px]" />
+      <StatsBoardPanelSkeleton cells={24} />
+    </div>
+    <aside className="space-y-4">
+      <StatsMetricStackSkeleton />
+      <StatsListPanelSkeleton rows={5} />
+    </aside>
+  </div>
+);
+
+const OrderStatsSkeleton = () => (
+  <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="space-y-4">
+      <StatsSignalPanelSkeleton sideWidthClassName="lg:grid-cols-[minmax(0,1fr)_340px]" />
+      <StatsChartPanelSkeleton heightClassName="h-[280px] sm:h-[340px]" />
+      <StatsBoardPanelSkeleton cells={9} />
+    </div>
+    <aside className="space-y-4">
+      <StatsMetricStackSkeleton />
+      <StatsListPanelSkeleton rows={3} />
+    </aside>
+  </div>
+);
+
+const StatsMetricGridSkeleton = () => (
+  <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border/70 bg-card/55 md:grid-cols-4">
+    {Array.from({ length: 4 }, (_, index) => (
+      <StatsMetricSkeletonCell
+        key={index}
+        className="border-b border-border/60 odd:border-r last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0"
+      />
+    ))}
+  </div>
+);
+
+const StatsMetricStackSkeleton = () => (
+  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/55">
+    {Array.from({ length: 4 }, (_, index) => (
+      <StatsMetricSkeletonCell key={index} className="border-b border-border/60 last:border-b-0" />
+    ))}
+  </div>
+);
+
+const StatsMetricSkeletonCell = ({ className }: { className?: string }) => (
+  <div className={cn('bg-card/55 p-3.5 sm:p-5', className)}>
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <SkeletonBlock className="h-3 w-16" />
+        <SkeletonBlock className="mt-3 h-6 w-28 max-w-full" />
+      </div>
+      <SkeletonBlock className="h-8 w-8 shrink-0" />
+    </div>
+    <SkeletonBlock className="mt-3 h-3 w-36 max-w-full" />
+  </div>
+);
+
+const StatsChartPanelSkeleton = ({
+  heightClassName,
+  variant = 'vertical',
+}: {
+  heightClassName: string;
+  variant?: 'horizontal' | 'vertical';
+}) => (
+  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="border-b border-border/60 px-4 py-3 sm:px-5">
+      <SkeletonBlock className="h-3 w-20" />
+      <SkeletonBlock className="mt-2 h-5 w-44 max-w-full" />
+    </div>
+    <div className="section-pad">
+      <div
+        className={cn(
+          'relative overflow-hidden rounded-md border border-border/60 bg-[hsl(var(--surface-2))] p-4',
+          heightClassName,
+        )}
+      >
+        <div className="absolute inset-x-4 bottom-4 top-4 grid grid-rows-5 gap-0">
+          {Array.from({ length: 5 }, (_, index) => (
+            <div key={index} className="border-t border-border/50" />
+          ))}
+        </div>
+        <div
+          className={cn(
+            'relative z-10 flex h-full gap-3',
+            variant === 'horizontal' ? 'flex-col justify-center' : 'items-end',
+          )}
+        >
+          {Array.from({ length: variant === 'horizontal' ? 8 : 10 }, (_, index) => (
+            <SkeletonBlock
+              key={index}
+              className={
+                variant === 'horizontal'
+                  ? cn('h-6', chartSkeletonWidths[index % chartSkeletonWidths.length])
+                  : cn(
+                      'w-full min-w-0 flex-1 rounded-b-none rounded-t-md',
+                      chartSkeletonHeights[index % chartSkeletonHeights.length],
+                    )
+              }
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const StatsAtlasSkeleton = () => (
+  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="flex items-start justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
+      <div>
+        <SkeletonBlock className="h-3 w-20" />
+        <SkeletonBlock className="mt-2 h-5 w-40" />
+      </div>
+      <SkeletonBlock className="h-6 w-14" />
+    </div>
+    <div className="grid lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid bg-border/60 sm:grid-cols-2 xl:grid-cols-3">
+        {Array.from({ length: 6 }, (_, index) => (
+          <div key={index} className="bg-card">
+            <SkeletonBlock className="aspect-[16/10] rounded-none" />
+            <div className="space-y-2 px-3 py-3">
+              <SkeletonBlock className="h-2 rounded-full" />
+              <div className="flex items-center justify-between gap-2">
+                <SkeletonBlock className="h-3 w-12" />
+                <SkeletonBlock className="h-3 w-16" />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="border-t border-border/70 bg-[hsl(var(--surface-2))] lg:border-l lg:border-t-0">
+        <SkeletonBlock className="aspect-[16/9] rounded-none" />
+        <div className="space-y-4 p-4 sm:p-5">
+          <div className="grid grid-cols-3 divide-x divide-border/70 border-y border-border/70 bg-card">
+            {Array.from({ length: 3 }, (_, index) => (
+              <div key={index} className="px-2 py-3">
+                <SkeletonBlock className="mx-auto h-3 w-10" />
+                <SkeletonBlock className="mx-auto mt-2 h-4 w-12" />
+              </div>
+            ))}
+          </div>
+          <SkeletonBlock className="h-3 w-20" />
+          <SkeletonBlock className="h-3 rounded-full" />
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const StatsHeroSpotlightSkeleton = () => (
+  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="grid lg:grid-cols-[minmax(0,1fr)_320px]">
+      <SkeletonBlock className="min-h-[250px] rounded-none sm:min-h-[310px]" />
+      <div className="border-t border-border/70 bg-[hsl(var(--surface-2))] lg:border-l lg:border-t-0">
+        <div className="grid grid-cols-3 divide-x divide-border/70 border-b border-border/70 bg-card">
+          {Array.from({ length: 3 }, (_, index) => (
+            <div key={index} className="px-2 py-3">
+              <SkeletonBlock className="mx-auto h-3 w-10" />
+              <SkeletonBlock className="mx-auto mt-2 h-4 w-12" />
+            </div>
+          ))}
+        </div>
+        <div className="space-y-4 p-4 sm:p-5">
+          <SkeletonBlock className="h-3 w-24" />
+          <SkeletonBlock className="h-3 rounded-full" />
+          <div className="grid grid-cols-[44px_minmax(0,1fr)_64px] items-center gap-3 border-t border-border/70 pt-4">
+            <SkeletonBlock className="h-11 w-11" />
+            <div className="min-w-0">
+              <SkeletonBlock className="h-4 w-28 max-w-full" />
+              <SkeletonBlock className="mt-2 h-3 w-20" />
+            </div>
+            <SkeletonBlock className="h-6 w-14" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const StatsSignalPanelSkeleton = ({ sideWidthClassName }: { sideWidthClassName: string }) => (
+  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className={cn('grid', sideWidthClassName)}>
+      <div className="section-pad bg-[hsl(var(--surface-2))]">
+        <SkeletonBlock className="h-3 w-24" />
+        <SkeletonBlock className="mt-4 h-11 w-52 max-w-full sm:h-14" />
+        <SkeletonBlock className="mt-3 h-4 w-64 max-w-full" />
+        <SkeletonBlock className="mt-6 h-2.5 rounded-full" />
+      </div>
+      <div className="border-t border-border/70 lg:border-l lg:border-t-0">
+        <div className="grid grid-cols-3 divide-x divide-border/70 border-b border-border/70 bg-card">
+          {Array.from({ length: 3 }, (_, index) => (
+            <div key={index} className="px-2 py-3">
+              <SkeletonBlock className="mx-auto h-3 w-10" />
+              <SkeletonBlock className="mx-auto mt-2 h-4 w-12" />
+            </div>
+          ))}
+        </div>
+        <div className="space-y-3 p-4 sm:p-5">
+          {Array.from({ length: 2 }, (_, index) => (
+            <div
+              key={index}
+              className="grid grid-cols-[minmax(0,1fr)_60px] items-center gap-3 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-3 py-2.5"
+            >
+              <div className="min-w-0">
+                <SkeletonBlock className="h-3 w-16" />
+                <SkeletonBlock className="mt-2 h-4 w-28 max-w-full" />
+              </div>
+              <SkeletonBlock className="h-6 w-14" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const StatsBoardPanelSkeleton = ({ cells }: { cells: number }) => (
+  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="flex items-start justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
+      <div>
+        <SkeletonBlock className="h-3 w-20" />
+        <SkeletonBlock className="mt-2 h-5 w-44 max-w-full" />
+      </div>
+      <SkeletonBlock className="h-6 w-14" />
+    </div>
+    <div className="grid grid-cols-2 gap-px bg-border/60 sm:grid-cols-3 xl:grid-cols-6">
+      {Array.from({ length: cells }, (_, index) => (
+        <div key={index} className="min-h-[118px] bg-card p-3">
+          <div className="flex items-center justify-between gap-3">
+            <SkeletonBlock className="h-4 w-14" />
+            <SkeletonBlock className="h-4 w-10" />
+          </div>
+          <SkeletonBlock className="mt-6 h-7 w-16" />
+          <SkeletonBlock className="mt-4 h-2 rounded-full" />
+          <SkeletonBlock className="mt-2 h-2 rounded-full" />
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const StatsImageFeatureSkeleton = () => (
+  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <SkeletonBlock className="aspect-[16/10] rounded-none" />
+    <div className="section-pad">
+      <SkeletonBlock className="h-3 w-24" />
+      <SkeletonBlock className="mt-3 h-5 w-36" />
+      <SkeletonBlock className="mt-3 h-4 w-48 max-w-full" />
+    </div>
+  </div>
+);
+
+const StatsListPanelSkeleton = ({ rows }: { rows: number }) => (
+  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="border-b border-border/60 px-4 py-3 sm:px-5">
+      <SkeletonBlock className="h-3 w-20" />
+      <SkeletonBlock className="mt-2 h-5 w-40 max-w-full" />
+    </div>
+    <div className="px-4 py-1 sm:px-5">
+      {Array.from({ length: rows }, (_, index) => (
+        <div key={index} className="border-b border-border/60 py-4 last:border-b-0">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <SkeletonBlock className="h-4 w-32 max-w-full" />
+              <SkeletonBlock className="mt-2 h-3 w-24" />
+            </div>
+            <SkeletonBlock className="h-6 w-14" />
+          </div>
+          <SkeletonBlock className="mt-3 h-2 rounded-full" />
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const StatsMediaRowsSkeleton = () => (
+  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="border-b border-border/60 px-4 py-3 sm:px-5">
+      <SkeletonBlock className="h-3 w-20" />
+      <SkeletonBlock className="mt-2 h-5 w-36" />
+    </div>
+    <div className="grid gap-x-6 px-4 py-1 sm:px-5 lg:grid-cols-2">
+      {Array.from({ length: 10 }, (_, index) => (
+        <div
+          key={index}
+          className="grid grid-cols-[44px_minmax(0,1fr)_64px] items-center gap-3 border-b border-border/60 py-3 last:border-b-0 lg:[&:nth-last-child(2)]:border-b-0"
+        >
+          <SkeletonBlock className="h-11 w-11" />
+          <div className="min-w-0">
+            <SkeletonBlock className="h-4 w-32 max-w-full" />
+            <SkeletonBlock className="mt-2 h-3 w-20" />
+          </div>
+          <SkeletonBlock className="h-5 w-12" />
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+type SummaryLike = ReturnType<typeof summarizeResults>;
+
+interface ResultSplitBarProps {
+  className?: string;
+  summary: SummaryLike;
+}
+
+const ResultSplitBar = ({ className, summary }: ResultSplitBarProps) => {
+  const total = Math.max(1, summary.total);
+
+  return (
+    <div className={cn('flex h-2 overflow-hidden rounded-full bg-secondary', className)}>
+      <div className="bg-primary" style={{ width: `${(summary.wins / total) * 100}%` }} />
+      <div
+        className="bg-muted-foreground/40"
+        style={{ width: `${(summary.draws / total) * 100}%` }}
+      />
+      <div className="bg-destructive" style={{ width: `${(summary.losses / total) * 100}%` }} />
+    </div>
+  );
+};
+
+type MapStatItem = SummaryLike & {
+  label: string;
+  modeId: ModeId;
+  pickRate: number;
+  value: string;
+};
+
+type HeroStatItem = SummaryLike & {
+  label: string;
+  pickRate: number;
+  role: HeroRole;
+  value: string;
+};
+
+type RoleStatItem = SummaryLike & {
+  label: string;
+  pickRate: number;
+  value: HeroRole;
+};
+
+type ModeRecentFormItem = SummaryLike & {
+  label: string;
+  matches: Match[];
+  trend: number | null;
+  value: ModeId;
+};
+
+type TimeStatItem = SummaryLike & {
+  hour: number;
+};
+
+type OrderStatItem = SummaryLike & {
+  order: number;
+};
+
+interface MapAtlasPanelProps {
+  isLoading: boolean;
+  onSelectMap: (mapId: string) => void;
+  selectedMap: MapStatItem | null;
+  stats: MapStatItem[];
+}
+
+const MapAtlasPanel = ({ isLoading, onSelectMap, selectedMap, stats }: MapAtlasPanelProps) => (
+  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="flex items-start justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
+      <div>
+        <p className="metric-label">전장 보드</p>
+        <h2 className="mt-1 text-lg font-bold">이미지로 보는 승률 지형</h2>
+      </div>
+      <Badge variant="outline" className="shrink-0 bg-transparent">
+        {stats.length.toLocaleString('ko-KR')} 전장
       </Badge>
     </div>
+
+    {stats.length > 0 && selectedMap ? (
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid bg-border/60 sm:grid-cols-2 xl:grid-cols-3">
+          {stats.map((stat) => (
+            <MapAtlasTile
+              key={stat.value}
+              selected={stat.value === selectedMap.value}
+              stat={stat}
+              onSelect={() => onSelectMap(stat.value)}
+            />
+          ))}
+        </div>
+
+        <MapAtlasDetail stat={selectedMap} />
+      </div>
+    ) : (
+      <div className="section-pad">
+        <TabEmpty
+          icon={MapIcon}
+          isLoading={isLoading}
+          title="필터에 해당하는 전장 기록이 없습니다."
+        />
+      </div>
+    )}
   </div>
 );
 
-interface MediaStatRowProps extends Omit<StatRowProps, 'detail'> {
-  barPercent?: number;
-  detail: string;
-  imageClassName?: string;
-  imageSrc: string;
-  share?: number;
+interface MapAtlasTileProps {
+  onSelect: () => void;
+  selected: boolean;
+  stat: MapStatItem;
 }
 
-const MediaStatRow = ({
-  barPercent,
-  count,
-  detail,
-  imageClassName,
-  imageSrc,
-  label,
-  maxCount,
-  share,
-  winRate,
-}: MediaStatRowProps) => (
-  <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-3 border-b border-border/60 py-3 last:border-b-0 sm:grid-cols-[72px_minmax(0,1fr)]">
-    <div className="aspect-[4/3] overflow-hidden rounded-md bg-secondary">
+const MapAtlasTile = ({ onSelect, selected, stat }: MapAtlasTileProps) => (
+  <button
+    type="button"
+    aria-pressed={selected}
+    className={cn(
+      'group min-w-0 bg-card text-left transition-[background-color,box-shadow,transform] hover:bg-[hsl(var(--surface-2))]',
+      selected && 'relative z-10 bg-primary/[0.06] shadow-[inset_0_0_0_2px_hsl(var(--primary))]',
+    )}
+    onClick={onSelect}
+  >
+    <div className="relative aspect-[16/10] overflow-hidden bg-secondary">
       <img
-        alt={label}
-        className={cn('h-full w-full object-cover', imageClassName)}
-        src={imageSrc}
+        alt={stat.label}
+        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
         loading="lazy"
+        src={getMapScreenshotPath(stat.value)}
       />
-    </div>
-    <div className="min-w-0 py-1">
-      <div className="flex items-center justify-between gap-3">
+      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/10" />
+      <div className="absolute left-2 top-2 rounded-md bg-black/55 px-2 py-1 text-[10px] font-bold text-white backdrop-blur-sm">
+        {getModeLabel(stat.modeId)}
+      </div>
+      <div className="absolute inset-x-2 bottom-2 flex items-end justify-between gap-2 text-white">
         <div className="min-w-0">
-          <p className="break-words text-sm font-bold leading-snug">{label}</p>
-          <p className="mt-1 break-words text-xs font-semibold leading-snug text-muted-foreground">
-            {detail}
+          <p className="truncate text-sm font-bold leading-tight">{stat.label}</p>
+          <p className="mt-0.5 text-[10px] font-semibold opacity-80">
+            {stat.wins}승 {stat.losses}패 {stat.draws}무
           </p>
         </div>
-        <Badge variant="outline" className="shrink-0 bg-transparent">
-          {formatWinRate(winRate)}
+        <p className="shrink-0 text-lg font-bold tabular-nums">{formatWinRate(stat.winRate)}</p>
+      </div>
+    </div>
+
+    <div className="space-y-2 px-3 py-3">
+      <ResultSplitBar summary={stat} className="h-1.5" />
+      <div className="flex items-center justify-between gap-2 text-xs font-bold tabular-nums text-muted-foreground">
+        <span>{stat.total}경기</span>
+        <span>선택률 {formatShare(stat.pickRate)}</span>
+      </div>
+    </div>
+  </button>
+);
+
+const MapAtlasDetail = ({ stat }: { stat: MapStatItem }) => (
+  <aside className="border-t border-border/70 bg-[hsl(var(--surface-2))] lg:border-l lg:border-t-0">
+    <div className="relative aspect-[16/9] overflow-hidden bg-secondary">
+      <img
+        alt={stat.label}
+        className="h-full w-full object-cover"
+        loading="lazy"
+        src={getMapScreenshotPath(stat.value)}
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+      <div className="absolute bottom-4 left-4 right-4 text-white">
+        <p className="text-xs font-bold opacity-80">{getModeLabel(stat.modeId)}</p>
+        <h3 className="mt-1 truncate text-2xl font-bold">{stat.label}</h3>
+      </div>
+    </div>
+
+    <div className="space-y-4 p-4 sm:p-5">
+      <div className="grid grid-cols-3 divide-x divide-border/70 border-y border-border/70 bg-card">
+        <MapDetailMetric label="승률" value={formatWinRate(stat.winRate)} />
+        <MapDetailMetric label="경기" value={stat.total.toLocaleString('ko-KR')} />
+        <MapDetailMetric label="선택률" value={formatShare(stat.pickRate)} />
+      </div>
+
+      <div>
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <p className="metric-label">결과 분포</p>
+          <p className="text-xs font-semibold text-muted-foreground">
+            {stat.wins}승 {stat.losses}패 {stat.draws}무
+          </p>
+        </div>
+        <ResultSplitBar summary={stat} className="h-2.5" />
+      </div>
+
+      <div className="grid gap-2 border-t border-border/70 pt-4 text-sm">
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-semibold text-muted-foreground">승리</span>
+          <span className="font-bold tabular-nums">{stat.wins}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-semibold text-muted-foreground">패배</span>
+          <span className="font-bold tabular-nums">{stat.losses}</span>
+        </div>
+        {stat.draws > 0 ? (
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-semibold text-muted-foreground">무승부</span>
+            <span className="font-bold tabular-nums">{stat.draws}</span>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  </aside>
+);
+
+const MapDetailMetric = ({ label, value }: { label: string; value: string }) => (
+  <div className="min-w-0 px-2 py-3 text-center">
+    <p className="metric-label">{label}</p>
+    <p className="mt-1 truncate text-sm font-bold tabular-nums">{value}</p>
+  </div>
+);
+
+const HeroSpotlightPanel = ({
+  bestHero,
+  topHero,
+}: {
+  bestHero: HeroStatItem | null;
+  topHero: HeroStatItem | null;
+}) => {
+  if (!topHero) {
+    return null;
+  }
+
+  const shouldShowBestHero = bestHero && bestHero.value !== topHero.value;
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="relative min-h-[250px] overflow-hidden bg-secondary sm:min-h-[310px]">
+          <img
+            alt={topHero.label}
+            className="absolute inset-0 h-full w-full object-cover object-top"
+            src={getHeroPortraitPath(topHero.value)}
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/35 to-black/10" />
+          <div className="absolute left-4 top-4 rounded-md border border-white/20 bg-black/35 px-2.5 py-1 text-[11px] font-black text-white backdrop-blur-md">
+            최다 사용
+          </div>
+          <div className="absolute bottom-0 left-0 right-0 p-4 text-white sm:p-5 lg:p-6">
+            <p className="text-xs font-bold text-white/75">{roleLabels[topHero.role]}</p>
+            <h2 className="mt-1 text-3xl font-black tracking-normal sm:text-4xl">
+              {topHero.label}
+            </h2>
+            <p className="mt-2 text-sm font-semibold text-white/75 sm:text-base">
+              {topHero.wins}승 {topHero.losses}패 {topHero.draws}무 · {topHero.total}경기 · 선택률{' '}
+              {formatShare(topHero.pickRate)}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col border-t border-border/70 bg-[hsl(var(--surface-2))] lg:border-l lg:border-t-0">
+          <div className="grid grid-cols-3 divide-x divide-border/70 border-b border-border/70 bg-card">
+            <HeroMetric label="승률" value={formatWinRate(topHero.winRate)} />
+            <HeroMetric label="선택률" value={formatShare(topHero.pickRate)} />
+            <HeroMetric label="경기" value={topHero.total.toLocaleString('ko-KR')} />
+          </div>
+
+          <div className="flex-1 space-y-4 p-4 sm:p-5">
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="metric-label">주력 영웅 결과</p>
+                <p className="text-xs font-semibold text-muted-foreground">
+                  {topHero.wins}승 {topHero.losses}패 {topHero.draws}무
+                </p>
+              </div>
+              <ResultSplitBar summary={topHero} className="h-2.5" />
+            </div>
+
+            {shouldShowBestHero ? (
+              <div className="border-t border-border/70 pt-4">
+                <p className="metric-label">고승률 영웅</p>
+                <div className="mt-2 grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3">
+                  <img
+                    alt=""
+                    className="h-11 w-11 rounded-md object-cover object-top"
+                    src={getHeroPortraitPath(bestHero.value)}
+                  />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold">{bestHero.label}</p>
+                    <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+                      {bestHero.total}경기 · {roleLabels[bestHero.role]}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="bg-transparent">
+                    {formatWinRate(bestHero.winRate)}
+                  </Badge>
+                </div>
+              </div>
+            ) : bestHero ? (
+              <div className="rounded-md border border-primary/20 bg-primary/[0.06] p-3">
+                <p className="metric-label text-primary">주력/승률 동시 상위</p>
+                <p className="mt-1 text-sm font-bold">
+                  가장 많이 사용한 영웅이 현재 필터의 최고 승률 영웅입니다.
+                </p>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const HeroMetric = ({ label, value }: { label: string; value: string }) => (
+  <div className="min-w-0 px-2 py-3 text-center">
+    <p className="metric-label">{label}</p>
+    <p className="mt-1 truncate text-sm font-black tabular-nums">{value}</p>
+  </div>
+);
+
+const HeroRolePanel = ({ roleStats }: { roleStats: RoleStatItem[] }) => (
+  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="border-b border-border/60 px-4 py-3 sm:px-5">
+      <p className="metric-label">역할</p>
+      <h2 className="mt-1 text-lg font-bold">역할별 사용 흐름</h2>
+    </div>
+    <div className="px-4 py-1 sm:px-5">
+      {roleStats.length > 0 ? (
+        roleStats.map((stat) => (
+          <div key={stat.value} className="border-b border-border/60 py-4 last:border-b-0">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-bold">{stat.label}</p>
+                <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                  {stat.total}경기 · 경기 비중 {formatShare(stat.pickRate)}
+                </p>
+              </div>
+              <p className="text-lg font-black tabular-nums">{formatWinRate(stat.winRate)}</p>
+            </div>
+            <div className="mt-3">
+              <ResultSplitBar summary={stat} />
+            </div>
+          </div>
+        ))
+      ) : (
+        <TabEmpty icon={Swords} isLoading={false} title="역할 기록이 없습니다." />
+      )}
+    </div>
+  </div>
+);
+
+const HeroRosterPanel = ({ heroStats }: { heroStats: HeroStatItem[] }) => (
+  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="flex items-start justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
+      <div className="min-w-0">
+        <p className="metric-label">영웅 랭킹</p>
+        <h3 className="mt-1 text-lg font-bold">상위 영웅 상세</h3>
+      </div>
+      <Badge variant="outline" className="shrink-0 bg-transparent">
+        {heroStats.length.toLocaleString('ko-KR')} 영웅
+      </Badge>
+    </div>
+    <div className="grid gap-x-6 px-4 py-1 sm:px-5 lg:grid-cols-2">
+      {heroStats.slice(0, 16).map((stat, index) => (
+        <HeroRosterRow key={stat.value} rank={index + 1} stat={stat} />
+      ))}
+    </div>
+  </div>
+);
+
+const HeroRosterRow = ({ rank, stat }: { rank: number; stat: HeroStatItem }) => (
+  <div className="grid grid-cols-[52px_minmax(0,1fr)] gap-3 border-b border-border/60 py-3 last:border-b-0 lg:[&:nth-last-child(2)]:border-b-0">
+    <div className="relative h-[52px] w-[52px] overflow-hidden rounded-md bg-secondary">
+      <img
+        alt=""
+        className="h-full w-full object-cover object-top"
+        loading="lazy"
+        src={getHeroPortraitPath(stat.value)}
+      />
+      <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-black text-white">
+        {rank}
+      </span>
+    </div>
+    <div className="min-w-0 py-0.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-bold">{stat.label}</p>
+          <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+            {roleLabels[stat.role]} · {stat.total}경기 · 선택률 {formatShare(stat.pickRate)}
+          </p>
+        </div>
+        <Badge variant="outline" className="w-[64px] shrink-0 justify-center bg-transparent">
+          {formatWinRate(stat.winRate)}
         </Badge>
       </div>
-      <div className="mt-3 flex items-center gap-2">
-        <div className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
-          <div
-            className="h-full rounded-full bg-primary"
-            style={{ width: `${Math.max(5, barPercent ?? (count / maxCount) * 100)}%` }}
-          />
-        </div>
-        <span className="w-12 text-right text-xs font-semibold text-muted-foreground">
-          {share === undefined ? `${count}경기` : formatShare(share)}
-        </span>
+      <div className="mt-3">
+        <ResultSplitBar summary={stat} className="h-1.5" />
       </div>
     </div>
   </div>
 );
+
+const HeroBestPanel = ({ hero }: { hero: HeroStatItem }) => (
+  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="aspect-[16/12] bg-secondary">
+      <img
+        alt={hero.label}
+        className="h-full w-full object-cover object-top"
+        loading="lazy"
+        src={getHeroPortraitPath(hero.value)}
+      />
+    </div>
+    <div className="section-pad">
+      <p className="metric-label">최고 승률 영웅</p>
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <h3 className="min-w-0 text-lg font-bold">{hero.label}</h3>
+        <Badge variant="outline" className="bg-transparent">
+          {roleLabels[hero.role]}
+        </Badge>
+      </div>
+      <p className="mt-2 text-sm font-semibold text-muted-foreground">
+        {hero.wins}승 {hero.losses}패 {hero.draws}무 · {hero.total}경기 · 승률{' '}
+        {formatWinRate(hero.winRate)}
+      </p>
+      <ResultSplitBar summary={hero} className="mt-4 h-2" />
+    </div>
+  </div>
+);
+
+const getWinRateToneClass = (winRate: number | null) => {
+  if (winRate === null) {
+    return 'border-border/70 bg-card';
+  }
+
+  if (winRate >= 60) {
+    return 'border-primary/35 bg-primary/[0.07]';
+  }
+
+  if (winRate <= 40) {
+    return 'border-destructive/35 bg-destructive/[0.06]';
+  }
+
+  return 'border-border/70 bg-card';
+};
+
+const SignalMetric = ({ label, value }: { label: string; value: string }) => (
+  <div className="min-w-0 px-2 py-3 text-center">
+    <p className="metric-label">{label}</p>
+    <p className="mt-1 truncate text-sm font-black tabular-nums">{value}</p>
+  </div>
+);
+
+const TimeSpotlightPanel = ({
+  bestHour,
+  summary,
+  topHour,
+}: {
+  bestHour: TimeStatItem | null;
+  summary: SummaryLike;
+  topHour: TimeStatItem | null;
+}) => {
+  const primaryHour = bestHour ?? topHour;
+
+  if (!primaryHour) {
+    return null;
+  }
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="section-pad bg-[hsl(var(--surface-2))]">
+          <p className="metric-label">좋은 시간대</p>
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0">
+              <h2 className="text-4xl font-black tracking-normal sm:text-5xl">
+                {formatHourRange(primaryHour.hour)}
+              </h2>
+              <p className="mt-2 text-sm font-semibold text-muted-foreground">
+                {primaryHour.wins}승 {primaryHour.losses}패 {primaryHour.draws}무 ·{' '}
+                {primaryHour.total}경기
+              </p>
+            </div>
+            <Badge variant="outline" className="w-fit bg-card text-base">
+              승률 {formatWinRate(primaryHour.winRate)}
+            </Badge>
+          </div>
+
+          <div className="mt-5">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="metric-label">결과 구성</p>
+              <p className="text-xs font-semibold text-muted-foreground">
+                전체 {summary.total.toLocaleString('ko-KR')}경기 중{' '}
+                {formatShare(getShare(primaryHour.total, summary.total))}
+              </p>
+            </div>
+            <ResultSplitBar summary={primaryHour} className="h-2.5" />
+          </div>
+        </div>
+
+        <div className="border-t border-border/70 lg:border-l lg:border-t-0">
+          <div className="grid grid-cols-3 divide-x divide-border/70 border-b border-border/70 bg-card">
+            <SignalMetric label="승률" value={formatWinRate(primaryHour.winRate)} />
+            <SignalMetric label="경기" value={primaryHour.total.toLocaleString('ko-KR')} />
+            <SignalMetric
+              label="비중"
+              value={formatShare(getShare(primaryHour.total, summary.total))}
+            />
+          </div>
+          <div className="space-y-3 p-4 sm:p-5">
+            <TimeCompareRow label="최다 경기" stat={topHour} />
+            <TimeCompareRow label="최고 승률" stat={bestHour} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TimeCompareRow = ({ label, stat }: { label: string; stat: TimeStatItem | null }) => (
+  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-3 py-2.5">
+    <div className="min-w-0">
+      <p className="metric-label">{label}</p>
+      <p className="mt-1 truncate text-sm font-bold">
+        {stat ? formatHourRange(stat.hour) : '기록 대기'}
+      </p>
+    </div>
+    <div className="text-right">
+      <p className="text-sm font-black tabular-nums">{stat ? formatWinRate(stat.winRate) : '--'}</p>
+      <p className="mt-1 text-[11px] font-semibold text-muted-foreground">
+        {stat ? `${stat.total}경기` : '--'}
+      </p>
+    </div>
+  </div>
+);
+
+const TimeClockBoard = ({ maxCount, stats }: { maxCount: number; stats: TimeStatItem[] }) => (
+  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="flex items-start justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
+      <div className="min-w-0">
+        <p className="metric-label">24시간 보드</p>
+        <h3 className="mt-1 text-lg font-bold">빈 시간까지 포함한 플레이 밀도</h3>
+      </div>
+      <Badge variant="outline" className="shrink-0 bg-transparent">
+        24칸
+      </Badge>
+    </div>
+    <div className="grid grid-cols-2 gap-px bg-border/60 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+      {stats.map((stat) => (
+        <TimeClockCell key={stat.hour} maxCount={maxCount} stat={stat} />
+      ))}
+    </div>
+  </div>
+);
+
+const TimeClockCell = ({ maxCount, stat }: { maxCount: number; stat: TimeStatItem }) => {
+  const intensity = stat.total / maxCount;
+  const hasData = stat.total > 0;
+
+  return (
+    <div
+      className={cn(
+        'min-h-[112px] bg-card p-3 transition-colors',
+        hasData ? getWinRateToneClass(stat.winRate) : 'text-muted-foreground/60',
+      )}
+      style={
+        hasData
+          ? { backgroundColor: `hsl(var(--primary) / ${0.035 + intensity * 0.075})` }
+          : undefined
+      }
+      title={`${formatHourRange(stat.hour)} · ${stat.total}경기 · 승률 ${formatWinRate(stat.winRate)}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm font-black tabular-nums">{formatHour(stat.hour)}</p>
+        <p className="text-xs font-bold tabular-nums">{hasData ? `${stat.total}경기` : '0'}</p>
+      </div>
+      <p className="mt-5 text-2xl font-black tabular-nums">{formatWinRate(stat.winRate)}</p>
+      <div className="mt-3">
+        <ResultSplitBar summary={stat} className="h-1.5" />
+      </div>
+    </div>
+  );
+};
+
+const TimeRankPanel = ({ stats }: { stats: TimeStatItem[] }) => {
+  const winRateRows = [...stats]
+    .filter((stat) => stat.total >= 2 && stat.winRate !== null)
+    .sort((a, b) => (b.winRate ?? -1) - (a.winRate ?? -1) || b.total - a.total)
+    .slice(0, 5);
+  const activityRows = [...stats].sort((a, b) => b.total - a.total).slice(0, 4);
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+      <div className="border-b border-border/60 px-4 py-3 sm:px-5">
+        <p className="metric-label">시간대 판단</p>
+        <h3 className="mt-1 text-lg font-bold">좋은 시간과 많이 한 시간</h3>
+      </div>
+      <div className="px-4 py-1 sm:px-5">
+        <TimeRankGroup label="승률 상위" stats={winRateRows} />
+        <TimeRankGroup label="경기 집중" stats={activityRows} />
+      </div>
+    </div>
+  );
+};
+
+const TimeRankGroup = ({ label, stats }: { label: string; stats: TimeStatItem[] }) => (
+  <div className="border-b border-border/60 py-4 last:border-b-0">
+    <p className="metric-label mb-3">{label}</p>
+    {stats.length > 0 ? (
+      <div className="space-y-2.5">
+        {stats.map((stat) => (
+          <div key={`${label}-${stat.hour}`} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold">{formatHourRange(stat.hour)}</p>
+              <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+                {stat.wins}승 {stat.losses}패 {stat.draws}무 · {stat.total}경기
+              </p>
+            </div>
+            <Badge variant="outline" className="w-[64px] justify-center bg-transparent">
+              {formatWinRate(stat.winRate)}
+            </Badge>
+          </div>
+        ))}
+      </div>
+    ) : (
+      <p className="text-sm font-semibold text-muted-foreground">표본 2경기 이상 필요</p>
+    )}
+  </div>
+);
+
+const OrderSpotlightPanel = ({
+  bestOrder,
+  topOrder,
+  worstOrder,
+}: {
+  bestOrder: OrderStatItem | null;
+  topOrder: OrderStatItem | null;
+  worstOrder: OrderStatItem | null;
+}) => {
+  const primaryOrder = bestOrder ?? topOrder;
+
+  if (!primaryOrder) {
+    return null;
+  }
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="section-pad bg-[hsl(var(--surface-2))]">
+          <p className="metric-label">세션 안에서 가장 좋은 구간</p>
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-4xl font-black tracking-normal sm:text-5xl">
+                {primaryOrder.order}번째 경기
+              </h2>
+              <p className="mt-2 text-sm font-semibold text-muted-foreground">
+                {primaryOrder.wins}승 {primaryOrder.losses}패 {primaryOrder.draws}무 ·{' '}
+                {primaryOrder.total}경기 표본
+              </p>
+            </div>
+            <Badge variant="outline" className="w-fit bg-card text-base">
+              승률 {formatWinRate(primaryOrder.winRate)}
+            </Badge>
+          </div>
+          <ResultSplitBar summary={primaryOrder} className="mt-5 h-2.5" />
+        </div>
+
+        <div className="border-t border-border/70 lg:border-l lg:border-t-0">
+          <div className="grid grid-cols-3 divide-x divide-border/70 border-b border-border/70 bg-card">
+            <SignalMetric label="최고" value={bestOrder ? `${bestOrder.order}번째` : '--'} />
+            <SignalMetric label="최다" value={topOrder ? `${topOrder.order}번째` : '--'} />
+            <SignalMetric label="주의" value={worstOrder ? `${worstOrder.order}번째` : '--'} />
+          </div>
+          <div className="space-y-3 p-4 sm:p-5">
+            <OrderCompareRow label="안정 구간" stat={bestOrder} />
+            <OrderCompareRow label="흔들림 구간" stat={worstOrder} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const OrderCompareRow = ({ label, stat }: { label: string; stat: OrderStatItem | null }) => (
+  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-3 py-2.5">
+    <div className="min-w-0">
+      <p className="metric-label">{label}</p>
+      <p className="mt-1 truncate text-sm font-bold">
+        {stat ? `${stat.order}번째 경기` : '표본 대기'}
+      </p>
+    </div>
+    <div className="text-right">
+      <p className="text-sm font-black tabular-nums">{stat ? formatWinRate(stat.winRate) : '--'}</p>
+      <p className="mt-1 text-[11px] font-semibold text-muted-foreground">
+        {stat ? `${stat.total}경기` : '--'}
+      </p>
+    </div>
+  </div>
+);
+
+const OrderFlowPanel = ({
+  bestOrder,
+  stats,
+  worstOrder,
+}: {
+  bestOrder: OrderStatItem | null;
+  stats: OrderStatItem[];
+  worstOrder: OrderStatItem | null;
+}) => {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+      <div className="flex items-start justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
+        <div className="min-w-0">
+          <p className="metric-label">세션 진행도</p>
+          <h3 className="mt-1 text-lg font-bold">n번째 경기별 안정감</h3>
+        </div>
+        <Badge variant="outline" className="shrink-0 bg-transparent">
+          {stats.length.toLocaleString('ko-KR')} 구간
+        </Badge>
+      </div>
+      <div className="grid gap-px bg-border/60 sm:grid-cols-2 xl:grid-cols-3">
+        {stats.slice(0, 15).map((stat) => (
+          <OrderStageCard
+            key={stat.order}
+            best={bestOrder?.order === stat.order}
+            stat={stat}
+            worst={worstOrder?.order === stat.order}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const OrderStageCard = ({
+  best,
+  stat,
+  worst,
+}: {
+  best: boolean;
+  stat: OrderStatItem;
+  worst: boolean;
+}) => (
+  <div
+    className={cn(
+      'min-h-[150px] bg-card p-4',
+      getWinRateToneClass(stat.winRate),
+      best && 'relative z-10 shadow-[inset_0_0_0_2px_hsl(var(--primary))]',
+      worst && 'relative z-10 shadow-[inset_0_0_0_2px_hsl(var(--destructive)/0.8)]',
+    )}
+  >
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <p className="metric-label">{best ? '안정' : worst ? '주의' : '구간'}</p>
+        <h4 className="mt-1 text-xl font-black">{stat.order}번째</h4>
+      </div>
+      <Badge variant="outline" className="bg-card/80">
+        {stat.total}경기
+      </Badge>
+    </div>
+    <p className="mt-5 text-3xl font-black tabular-nums">{formatWinRate(stat.winRate)}</p>
+    <p className="mt-1 text-xs font-semibold text-muted-foreground">
+      {stat.wins}승 {stat.losses}패 {stat.draws}무
+    </p>
+    <div className="mt-4">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="metric-label">결과 분포</p>
+        <p className="text-[11px] font-semibold text-muted-foreground">{stat.decisive}결정전</p>
+      </div>
+      <ResultSplitBar summary={stat} className="h-1.5" />
+    </div>
+  </div>
+);
+
+const OrderJudgePanel = ({
+  bestOrder,
+  stats,
+  worstOrder,
+}: {
+  bestOrder: OrderStatItem | null;
+  stats: OrderStatItem[];
+  worstOrder: OrderStatItem | null;
+}) => {
+  const lateStats = stats.filter((stat) => stat.order >= 4);
+  const lateSummary =
+    lateStats.length > 0
+      ? {
+          decisive: lateStats.reduce((sum, stat) => sum + stat.decisive, 0),
+          draws: lateStats.reduce((sum, stat) => sum + stat.draws, 0),
+          losses: lateStats.reduce((sum, stat) => sum + stat.losses, 0),
+          total: lateStats.reduce((sum, stat) => sum + stat.total, 0),
+          winRate: (() => {
+            const wins = lateStats.reduce((sum, stat) => sum + stat.wins, 0);
+            const decisive = lateStats.reduce((sum, stat) => sum + stat.decisive, 0);
+            return decisive === 0 ? null : Math.round((wins / decisive) * 100);
+          })(),
+          wins: lateStats.reduce((sum, stat) => sum + stat.wins, 0),
+        }
+      : null;
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+      <div className="border-b border-border/60 px-4 py-3 sm:px-5">
+        <p className="metric-label">흐름 판단</p>
+        <h3 className="mt-1 text-lg font-bold">세션을 끊을 타이밍</h3>
+      </div>
+      <div className="space-y-4 p-4 sm:p-5">
+        <OrderCompareRow label="계속 밀어볼 구간" stat={bestOrder} />
+        <OrderCompareRow label="점검할 구간" stat={worstOrder} />
+        {lateSummary ? (
+          <div className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="metric-label">4번째 이후</p>
+              <p className="text-sm font-black tabular-nums">
+                {formatWinRate(lateSummary.winRate)}
+              </p>
+            </div>
+            <p className="mt-2 text-xs font-semibold text-muted-foreground">
+              {lateSummary.wins}승 {lateSummary.losses}패 {lateSummary.draws}무 ·{' '}
+              {lateSummary.total}경기
+            </p>
+            <ResultSplitBar summary={lateSummary} className="mt-3 h-2" />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+};
+
+const getResultShortLabel = (result: Match['result']) => {
+  if (result === 'win') {
+    return '승';
+  }
+
+  if (result === 'loss') {
+    return '패';
+  }
+
+  return '무';
+};
+
+const getResultChipClassName = (result: Match['result']) => {
+  if (result === 'win') {
+    return 'border-primary/35 bg-primary/[0.12] text-primary';
+  }
+
+  if (result === 'loss') {
+    return 'border-destructive/35 bg-destructive/[0.1] text-destructive';
+  }
+
+  return 'border-border bg-secondary text-muted-foreground';
+};
+
+const getModeTrendClassName = (trend: number | null) => {
+  if (trend === null || trend === 0) {
+    return 'border-border bg-transparent text-muted-foreground';
+  }
+
+  return trend > 0
+    ? 'border-primary/30 bg-primary/[0.08] text-primary'
+    : 'border-destructive/30 bg-destructive/[0.08] text-destructive';
+};
+
+const formatModeTrend = (trend: number | null) => {
+  if (trend === null) {
+    return '비교 대기';
+  }
+
+  if (trend === 0) {
+    return '변화 없음';
+  }
+
+  return `${trend > 0 ? '+' : ''}${trend}p`;
+};
+
+const ModeRecentFormPanel = ({ stats }: { stats: ModeRecentFormItem[] }) => (
+  <div className="mt-4 border-t border-border/60 pt-4">
+    <div className="mb-3 flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="metric-label">최근 폼</p>
+        <h3 className="mt-1 text-base font-bold">모드별 최근 흐름</h3>
+      </div>
+      <Badge variant="outline" className="shrink-0 bg-transparent">
+        최근 8경기
+      </Badge>
+    </div>
+
+    <div className="grid gap-2 lg:grid-cols-2">
+      {stats.map((stat) => (
+        <ModeRecentFormRow key={stat.value} stat={stat} />
+      ))}
+    </div>
+  </div>
+);
+
+const ModeRecentFormRow = ({ stat }: { stat: ModeRecentFormItem }) => (
+  <div className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3">
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="truncate text-sm font-bold">{stat.label}</p>
+        <p className="mt-1 text-xs font-semibold text-muted-foreground">
+          {stat.wins}승 {stat.losses}패 {stat.draws}무 · 최근 승률 {formatWinRate(stat.winRate)}
+        </p>
+      </div>
+      <Badge
+        variant="outline"
+        className={cn('w-[76px] shrink-0 justify-center', getModeTrendClassName(stat.trend))}
+      >
+        {formatModeTrend(stat.trend)}
+      </Badge>
+    </div>
+
+    <div className="mt-3 flex flex-wrap gap-1.5">
+      {stat.matches.map((match) => (
+        <span
+          key={match.id}
+          className={cn(
+            'flex h-7 min-w-7 items-center justify-center rounded-md border px-2 text-xs font-black tabular-nums',
+            getResultChipClassName(match.result),
+          )}
+          title={`${new Date(match.playedAt).toLocaleDateString('ko-KR')} · ${getResultShortLabel(
+            match.result,
+          )} · ${match.teamScore}-${match.enemyScore}`}
+        >
+          {getResultShortLabel(match.result)}
+        </span>
+      ))}
+    </div>
+  </div>
+);
+
+interface ModeInsightRowProps {
+  modeMapStats?: {
+    maps: Array<
+      SummaryLike & {
+        label: string;
+        pickRate: number;
+        value: string;
+      }
+    >;
+  };
+  stat: SummaryLike & {
+    label: string;
+    value: string;
+  };
+}
+
+const ModeInsightRow = ({ modeMapStats, stat }: ModeInsightRowProps) => {
+  const topMaps = modeMapStats?.maps.slice(0, 2) ?? [];
+
+  return (
+    <div className="border-b border-border/60 py-4 last:border-b-0">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="break-words text-base font-bold leading-snug">{stat.label}</p>
+          <p className="mt-1 text-xs font-semibold text-muted-foreground">
+            {stat.wins}승 {stat.losses}패 {stat.draws}무 · {stat.total}경기
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-xl font-bold tabular-nums">{formatWinRate(stat.winRate)}</p>
+          <p className="mt-1 text-[11px] font-semibold text-muted-foreground">승률</p>
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <ResultSplitBar summary={stat} />
+      </div>
+
+      {topMaps.length > 0 ? (
+        <div className="mt-3 space-y-1.5 border-t border-border/50 pt-3">
+          <p className="metric-label">강한 전장</p>
+          {topMaps.map((map) => (
+            <div
+              key={map.value}
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 text-xs"
+            >
+              <span className="min-w-0 truncate font-semibold text-muted-foreground">
+                {map.label}
+              </span>
+              <span className="font-bold tabular-nums">
+                {formatWinRate(map.winRate)} · {map.total}경기
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+};
 
 interface TabEmptyProps {
   icon: LucideIcon;

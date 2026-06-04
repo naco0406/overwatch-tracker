@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useRef, useState, type ChangeEvent } from 'react';
 
+import { SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -52,8 +53,8 @@ import { getPlayerAccountLabel } from '@/types/playerAccount';
 
 const SettingsPage = () => {
   const { signOut, user } = useAuth();
-  const { data: playerAccounts = [] } = usePlayerAccounts();
-  const { data: matches = [] } = useMatches();
+  const { data: playerAccounts = [], isLoading: isAccountsLoading } = usePlayerAccounts();
+  const { data: matches = [], isLoading: isMatchesLoading } = useMatches();
   const createPlayerAccount = useCreatePlayerAccount();
   const createMatch = useCreateMatch();
   const updatePlayerAccount = useUpdatePlayerAccount();
@@ -395,7 +396,9 @@ const SettingsPage = () => {
               </div>
 
               <div className="subpanel">
-                {activeAccounts.length > 0 ? (
+                {isAccountsLoading ? (
+                  <AccountRowsSkeleton />
+                ) : activeAccounts.length > 0 ? (
                   activeAccounts.map((account) => {
                     const editing = editingAccountId === account.id;
 
@@ -522,7 +525,7 @@ const SettingsPage = () => {
                 )}
               </div>
 
-              {inactiveAccounts.length > 0 ? (
+              {!isAccountsLoading && inactiveAccounts.length > 0 ? (
                 <div className="subpanel">
                   <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] p-3">
                     <p className="metric-label">비활성 계정</p>
@@ -566,7 +569,13 @@ const SettingsPage = () => {
             <div className="grid grid-cols-2 gap-2 xl:grid-cols-1">
               <div className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3">
                 <p className="metric-label">저장 기록</p>
-                <p className="mt-2 text-2xl font-bold">{matches.length.toLocaleString('ko-KR')}</p>
+                {isMatchesLoading ? (
+                  <SkeletonBlock className="mt-3 h-7 w-16" />
+                ) : (
+                  <p className="mt-2 text-2xl font-bold">
+                    {matches.length.toLocaleString('ko-KR')}
+                  </p>
+                )}
               </div>
               <div className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3">
                 <p className="metric-label">파일 형식</p>
@@ -594,7 +603,7 @@ const SettingsPage = () => {
               <Button
                 variant="outline"
                 className="justify-start bg-transparent"
-                disabled={isImporting || createMatch.isPending}
+                disabled={isAccountsLoading || isImporting || createMatch.isPending}
                 onClick={() => setPasteImportOpen(true)}
               >
                 <ClipboardPaste className="h-4 w-4" />표 붙여넣기
@@ -602,7 +611,7 @@ const SettingsPage = () => {
               <Button
                 variant="outline"
                 className="justify-start bg-transparent"
-                disabled={isImporting || createMatch.isPending}
+                disabled={isAccountsLoading || isImporting || createMatch.isPending}
                 onClick={() => importInputRef.current?.click()}
               >
                 <Upload className="h-4 w-4" />
@@ -611,7 +620,7 @@ const SettingsPage = () => {
               <Button
                 variant="outline"
                 className="justify-start bg-transparent"
-                disabled={matches.length === 0}
+                disabled={isMatchesLoading || matches.length === 0}
                 onClick={handleExportCsv}
               >
                 <Download className="h-4 w-4" />
@@ -713,6 +722,27 @@ const SectionLead = ({ icon: Icon, label, title }: SectionLeadProps) => (
       <h2 className="mt-1 text-lg font-bold">{title}</h2>
     </div>
   </div>
+);
+
+const AccountRowsSkeleton = () => (
+  <>
+    {Array.from({ length: 3 }, (_, index) => (
+      <div key={index} className="flat-row grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <SkeletonBlock className="h-4 w-32 max-w-full" />
+            <SkeletonBlock className="h-6 w-12" />
+          </div>
+          <SkeletonBlock className="mt-2 h-3 w-40 max-w-full" />
+        </div>
+        <div className="grid grid-cols-3 gap-2 sm:flex sm:justify-end">
+          <SkeletonBlock className="h-10 sm:h-9 sm:w-20" />
+          <SkeletonBlock className="h-10 sm:h-9 sm:w-16" />
+          <SkeletonBlock className="h-10 sm:h-9 sm:w-16" />
+        </div>
+      </div>
+    ))}
+  </>
 );
 
 export { SettingsPage };

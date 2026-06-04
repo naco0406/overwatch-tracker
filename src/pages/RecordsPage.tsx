@@ -110,11 +110,12 @@ const RecordsPage = () => {
   const [isBulkSaving, setIsBulkSaving] = useState(false);
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Match | null>(null);
-  const { data: matches = [], isLoading } = useMatches();
-  const { data: playerAccounts = [] } = usePlayerAccounts();
+  const { data: matches = [], isLoading: isMatchesLoading } = useMatches();
+  const { data: playerAccounts = [], isLoading: isAccountsLoading } = usePlayerAccounts();
   const { data: userSettings } = useUserSettings();
   const updateMatchMutation = useUpdateMatch();
   const deleteMatchMutation = useDeleteMatch();
+  const isRecordsLoading = isMatchesLoading || isAccountsLoading;
 
   const accountById = useMemo(
     () => new Map(playerAccounts.map((account) => [account.id, account])),
@@ -357,7 +358,7 @@ const RecordsPage = () => {
         title="기록"
         actions={
           <Badge variant="secondary">
-            {isLoading ? '불러오는 중' : `${matches.length.toLocaleString('ko-KR')} 경기`}
+            {isRecordsLoading ? '불러오는 중' : `${matches.length.toLocaleString('ko-KR')} 경기`}
           </Badge>
         }
       />
@@ -382,6 +383,7 @@ const RecordsPage = () => {
                 type="button"
                 variant="outline"
                 className="bg-card"
+                disabled={isRecordsLoading}
                 onClick={() => setFiltersOpen(true)}
               >
                 <SlidersHorizontal className="h-4 w-4" />
@@ -389,7 +391,7 @@ const RecordsPage = () => {
               </Button>
               <Button
                 type="button"
-                disabled={selectedMatches.length === 0}
+                disabled={isRecordsLoading || selectedMatches.length === 0}
                 onClick={() => setBulkActionsOpen(true)}
               >
                 <CheckSquare className="h-4 w-4" />
@@ -398,9 +400,21 @@ const RecordsPage = () => {
             </div>
 
             <div className="grid grid-cols-3 divide-x divide-border/70 border-y border-border/70 bg-background xl:border-y-0 xl:bg-transparent">
-              <MetricCell label="표시" value={filteredMatches.length.toLocaleString('ko-KR')} />
-              <MetricCell label="승률" value={formatWinRate(summary.winRate)} />
-              <MetricCell label="선택" value={selectedMatches.length.toLocaleString('ko-KR')} />
+              <MetricCell
+                isLoading={isRecordsLoading}
+                label="표시"
+                value={filteredMatches.length.toLocaleString('ko-KR')}
+              />
+              <MetricCell
+                isLoading={isRecordsLoading}
+                label="승률"
+                value={formatWinRate(summary.winRate)}
+              />
+              <MetricCell
+                isLoading={isRecordsLoading}
+                label="선택"
+                value={selectedMatches.length.toLocaleString('ko-KR')}
+              />
             </div>
           </div>
 
@@ -445,7 +459,7 @@ const RecordsPage = () => {
         </div>
 
         <div className="px-0 py-0">
-          {isLoading ? (
+          {isRecordsLoading ? (
             <RecordsSkeleton />
           ) : filteredMatches.length > 0 ? (
             <>
@@ -741,15 +755,20 @@ const RecordsPage = () => {
 };
 
 interface MetricCellProps {
+  isLoading?: boolean;
   label: string;
   value: string;
 }
 
-const MetricCell = ({ label, value }: MetricCellProps) => (
+const MetricCell = ({ isLoading = false, label, value }: MetricCellProps) => (
   <div className="min-w-0 px-3 py-2">
     <div className="min-w-0">
       <p className="metric-label">{label}</p>
-      <p className="mt-1 truncate text-sm font-bold sm:text-base">{value}</p>
+      {isLoading ? (
+        <SkeletonBlock className="mt-2 h-4 w-12" />
+      ) : (
+        <p className="mt-1 truncate text-sm font-bold sm:text-base">{value}</p>
+      )}
     </div>
   </div>
 );

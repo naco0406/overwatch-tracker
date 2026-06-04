@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 
+import { SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -51,7 +52,7 @@ const LivePage = () => {
     streamInfo,
     visionAnalysis,
   } = useLiveCapture();
-  const { data: matches = [] } = useMatches();
+  const { data: matches = [], isLoading: isMatchesLoading } = useMatches();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mapSelectionIds = useMemo(
     () => visionAnalysis?.mapSelection?.candidates.map((candidate) => candidate.mapId) ?? [],
@@ -242,6 +243,7 @@ const LivePage = () => {
         <aside className="space-y-3">
           <LiveInsightPanel
             frameMetrics={frameMetrics}
+            isDataLoading={isMatchesLoading}
             recommendations={mapRecommendations}
             visionAnalysis={visionAnalysis}
           />
@@ -324,20 +326,27 @@ const LiveErrorNotice = ({ message }: { message: string }) => (
 
 const LiveInsightPanel = ({
   frameMetrics,
+  isDataLoading,
   recommendations,
   visionAnalysis,
 }: {
   frameMetrics: LiveFrameMetrics | null;
+  isDataLoading: boolean;
   recommendations: MapRecommendation[];
   visionAnalysis: LiveVisionAnalysis | null;
 }) => {
   const detectedMapSelection = visionAnalysis?.mapSelection;
-  const bestRecommendation = recommendations.find((recommendation) => recommendation.decisive > 0);
-  const statusLabel = detectedMapSelection
-    ? `${Math.round(visionAnalysis.screen.confidence * 100)}%`
-    : frameMetrics
-      ? '대기'
-      : '준비';
+  const shouldShowDataSkeleton = isDataLoading && Boolean(detectedMapSelection);
+  const bestRecommendation = shouldShowDataSkeleton
+    ? undefined
+    : recommendations.find((recommendation) => recommendation.decisive > 0);
+  const statusLabel = shouldShowDataSkeleton
+    ? '로딩'
+    : detectedMapSelection
+      ? `${Math.round(visionAnalysis.screen.confidence * 100)}%`
+      : frameMetrics
+        ? '대기'
+        : '준비';
 
   return (
     <div className="workspace-panel overflow-hidden">
@@ -345,7 +354,11 @@ const LiveInsightPanel = ({
         <div className="min-w-0">
           <p className="metric-label">맵 선택 추천</p>
           <h2 className="mt-1 truncate text-lg font-bold">
-            {bestRecommendation ? getMapLabel(bestRecommendation.mapId) : '후보 감지 대기'}
+            {shouldShowDataSkeleton
+              ? '기록 불러오는 중'
+              : bestRecommendation
+                ? getMapLabel(bestRecommendation.mapId)
+                : '후보 감지 대기'}
           </h2>
         </div>
         <Badge variant="outline" className="shrink-0 bg-transparent">
@@ -353,7 +366,9 @@ const LiveInsightPanel = ({
         </Badge>
       </div>
 
-      {bestRecommendation ? (
+      {shouldShowDataSkeleton ? (
+        <LiveRecommendationSkeleton />
+      ) : bestRecommendation ? (
         <div className="border-y border-border/70">
           <div className="relative min-h-[172px] overflow-hidden bg-slate-950">
             <img
@@ -406,7 +421,9 @@ const LiveInsightPanel = ({
       )}
 
       <div className="divide-y divide-border/70">
-        {recommendations.length > 0 ? (
+        {shouldShowDataSkeleton ? (
+          <LiveRecommendationRowsSkeleton />
+        ) : recommendations.length > 0 ? (
           recommendations.map((recommendation) => (
             <MapRecommendationRow key={recommendation.mapId} recommendation={recommendation} />
           ))
@@ -417,6 +434,33 @@ const LiveInsightPanel = ({
     </div>
   );
 };
+
+const LiveRecommendationSkeleton = () => (
+  <div className="border-y border-border/70 p-4">
+    <div className="flex items-start gap-3">
+      <SkeletonBlock className="h-9 w-9 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <SkeletonBlock className="h-4 w-40 max-w-full" />
+        <SkeletonBlock className="mt-2 h-3 w-56 max-w-full" />
+      </div>
+    </div>
+  </div>
+);
+
+const LiveRecommendationRowsSkeleton = () => (
+  <>
+    {Array.from({ length: 3 }, (_, index) => (
+      <div key={index} className="grid grid-cols-[44px_minmax(0,1fr)_72px] items-center gap-3 p-3">
+        <SkeletonBlock className="h-11 w-11" />
+        <div className="min-w-0">
+          <SkeletonBlock className="h-4 w-28 max-w-full" />
+          <SkeletonBlock className="mt-2 h-3 w-32 max-w-full" />
+        </div>
+        <SkeletonBlock className="h-5 w-12 justify-self-end" />
+      </div>
+    ))}
+  </>
+);
 
 const MapRecommendationRow = ({ recommendation }: { recommendation: MapRecommendation }) => (
   <div className="grid grid-cols-[44px_minmax(0,1fr)_72px] items-center gap-3 p-3">

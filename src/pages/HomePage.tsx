@@ -20,7 +20,7 @@ import {
   type DragEvent,
 } from 'react';
 
-import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
+import { SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
 import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
@@ -40,6 +40,7 @@ import { useCreateMatch, useDeleteMatch, useMatches, useUpdateMatch } from '@/ho
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { getMapLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
+import { getMapScreenshotPath } from '@/data/masterAssets';
 import { calculateWinRate, compareMatchesByTimelineDesc, getCurrentStreak } from '@/lib/matchStats';
 import { createSessionId, groupMatchesBySession, shouldReuseSession } from '@/lib/session';
 import {
@@ -50,7 +51,10 @@ import {
 import type { Match, MatchCreateInput } from '@/types/match';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
 
-const emptySessionSlots = Array.from({ length: 6 });
+const recentPreviewCount = 4;
+const sessionTimelineCount = 8;
+const recentPreviewRows = Array.from({ length: recentPreviewCount });
+const sessionTimelineSkeletonItems = Array.from({ length: sessionTimelineCount });
 const activeSessionStorageKey = 'overwatch-tracker:active-session-id';
 const sessionIdStartedAtPattern = /^session_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})_/;
 
@@ -157,12 +161,13 @@ const HomePage = () => {
   } | null>(null);
   const [quickEntryResetKey, setQuickEntryResetKey] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { data: matches = [], isLoading } = useMatches();
-  const { data: userSettings } = useUserSettings();
-  const { data: playerAccounts = [] } = usePlayerAccounts();
+  const { data: matches = [], isLoading: isMatchesLoading } = useMatches();
+  const { data: userSettings, isLoading: isSettingsLoading } = useUserSettings();
+  const { data: playerAccounts = [], isLoading: isAccountsLoading } = usePlayerAccounts();
   const createMatchMutation = useCreateMatch();
   const updateMatchMutation = useUpdateMatch();
   const deleteMatchMutation = useDeleteMatch();
+  const isHomeDataLoading = isMatchesLoading || isAccountsLoading || isSettingsLoading;
   const sessions = useMemo(() => groupMatchesBySession(matches), [matches]);
   const activeSession = useMemo(() => {
     if (manualSessionId) {
@@ -182,6 +187,10 @@ const HomePage = () => {
   const sortedSessionMatches = useMemo(
     () => [...sessionMatches].sort(compareMatchesByTimelineDesc),
     [sessionMatches],
+  );
+  const sessionFlowMatches = useMemo(
+    () => sortedSessionMatches.slice(0, sessionTimelineCount).reverse(),
+    [sortedSessionMatches],
   );
   const summaryMetrics = useMemo(
     () => getSummaryMetrics(sessionMatches, Boolean(manualSessionId)),
@@ -573,14 +582,21 @@ const HomePage = () => {
             >
               <div className="min-w-0">
                 <p className="metric-label">{metric.label}</p>
-                <div className="mt-2 min-w-0 sm:flex sm:items-baseline sm:gap-2">
-                  <p className="truncate text-xl font-bold leading-none sm:text-2xl">
-                    {metric.value}
-                  </p>
-                  <p className="mt-1 truncate text-[10px] font-semibold text-muted-foreground sm:mt-0 sm:text-xs">
-                    {metric.detail}
-                  </p>
-                </div>
+                {isHomeDataLoading ? (
+                  <div className="mt-2 min-w-0 sm:flex sm:items-baseline sm:gap-2">
+                    <SkeletonBlock className="h-6 w-14 sm:h-7" />
+                    <SkeletonBlock className="mt-2 h-3 w-20 sm:mt-0" />
+                  </div>
+                ) : (
+                  <div className="mt-2 min-w-0 sm:flex sm:items-baseline sm:gap-2">
+                    <p className="truncate text-xl font-bold leading-none sm:text-2xl">
+                      {metric.value}
+                    </p>
+                    <p className="mt-1 truncate text-[10px] font-semibold text-muted-foreground sm:mt-0 sm:text-xs">
+                      {metric.detail}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -591,6 +607,7 @@ const HomePage = () => {
             key={quickEntryResetKey}
             accounts={activePlayerAccounts}
             defaultSettings={userSettings}
+            isHydrating={isHomeDataLoading}
             isSubmitting={createMatchMutation.isPending}
             matches={matches}
             onSubmit={handleCreateMatch}
@@ -598,149 +615,68 @@ const HomePage = () => {
         </div>
       </section>
 
-      <section className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
-        <div className="grid gap-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="metric-label">세션</p>
-              <h2 className="mt-1 text-lg font-bold tracking-normal">이번 세션</h2>
-            </div>
-            <div className="flex items-center gap-2">
+      <section className="workspace-panel overflow-hidden">
+        <div className="section-header flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="metric-label">세션</p>
+            <h2 className="mt-1 truncate text-lg font-bold tracking-normal">이번 세션</h2>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {isHomeDataLoading ? (
+              <SkeletonBlock className="h-6 w-20" />
+            ) : (
               <Badge variant={manualSessionId ? 'default' : 'secondary'}>
                 {manualSessionId ? '진행중' : `${sessionMatches.length} 경기`}
               </Badge>
-              <Button
-                type="button"
-                size="sm"
-                variant={manualSessionId ? 'outline' : 'default'}
-                className={manualSessionId ? 'bg-transparent' : ''}
-                onClick={manualSessionId ? handleStopSession : handleStartSession}
-              >
-                {manualSessionId ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                {manualSessionId ? '종료' : '시작'}
-              </Button>
-            </div>
-          </div>
-          <div className="grid grid-cols-6 gap-1.5 sm:gap-2 lg:grid-cols-3">
-            {isLoading
-              ? emptySessionSlots.map((_, index) => (
-                  <SkeletonBlock key={index} className="h-14 rounded-md" />
-                ))
-              : sessionMatches.length > 0
-                ? sessionMatches.slice(0, 9).map((match, index) => (
-                    <div
-                      key={match.id}
-                      className={`flex h-12 flex-col items-center justify-center rounded-md border text-[11px] font-bold sm:h-14 sm:text-xs ${getResultTone(
-                        match.result,
-                      )}`}
-                    >
-                      <span>{index + 1}</span>
-                      <span>{getResultLabel(match.result)}</span>
-                    </div>
-                  ))
-                : emptySessionSlots.map((_, index) => (
-                    <div
-                      key={index}
-                      className="flex h-12 items-center justify-center rounded-md border border-dashed border-border bg-secondary/40 text-[11px] font-semibold text-muted-foreground sm:h-14 sm:text-xs"
-                    >
-                      {index + 1}
-                    </div>
-                  ))}
+            )}
+            <Button
+              type="button"
+              size="sm"
+              variant={manualSessionId ? 'outline' : 'default'}
+              className={manualSessionId ? 'bg-transparent' : ''}
+              disabled={isHomeDataLoading}
+              onClick={manualSessionId ? handleStopSession : handleStartSession}
+            >
+              {manualSessionId ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              {manualSessionId ? '종료' : '시작'}
+            </Button>
           </div>
         </div>
 
-        <div className="min-w-0">
-          <div className="mb-2 hidden items-center justify-between gap-3 lg:flex">
-            <p className="metric-label">최근 기록</p>
-            <span className="text-xs font-semibold text-muted-foreground">
-              {formatTime(sortedSessionMatches[0]?.playedAt)}
-            </span>
-          </div>
-          {isLoading ? (
-            <TodayMatchRowsSkeleton />
-          ) : sessionMatches.length > 0 ? (
-            <div className="subpanel">
-              {sortedSessionMatches.slice(0, 6).map((match) => (
-                <div
-                  key={match.id}
-                  className="flat-row grid grid-cols-[minmax(0,1fr)_auto] gap-3 p-3 sm:grid-cols-[72px_minmax(0,1fr)_80px_auto] sm:items-center"
-                >
-                  <div className="col-span-2 text-sm font-bold sm:col-span-1 sm:block">
-                    <span className="sm:hidden">{formatTime(match.playedAt)} · </span>
-                    <span className="hidden sm:inline">{formatTime(match.playedAt)}</span>
-                    <span className="sm:hidden">{getResultLabel(match.result)}</span>
-                  </div>
-                  <div className="col-span-2 min-w-0 sm:col-span-1">
-                    <p className="truncate text-sm font-semibold">
-                      {getMapLabel(match.mapId)} · {getModeLabel(match.modeId)}
-                    </p>
-                    <p className="mt-1 truncate text-xs text-muted-foreground">
-                      {getPlayerAccountLabel(accountById.get(match.accountId ?? ''))}
-                    </p>
-                  </div>
-                  <div
-                    className={`flex h-9 items-center justify-center rounded-md border text-xs font-bold ${getResultTone(
-                      match.result,
-                    )}`}
-                  >
-                    {match.teamScore}:{match.enemyScore}
-                  </div>
-                  <div className="col-span-2 flex justify-end gap-1 sm:col-span-1">
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="h-9 w-9"
-                      aria-label="경기 수정"
-                      onClick={() => openEditEntry(match)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="h-9 w-9 text-destructive hover:text-destructive"
-                      aria-label="경기 삭제"
-                      onClick={() => setDeleteTarget(match)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="subpanel">
-              <div className="flat-row p-3">
-                <InlineEmptyState
-                  title="저장된 경기 없음"
-                  description="현재 세션에 저장된 경기 기록이 없습니다."
-                  action={
-                    <Button variant="outline" className="bg-transparent" disabled>
-                      <Plus className="h-4 w-4" />
-                      경기 추가
-                    </Button>
-                  }
-                />
-              </div>
-              {Array.from({ length: 2 }, (_, index) => (
-                <div
-                  key={index}
-                  className="flat-row grid gap-3 p-3 opacity-55 sm:grid-cols-[72px_minmax(0,1fr)_80px_auto]"
-                >
-                  <div className="h-9 rounded-md border border-dashed border-border bg-secondary/40" />
+        {isHomeDataLoading ? (
+          <SessionStripSkeleton />
+        ) : (
+          <div>
+            <div className="border-b border-border/70 px-3.5 py-3 sm:px-5">
+              {sessionMatches.length > 0 ? (
+                <SessionTimeline matches={sessionFlowMatches} />
+              ) : (
+                <div className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-dashed border-border/80 bg-[hsl(var(--surface-2))] px-3">
                   <div className="min-w-0">
-                    <div className="h-4 w-40 rounded-md border border-dashed border-border bg-secondary/40" />
-                    <div className="mt-2 h-3 w-56 max-w-full rounded-md border border-dashed border-border bg-secondary/40" />
+                    <p className="truncate text-sm font-bold">새 세션 대기</p>
+                    <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+                      빠른 기록을 저장하면 이곳에 흐름이 쌓입니다.
+                    </p>
                   </div>
-                  <div className="h-9 rounded-md border border-dashed border-border bg-secondary/40" />
-                  <div className="hidden h-9 w-20 rounded-md border border-dashed border-border bg-secondary/40 sm:block" />
                 </div>
-              ))}
+              )}
             </div>
-          )}
-        </div>
+
+            {sessionMatches.length > 0 ? (
+              <div className="divide-y divide-border/70">
+                {sortedSessionMatches.slice(0, recentPreviewCount).map((match) => (
+                  <RecentMatchRow
+                    key={match.id}
+                    accountLabel={getPlayerAccountLabel(accountById.get(match.accountId ?? ''))}
+                    match={match}
+                    onDelete={() => setDeleteTarget(match)}
+                    onEdit={() => openEditEntry(match)}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        )}
       </section>
 
       <Dialog open={toolsOpen} onOpenChange={setToolsOpen}>
@@ -974,20 +910,123 @@ const HomePage = () => {
   );
 };
 
-const TodayMatchRowsSkeleton = () => (
-  <div className="subpanel">
-    {Array.from({ length: 4 }, (_, index) => (
-      <div
-        key={index}
-        className="flat-row grid gap-3 p-3 sm:grid-cols-[72px_minmax(0,1fr)_80px_auto]"
+interface RecentMatchRowProps {
+  accountLabel: string;
+  match: Match;
+  onDelete: () => void;
+  onEdit: () => void;
+}
+
+const recentMatchRowClassName =
+  'grid min-h-[68px] grid-cols-[56px_minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 sm:grid-cols-[56px_72px_minmax(0,1fr)_88px_80px] sm:px-5';
+
+const RecentMatchRow = ({ accountLabel, match, onDelete, onEdit }: RecentMatchRowProps) => (
+  <div className={recentMatchRowClassName}>
+    <div className="h-10 w-14 overflow-hidden rounded-md bg-secondary">
+      <img
+        alt=""
+        className="h-full w-full object-cover"
+        loading="lazy"
+        src={getMapScreenshotPath(match.mapId)}
+      />
+    </div>
+    <div className="hidden text-sm font-bold tabular-nums sm:block">
+      {formatTime(match.playedAt)}
+    </div>
+    <div className="min-w-0">
+      <p className="truncate text-sm font-semibold">
+        {getMapLabel(match.mapId)} · {getModeLabel(match.modeId)}
+      </p>
+      <p className="mt-1 truncate text-xs text-muted-foreground">
+        <span className="sm:hidden">
+          {formatTime(match.playedAt)} · {getResultLabel(match.result)} ·{' '}
+        </span>
+        {accountLabel}
+      </p>
+    </div>
+    <div
+      className={`hidden h-9 items-center justify-center rounded-md border text-xs font-bold sm:flex ${getResultTone(
+        match.result,
+      )}`}
+    >
+      {match.teamScore}:{match.enemyScore}
+    </div>
+    <div className="flex justify-end gap-1">
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-9 w-9"
+        aria-label="경기 수정"
+        onClick={onEdit}
       >
-        <SkeletonBlock className="h-5 w-12" />
+        <Pencil className="h-4 w-4" />
+      </Button>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-9 w-9 text-destructive hover:text-destructive"
+        aria-label="경기 삭제"
+        onClick={onDelete}
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
+    </div>
+  </div>
+);
+
+const SessionTimeline = ({ matches }: { matches: Match[] }) => (
+  <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1">
+    {matches.map((match, index) => (
+      <SessionTimelineItem key={match.id} index={index + 1} match={match} />
+    ))}
+  </div>
+);
+
+const SessionTimelineItem = ({ index, match }: { index: number; match: Match }) => (
+  <div
+    className={`grid h-12 min-w-[128px] shrink-0 grid-cols-[24px_minmax(0,1fr)] items-center gap-2 rounded-md border px-2.5 ${getResultTone(
+      match.result,
+    )}`}
+  >
+    <span className="flex h-6 w-6 items-center justify-center rounded bg-background/70 text-[11px] font-black tabular-nums">
+      {index}
+    </span>
+    <div className="min-w-0">
+      <p className="truncate text-xs font-bold">{getMapLabel(match.mapId)}</p>
+      <p className="mt-0.5 truncate text-[10px] font-semibold opacity-75">
+        {match.teamScore}:{match.enemyScore} · {getResultLabel(match.result)}
+      </p>
+    </div>
+  </div>
+);
+
+const SessionStripSkeleton = () => (
+  <div>
+    <div className="border-b border-border/70 px-3.5 py-3 sm:px-5">
+      <div className="mobile-scroll flex gap-2 overflow-hidden pb-1">
+        {sessionTimelineSkeletonItems.map((_, index) => (
+          <SkeletonBlock key={index} className="h-12 min-w-[128px] shrink-0" />
+        ))}
+      </div>
+    </div>
+    <TodayMatchRowsSkeleton />
+  </div>
+);
+
+const TodayMatchRowsSkeleton = () => (
+  <div className="divide-y divide-border/70">
+    {recentPreviewRows.map((_, index) => (
+      <div key={index} className={recentMatchRowClassName}>
+        <SkeletonBlock className="h-10 w-14" />
+        <SkeletonBlock className="hidden h-5 w-12 sm:block" />
         <div className="min-w-0">
           <SkeletonBlock className="h-4 w-48 max-w-full" />
           <SkeletonBlock className="mt-2 h-3 w-64 max-w-full" />
         </div>
-        <SkeletonBlock className="h-9 w-full" />
-        <div className="flex gap-1">
+        <SkeletonBlock className="hidden h-9 w-full sm:block" />
+        <div className="flex justify-end gap-1">
           <SkeletonBlock className="h-9 w-9" />
           <SkeletonBlock className="h-9 w-9" />
         </div>

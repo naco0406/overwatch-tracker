@@ -1,6 +1,7 @@
 import { Minus, Plus, Save, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 
+import { SkeletonBlock } from '@/components/common/DataState';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,9 +29,12 @@ import type { UserSettings } from '@/types/userSettings';
 type ModeFilter = ModeId | 'all';
 type ResultValue = MatchResult | '';
 
+const preferenceStorageKey = 'overwatch-tracker:quick-match-entry-preferences';
+
 interface QuickMatchEntryProps {
   accounts?: PlayerAccount[];
   defaultSettings?: UserSettings;
+  isHydrating?: boolean;
   isSubmitting?: boolean;
   matches?: Match[];
   onSubmit: (input: MatchCreateInput) => Promise<boolean | void>;
@@ -82,9 +86,57 @@ const getResultTone = (result: MatchResult, selected: boolean) => {
 const getDefaultAccountId = (accounts: PlayerAccount[]) =>
   accounts.find((account) => account.isMain)?.id ?? accounts[0]?.id ?? '';
 
+interface QuickMatchEntryPreferences {
+  accountId?: string;
+  queueType?: QueueType;
+}
+
+const isQueueType = (value: unknown): value is QueueType =>
+  typeof value === 'string' && queueOptions.some((queue) => queue.value === value);
+
+const readQuickMatchEntryPreferences = (): QuickMatchEntryPreferences => {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(preferenceStorageKey);
+    if (!raw) return {};
+
+    const parsed = JSON.parse(raw) as QuickMatchEntryPreferences;
+
+    return {
+      accountId: typeof parsed.accountId === 'string' ? parsed.accountId : undefined,
+      queueType: isQueueType(parsed.queueType) ? parsed.queueType : undefined,
+    };
+  } catch {
+    return {};
+  }
+};
+
+const writeQuickMatchEntryPreferences = (preferences: QuickMatchEntryPreferences) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    const current = readQuickMatchEntryPreferences();
+    window.sessionStorage.setItem(
+      preferenceStorageKey,
+      JSON.stringify({
+        ...current,
+        ...preferences,
+      }),
+    );
+  } catch {
+    // Preference persistence should never block match entry.
+  }
+};
+
 const QuickMatchEntry = ({
   accounts = [],
   defaultSettings,
+  isHydrating = false,
   isSubmitting = false,
   matches = [],
   onSubmit,
@@ -96,11 +148,16 @@ const QuickMatchEntry = ({
   const [enemyScore, setEnemyScore] = useState('');
   const [result, setResult] = useState<ResultValue>('');
   const [error, setError] = useState('');
-  const [selectedAccountId, setSelectedAccountId] = useState(() => getDefaultAccountId(accounts));
+  const initialPreferences = useMemo(() => readQuickMatchEntryPreferences(), []);
+  const [selectedAccountId, setSelectedAccountId] = useState(
+    () => initialPreferences.accountId ?? getDefaultAccountId(accounts),
+  );
   const defaultQueueType = defaultSettings?.defaultQueueType ?? 'solo';
-  const [selectedQueueType, setSelectedQueueType] = useState<QueueType>(defaultQueueType);
+  const [selectedQueueType, setSelectedQueueType] = useState<QueueType>(
+    initialPreferences.queueType ?? defaultQueueType,
+  );
   const enemyScoreInputRef = useRef<HTMLInputElement>(null);
-  const queueTouchedRef = useRef(false);
+  const queueTouchedRef = useRef(Boolean(initialPreferences.queueType));
   const teamScoreInputRef = useRef<HTMLInputElement>(null);
   const defaultAccountId = getDefaultAccountId(accounts);
   const effectiveSelectedAccountId = accounts.some((account) => account.id === selectedAccountId)
@@ -119,6 +176,7 @@ const QuickMatchEntry = ({
   const selectQueueType = (queueType: QueueType) => {
     queueTouchedRef.current = true;
     setSelectedQueueType(queueType);
+    writeQuickMatchEntryPreferences({ queueType });
     setError('');
   };
 
@@ -168,6 +226,10 @@ const QuickMatchEntry = ({
         return (baseOrder.get(left.value) ?? 0) - (baseOrder.get(right.value) ?? 0);
       });
   }, [mapPickCounts, mapQuery, modeFilter]);
+
+  if (isHydrating) {
+    return <QuickMatchEntrySkeleton />;
+  }
 
   const selectMap = (nextMapId: string) => {
     const nextMap = mapOptions.find((map) => map.value === nextMapId);
@@ -278,6 +340,7 @@ const QuickMatchEntry = ({
               value={effectiveSelectedAccountId}
               onValueChange={(value) => {
                 setSelectedAccountId(value);
+                writeQuickMatchEntryPreferences({ accountId: value });
                 setError('');
               }}
             >
@@ -541,6 +604,69 @@ const ScoreField = ({ inputRef, label, onAdjust, onChange, onKeyDown, value }: S
       >
         <Plus className="h-4 w-4" />
       </button>
+    </div>
+  </div>
+);
+
+const QuickMatchEntrySkeleton = () => (
+  <div className="w-full">
+    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div className="min-w-0">
+        <SkeletonBlock className="h-3 w-16" />
+        <SkeletonBlock className="mt-2 h-5 w-24" />
+      </div>
+      <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:min-w-[300px] sm:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)]">
+        <SkeletonBlock className="h-9" />
+        <SkeletonBlock className="h-9" />
+      </div>
+    </div>
+
+    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_310px] lg:items-start lg:gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="min-w-0">
+        <div className="grid gap-2 lg:grid-cols-[minmax(220px,300px)_minmax(0,1fr)] lg:items-center">
+          <SkeletonBlock className="h-10 sm:h-9" />
+          <div className="mobile-scroll flex gap-2 overflow-hidden pb-1">
+            {Array.from({ length: 5 }, (_, index) => (
+              <SkeletonBlock key={index} className="h-9 w-20 shrink-0" />
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-3 grid max-h-[420px] grid-cols-2 gap-2 overflow-hidden sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+          {Array.from({ length: 10 }, (_, index) => (
+            <div key={index} className="overflow-hidden rounded-md border border-border/70 bg-card">
+              <SkeletonBlock className="aspect-[16/9] rounded-none" />
+              <div className="p-2">
+                <SkeletonBlock className="h-3 w-20 max-w-full" />
+                <SkeletonBlock className="mt-2 h-3 w-12" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border/70 bg-card p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <SkeletonBlock className="h-3 w-16" />
+            <SkeletonBlock className="mt-2 h-5 w-28" />
+          </div>
+          <SkeletonBlock className="h-7 w-14" />
+        </div>
+
+        <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-end gap-2">
+          <SkeletonBlock className="h-20" />
+          <SkeletonBlock className="mb-7 h-5 w-3" />
+          <SkeletonBlock className="h-20" />
+        </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <SkeletonBlock className="h-10" />
+          <SkeletonBlock className="h-10" />
+          <SkeletonBlock className="h-10" />
+        </div>
+        <SkeletonBlock className="mt-3 h-11" />
+      </div>
     </div>
   </div>
 );
