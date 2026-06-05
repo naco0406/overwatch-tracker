@@ -11,6 +11,7 @@ import {
   Square,
   Swords,
   TableProperties,
+  UsersRound,
 } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
@@ -34,6 +35,7 @@ const navItems: NavItem[] = [
   { to: '/', label: '홈', icon: Home },
   { to: '/records', label: '기록', icon: TableProperties },
   { to: '/sessions', label: '세션', icon: Swords },
+  { to: '/community', label: '커뮤니티', icon: UsersRound },
   {
     to: '/stats/maps',
     label: '통계',
@@ -285,7 +287,7 @@ const AppLayout = () => {
         <main className="safe-page-bottom mx-auto flex min-h-screen w-full max-w-7xl flex-col px-3.5 pt-4 sm:px-6 sm:pt-5 xl:px-8 xl:py-8">
           <Outlet />
         </main>
-        <nav className="safe-bottom-nav fixed inset-x-2 z-40 grid grid-cols-6 rounded-lg border border-border/70 bg-card/95 p-1 backdrop-blur-xl xl:hidden">
+        <nav className="safe-bottom-nav fixed inset-x-2 z-40 grid grid-cols-4 rounded-lg border border-border/70 bg-card/95 p-1 backdrop-blur-xl xl:hidden">
           {navItems.map((item) => {
             const active = isNavItemActive(item, location.pathname);
 

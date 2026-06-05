@@ -3,6 +3,60 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export interface Database {
   public: {
     Tables: {
+      friend_requests: {
+        Row: {
+          created_at: string;
+          id: string;
+          recipient_id: string;
+          requester_id: string;
+          responded_at: string | null;
+          status: Database['public']['Enums']['friend_request_status'];
+          updated_at: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          recipient_id: string;
+          requester_id: string;
+          responded_at?: string | null;
+          status?: Database['public']['Enums']['friend_request_status'];
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          recipient_id?: string;
+          requester_id?: string;
+          responded_at?: string | null;
+          status?: Database['public']['Enums']['friend_request_status'];
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      friendships: {
+        Row: {
+          created_at: string;
+          id: string;
+          requested_by: string | null;
+          user_high_id: string;
+          user_low_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          requested_by?: string | null;
+          user_high_id: string;
+          user_low_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          requested_by?: string | null;
+          user_high_id?: string;
+          user_low_id?: string;
+        };
+        Relationships: [];
+      };
       match_heroes: {
         Row: {
           created_at: string;
@@ -172,11 +226,115 @@ export interface Database {
         };
         Relationships: [];
       };
+      user_profiles: {
+        Row: {
+          created_at: string;
+          is_discoverable: boolean;
+          nickname: string | null;
+          normalized_nickname: string | null;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          is_discoverable?: boolean;
+          nickname?: string | null;
+          normalized_nickname?: never;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          is_discoverable?: boolean;
+          nickname?: string | null;
+          normalized_nickname?: never;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      accept_friend_request: {
+        Args: { p_request_id: string };
+        Returns: Array<{
+          friend_id: string;
+          request_id: string;
+        }>;
+      };
+      are_friends: {
+        Args: { p_user_a: string; p_user_b: string };
+        Returns: boolean;
+      };
+      cancel_friend_request: {
+        Args: { p_request_id: string };
+        Returns: undefined;
+      };
+      decline_friend_request: {
+        Args: { p_request_id: string };
+        Returns: undefined;
+      };
+      get_friend_stats: {
+        Args: { p_friend_id: string };
+        Returns: Array<{
+          maps: Json;
+          modes: Json;
+          profile: Json;
+          recent_form: Json;
+          summary: Json;
+        }>;
+      };
+      list_friend_requests: {
+        Args: Record<PropertyKey, never>;
+        Returns: Array<{
+          created_at: string;
+          direction: string;
+          nickname: string;
+          request_id: string;
+          responded_at: string | null;
+          status: Database['public']['Enums']['friend_request_status'];
+          user_id: string;
+        }>;
+      };
+      list_friends: {
+        Args: Record<PropertyKey, never>;
+        Returns: Array<{
+          draws: number;
+          friend_id: string;
+          friends_since: string;
+          losses: number;
+          nickname: string;
+          total_matches: number;
+          win_rate: number;
+          wins: number;
+        }>;
+      };
+      remove_friend: {
+        Args: { p_friend_id: string };
+        Returns: undefined;
+      };
+      search_user_profiles: {
+        Args: { p_limit?: number; p_query: string };
+        Returns: Array<{
+          created_at: string;
+          nickname: string;
+          relationship: string;
+          request_id: string | null;
+          user_id: string;
+        }>;
+      };
+      send_friend_request: {
+        Args: { p_recipient_id: string };
+        Returns: Array<{
+          request_id: string | null;
+          status: string;
+        }>;
+      };
+    };
     Enums: {
       account_type: 'main' | 'sub';
+      friend_request_status: 'pending' | 'accepted' | 'declined' | 'canceled';
       match_result: 'win' | 'loss' | 'draw';
       match_source: 'ocr' | 'manual' | 'mixed';
       mode_id: 'control' | 'hybrid' | 'push' | 'escort' | 'flashpoint' | 'clash';

@@ -14,6 +14,10 @@ const RecordsPage = lazy(() =>
   import('@/pages/RecordsPage').then((module) => ({ default: module.RecordsPage })),
 );
 
+const CommunityPage = lazy(() =>
+  import('@/pages/CommunityPage').then((module) => ({ default: module.CommunityPage })),
+);
+
 const StatsPage = lazy(() =>
   import('@/pages/StatsPage').then((module) => ({ default: module.StatsPage })),
 );
@@ -42,6 +46,22 @@ const AppRoutes = () => (
           }
         />
         <Route path="/sessions" element={<SessionsPage />} />
+        <Route
+          path="/community"
+          element={
+            <LazyPage>
+              <CommunityPage />
+            </LazyPage>
+          }
+        />
+        <Route
+          path="/community/friends/:friendId"
+          element={
+            <LazyPage>
+              <CommunityPage />
+            </LazyPage>
+          }
+        />
         <Route path="/stats" element={<Navigate to="/stats/maps" replace />} />
         <Route
           path="/stats/:section"
