@@ -11,8 +11,20 @@ import {
 
 import { getMapLabel } from '@/data/matchOptions';
 import {
+  createLiveSceneRuntimeState,
+  createStableMapSelectionAnalysis,
+  getLiveFrameAnalysisPlan,
+  getLiveSceneSnapshot,
+  liveFrameSchedule,
+  reduceLiveProbe,
+  reduceLiveVisionAnalysis,
+  type LiveSceneSnapshot,
+} from '@/lib/liveFrameRuntime';
+import {
   analyzeLiveVisionCanvas,
+  drawLiveProbeFrame,
   drawLiveVisionFrame,
+  probeLiveVisionCanvas,
   terminateLiveVisionOcr,
   type LiveVisionAnalysis,
 } from '@/lib/liveVision';
@@ -50,6 +62,7 @@ interface LiveCaptureContextValue {
   evidenceEvents: LiveEvidenceEvent[];
   frameMetrics: LiveFrameMetrics | null;
   isLiveAvailable: boolean;
+  sceneSnapshot: LiveSceneSnapshot;
   startCapture: () => Promise<boolean>;
   status: LiveStatus;
   stopCapture: (nextStatus?: LiveStatus) => void;
@@ -66,7 +79,7 @@ const displayMediaOptions = {
     displaySurface: 'window',
     frameRate: {
       ideal: 15,
-      max: 30,
+      max: 15,
     },
   },
 } as unknown as DisplayMediaStreamOptions;
@@ -75,7 +88,10 @@ const fallbackDisplayMediaOptions = {
   audio: false,
   video: true,
 } satisfies DisplayMediaStreamOptions;
-export const liveSampleIntervalMs = 5_000;
+export const liveSampleIntervalMs = liveFrameSchedule.probeIntervalMs;
+export const livePreviewIntervalMs = 1_000;
+export const liveCadenceDescription = '250ms probe · adaptive OCR';
+const liveUiUpdateIntervalMs = 1_000;
 
 export const liveStatusLabel = {
   capturing: '수집 중',
@@ -92,6 +108,11 @@ export const liveFrameQualityLabel = {
 } satisfies Record<LiveFrameMetrics['quality'], string>;
 
 const LiveCaptureContext = createContext<LiveCaptureContextValue | null>(null);
+
+type VideoFrameCallbackVideo = HTMLVideoElement & {
+  cancelVideoFrameCallback?: (handle: number) => void;
+  requestVideoFrameCallback?: (callback: (now: number) => void) => number;
+};
 
 const getErrorName = (error: unknown) =>
   error instanceof DOMException || error instanceof Error ? error.name : '';
@@ -183,21 +204,41 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
   const [errorMessage, setErrorMessage] = useState('');
   const [evidenceEvents, setEvidenceEvents] = useState<LiveEvidenceEvent[]>([]);
   const [frameMetrics, setFrameMetrics] = useState<LiveFrameMetrics | null>(null);
+  const [sceneSnapshot, setSceneSnapshot] = useState<LiveSceneSnapshot>(() =>
+    getLiveSceneSnapshot(createLiveSceneRuntimeState(), 0),
+  );
   const [status, setStatus] = useState<LiveStatus>('idle');
   const [streamInfo, setStreamInfo] = useState<LiveStreamInfo | null>(null);
   const [visionAnalysis, setVisionAnalysis] = useState<LiveVisionAnalysis | null>(null);
   const analysisCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fallbackFrameTimerRef = useRef<number | null>(null);
+  const frameCallbackHandleRef = useRef<number | null>(null);
   const frameIndexRef = useRef(0);
-  const sampleTimerRef = useRef<number | null>(null);
+  const lastFrameEvidenceAtRef = useRef(0);
+  const lastFrameMetricsUiAtRef = useRef(0);
+  const lastProbeEvidenceAtRef = useRef(0);
+  const lastScenePhaseRef = useRef<LiveSceneSnapshot['phase']>('observing');
+  const lastSceneSnapshotUiAtRef = useRef(0);
+  const lastStableCandidateKeyRef = useRef('');
+  const liveRuntimeRef = useRef(createLiveSceneRuntimeState());
+  const probeCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const scheduleFrameSamplingRef = useRef<() => void>(() => undefined);
   const streamRef = useRef<MediaStream | null>(null);
   const visionCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const visionInFlightRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const clearSampling = useCallback(() => {
-    if (sampleTimerRef.current !== null) {
-      window.clearInterval(sampleTimerRef.current);
-      sampleTimerRef.current = null;
+    const video = videoRef.current as VideoFrameCallbackVideo | null;
+
+    if (frameCallbackHandleRef.current !== null) {
+      video?.cancelVideoFrameCallback?.(frameCallbackHandleRef.current);
+      frameCallbackHandleRef.current = null;
+    }
+
+    if (fallbackFrameTimerRef.current !== null) {
+      window.clearTimeout(fallbackFrameTimerRef.current);
+      fallbackFrameTimerRef.current = null;
     }
   }, []);
 
@@ -213,6 +254,29 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
       ].slice(0, 12),
     );
   }, []);
+
+  const publishSceneSnapshot = useCallback(
+    (snapshot: LiveSceneSnapshot, observedAt: number, force = false) => {
+      const candidateKey = snapshot.stableMapCandidateIds.join('|');
+      const phaseChanged = snapshot.phase !== lastScenePhaseRef.current;
+      const candidatesChanged = candidateKey !== lastStableCandidateKeyRef.current;
+      const shouldPublish =
+        force ||
+        phaseChanged ||
+        candidatesChanged ||
+        observedAt - lastSceneSnapshotUiAtRef.current >= liveUiUpdateIntervalMs;
+
+      if (!shouldPublish) {
+        return;
+      }
+
+      lastScenePhaseRef.current = snapshot.phase;
+      lastStableCandidateKeyRef.current = candidateKey;
+      lastSceneSnapshotUiAtRef.current = observedAt;
+      setSceneSnapshot(snapshot);
+    },
+    [],
+  );
 
   const stopCapture = useCallback(
     (nextStatus: LiveStatus = 'idle') => {
@@ -230,119 +294,224 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
       setStreamInfo(null);
       setVisionAnalysis(null);
       frameIndexRef.current = 0;
+      lastFrameEvidenceAtRef.current = 0;
+      lastFrameMetricsUiAtRef.current = 0;
+      lastProbeEvidenceAtRef.current = 0;
+      lastScenePhaseRef.current = 'observing';
+      lastSceneSnapshotUiAtRef.current = 0;
+      lastStableCandidateKeyRef.current = '';
+      liveRuntimeRef.current = createLiveSceneRuntimeState();
+      setSceneSnapshot(getLiveSceneSnapshot(liveRuntimeRef.current, 0));
       visionInFlightRef.current = false;
       void terminateLiveVisionOcr();
     },
     [clearSampling],
   );
 
-  const sampleFrame = useCallback(() => {
-    const video = videoRef.current;
+  const sampleFrame = useCallback(
+    (requestedAt = performance.now()) => {
+      const runtime = liveRuntimeRef.current;
+      const initialPlan = getLiveFrameAnalysisPlan(runtime, requestedAt, visionInFlightRef.current);
 
-    if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-      return;
-    }
+      if (!initialPlan.shouldProbe) {
+        return;
+      }
 
-    const width = video.videoWidth;
-    const height = video.videoHeight;
+      const video = videoRef.current;
 
-    if (width <= 0 || height <= 0) {
-      return;
-    }
+      if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        return;
+      }
 
-    const analysisCanvas = analysisCanvasRef.current ?? document.createElement('canvas');
-    analysisCanvasRef.current = analysisCanvas;
-    const analysisWidth = 160;
-    const analysisHeight = Math.max(1, Math.round((height / width) * analysisWidth));
+      const width = video.videoWidth;
+      const height = video.videoHeight;
 
-    if (analysisCanvas.width !== analysisWidth || analysisCanvas.height !== analysisHeight) {
-      analysisCanvas.width = analysisWidth;
-      analysisCanvas.height = analysisHeight;
-    }
-    const analysisContext = analysisCanvas.getContext('2d', {
-      willReadFrequently: true,
-    });
+      if (width <= 0 || height <= 0) {
+        return;
+      }
 
-    if (!analysisContext) {
-      return;
-    }
+      const analysisCanvas = analysisCanvasRef.current ?? document.createElement('canvas');
+      analysisCanvasRef.current = analysisCanvas;
+      const analysisWidth = 160;
+      const analysisHeight = Math.max(1, Math.round((height / width) * analysisWidth));
 
-    analysisContext.drawImage(video, 0, 0, analysisWidth, analysisHeight);
-    const imageData = analysisContext.getImageData(0, 0, analysisWidth, analysisHeight).data;
-    const pixelCount = imageData.length / 4;
-    let lumaTotal = 0;
-    let lumaSquares = 0;
+      if (analysisCanvas.width !== analysisWidth || analysisCanvas.height !== analysisHeight) {
+        analysisCanvas.width = analysisWidth;
+        analysisCanvas.height = analysisHeight;
+      }
+      const analysisContext = analysisCanvas.getContext('2d', {
+        willReadFrequently: true,
+      });
 
-    for (let index = 0; index < imageData.length; index += 4) {
-      const luma =
-        imageData[index] * 0.299 + imageData[index + 1] * 0.587 + imageData[index + 2] * 0.114;
+      if (!analysisContext) {
+        return;
+      }
 
-      lumaTotal += luma;
-      lumaSquares += luma * luma;
-    }
+      analysisContext.drawImage(video, 0, 0, analysisWidth, analysisHeight);
+      const imageData = analysisContext.getImageData(0, 0, analysisWidth, analysisHeight).data;
+      const pixelCount = imageData.length / 4;
+      let lumaTotal = 0;
+      let lumaSquares = 0;
 
-    const brightness = lumaTotal / pixelCount;
-    const variance = Math.max(0, lumaSquares / pixelCount - brightness * brightness);
-    const contrast = Math.sqrt(variance);
-    const quality = getFrameQuality(brightness, contrast);
-    const frameIndex = frameIndexRef.current + 1;
-    frameIndexRef.current = frameIndex;
-    const sampledAt = new Date().toISOString();
+      for (let index = 0; index < imageData.length; index += 4) {
+        const luma =
+          imageData[index] * 0.299 + imageData[index + 1] * 0.587 + imageData[index + 2] * 0.114;
 
-    setFrameMetrics({
-      brightness,
-      contrast,
-      frameIndex,
-      quality,
-      sampledAt,
-    });
-    addEvidenceEvent({
-      confidence: quality === 'readable' ? 0.72 : quality === 'soft' ? 0.38 : 0.12,
-      detail: `${formatLiveNumber(brightness)} 밝기 · ${formatLiveNumber(contrast)} 대비`,
-      frameIndex,
-      kind: 'frame',
-      label: liveFrameQualityLabel[quality],
-    });
+        lumaTotal += luma;
+        lumaSquares += luma * luma;
+      }
 
-    if (quality !== 'readable' || visionInFlightRef.current) {
-      return;
-    }
+      const brightness = lumaTotal / pixelCount;
+      const variance = Math.max(0, lumaSquares / pixelCount - brightness * brightness);
+      const contrast = Math.sqrt(variance);
+      const quality = getFrameQuality(brightness, contrast);
+      const frameIndex = frameIndexRef.current + 1;
+      frameIndexRef.current = frameIndex;
+      const sampledAt = new Date().toISOString();
 
-    const visionCanvas = visionCanvasRef.current ?? document.createElement('canvas');
-    visionCanvasRef.current = visionCanvas;
+      if (
+        lastFrameMetricsUiAtRef.current === 0 ||
+        requestedAt - lastFrameMetricsUiAtRef.current >= liveUiUpdateIntervalMs ||
+        quality !== 'readable'
+      ) {
+        lastFrameMetricsUiAtRef.current = requestedAt;
+        setFrameMetrics({
+          brightness,
+          contrast,
+          frameIndex,
+          quality,
+          sampledAt,
+        });
+      }
 
-    if (!drawLiveVisionFrame(video, visionCanvas)) {
-      return;
-    }
-
-    visionInFlightRef.current = true;
-    void analyzeLiveVisionCanvas(visionCanvas)
-      .then((analysis) => {
-        setVisionAnalysis(analysis);
-
-        if (analysis.screen.screenType === 'map_selection' && analysis.mapSelection) {
-          addEvidenceEvent({
-            confidence: analysis.screen.confidence,
-            detail: formatMapSelectionDetail(analysis),
-            frameIndex,
-            kind: 'vision',
-            label: '맵 선택 감지',
-          });
-        }
-      })
-      .catch((error) => {
+      if (requestedAt - lastFrameEvidenceAtRef.current >= 2_000 || quality !== 'readable') {
+        lastFrameEvidenceAtRef.current = requestedAt;
         addEvidenceEvent({
-          confidence: 0,
-          detail: error instanceof Error ? error.message : '분석 실패',
+          confidence: quality === 'readable' ? 0.72 : quality === 'soft' ? 0.38 : 0.12,
+          detail: `${formatLiveNumber(brightness)} 밝기 · ${formatLiveNumber(contrast)} 대비`,
+          frameIndex,
+          kind: 'frame',
+          label: liveFrameQualityLabel[quality],
+        });
+      }
+
+      if (quality !== 'readable') {
+        return;
+      }
+
+      const probeCanvas = probeCanvasRef.current ?? document.createElement('canvas');
+      probeCanvasRef.current = probeCanvas;
+
+      if (!drawLiveProbeFrame(video, probeCanvas)) {
+        return;
+      }
+
+      const probe = probeLiveVisionCanvas(probeCanvas);
+      reduceLiveProbe(runtime, probe, requestedAt);
+      publishSceneSnapshot(getLiveSceneSnapshot(runtime, requestedAt), requestedAt);
+
+      if (
+        probe.screenCandidate === 'map_selection' &&
+        requestedAt - lastProbeEvidenceAtRef.current >= 1_000
+      ) {
+        lastProbeEvidenceAtRef.current = requestedAt;
+        addEvidenceEvent({
+          confidence: probe.confidence,
+          detail: probe.evidence.join(' · '),
           frameIndex,
           kind: 'vision',
-          label: '분석 실패',
+          label: '맵 선택 후보',
         });
+      }
+
+      const visionPlan = getLiveFrameAnalysisPlan(runtime, requestedAt, visionInFlightRef.current);
+
+      if (!visionPlan.shouldRunVision) {
+        return;
+      }
+
+      const visionCanvas = visionCanvasRef.current ?? document.createElement('canvas');
+      visionCanvasRef.current = visionCanvas;
+
+      if (!drawLiveVisionFrame(video, visionCanvas)) {
+        return;
+      }
+
+      visionInFlightRef.current = true;
+      void analyzeLiveVisionCanvas(visionCanvas, {
+        includeOcr: visionPlan.includeOcr,
       })
-      .finally(() => {
-        visionInFlightRef.current = false;
+        .then((analysis) => {
+          const finishedAt = performance.now();
+
+          reduceLiveVisionAnalysis(runtime, analysis, finishedAt, {
+            includedOcr: visionPlan.includeOcr,
+          });
+
+          const nextSnapshot = getLiveSceneSnapshot(runtime, finishedAt);
+          const stableAnalysis = createStableMapSelectionAnalysis(
+            analysis,
+            nextSnapshot.stableMapCandidateIds,
+          );
+
+          publishSceneSnapshot(nextSnapshot, finishedAt, true);
+          setVisionAnalysis(stableAnalysis);
+
+          if (stableAnalysis.screen.screenType === 'map_selection' && stableAnalysis.mapSelection) {
+            addEvidenceEvent({
+              confidence: stableAnalysis.screen.confidence,
+              detail: `${formatMapSelectionDetail(stableAnalysis)}${
+                visionPlan.includeOcr ? ' · OCR 보정' : ''
+              }`,
+              frameIndex,
+              kind: 'vision',
+              label:
+                nextSnapshot.phase === 'stable-map-selection' ? '맵 선택 안정' : '맵 선택 확인',
+            });
+          }
+        })
+        .catch((error) => {
+          addEvidenceEvent({
+            confidence: 0,
+            detail: error instanceof Error ? error.message : '분석 실패',
+            frameIndex,
+            kind: 'vision',
+            label: '분석 실패',
+          });
+        })
+        .finally(() => {
+          visionInFlightRef.current = false;
+        });
+    },
+    [addEvidenceEvent, publishSceneSnapshot],
+  );
+
+  const scheduleFrameSampling = useCallback(() => {
+    const video = videoRef.current as VideoFrameCallbackVideo | null;
+
+    if (!video) {
+      return;
+    }
+
+    if (video.requestVideoFrameCallback) {
+      frameCallbackHandleRef.current = video.requestVideoFrameCallback((now) => {
+        frameCallbackHandleRef.current = null;
+        sampleFrame(now);
+        scheduleFrameSamplingRef.current();
       });
-  }, [addEvidenceEvent]);
+      return;
+    }
+
+    fallbackFrameTimerRef.current = window.setTimeout(() => {
+      fallbackFrameTimerRef.current = null;
+      sampleFrame(performance.now());
+      scheduleFrameSamplingRef.current();
+    }, liveFrameSchedule.confirmProbeIntervalMs);
+  }, [sampleFrame]);
+
+  useEffect(() => {
+    scheduleFrameSamplingRef.current = scheduleFrameSampling;
+  }, [scheduleFrameSampling]);
 
   const drawPreviewToCanvas = useCallback((canvas: HTMLCanvasElement) => {
     const video = videoRef.current;
@@ -381,6 +550,14 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
     setFrameMetrics(null);
     setVisionAnalysis(null);
     frameIndexRef.current = 0;
+    lastFrameEvidenceAtRef.current = 0;
+    lastFrameMetricsUiAtRef.current = 0;
+    lastProbeEvidenceAtRef.current = 0;
+    lastScenePhaseRef.current = 'observing';
+    lastSceneSnapshotUiAtRef.current = 0;
+    lastStableCandidateKeyRef.current = '';
+    liveRuntimeRef.current = createLiveSceneRuntimeState();
+    setSceneSnapshot(getLiveSceneSnapshot(liveRuntimeRef.current, 0));
 
     try {
       const stream = await createDisplayMediaStream();
@@ -416,7 +593,7 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
         label: '화면 공유',
       });
       sampleFrame();
-      sampleTimerRef.current = window.setInterval(sampleFrame, liveSampleIntervalMs);
+      scheduleFrameSampling();
 
       return true;
     } catch (error) {
@@ -424,7 +601,7 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
       setErrorMessage(getErrorMessage(error));
       return false;
     }
-  }, [addEvidenceEvent, sampleFrame, stopCapture]);
+  }, [addEvidenceEvent, sampleFrame, scheduleFrameSampling, stopCapture]);
 
   useEffect(
     () => () => {
@@ -440,6 +617,7 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
       evidenceEvents,
       frameMetrics,
       isLiveAvailable: status === 'capturing',
+      sceneSnapshot,
       startCapture,
       status,
       stopCapture,
@@ -451,6 +629,7 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
       errorMessage,
       evidenceEvents,
       frameMetrics,
+      sceneSnapshot,
       startCapture,
       status,
       stopCapture,

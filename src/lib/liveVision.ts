@@ -6,6 +6,7 @@ import {
   findVisionTextOption,
   getCoverSourceRect,
   getRelativeRect,
+  mapSelectionCardRegions,
   mapSelectionLabelRegions,
   mapSelectionMatchSize,
   refineMapSelectionWithTextEvidence,
@@ -14,9 +15,21 @@ import {
   type MapTemplate,
   type PixelImage,
   type PixelRect,
+  type RelativeRect,
   type VisionScreenDetection,
   type VisionTextOption,
 } from '@/lib/visionPipelineCore';
+
+export interface LiveVisionProbe {
+  analyzedAt: string;
+  cardScores: {
+    score: number;
+    slot: MapSelectionDetection<MapOption['value']>['candidates'][number]['slot'];
+  }[];
+  confidence: number;
+  evidence: string[];
+  screenCandidate: VisionScreenDetection<MapOption['value']>['screenType'];
+}
 
 export interface LiveVisionAnalysis {
   analyzedAt: string;
@@ -29,6 +42,9 @@ type LabelOcrWorker = Awaited<ReturnType<TesseractModule['createWorker']>>;
 
 const liveVisionFrameSize = {
   width: 960,
+} as const;
+const liveProbeFrameSize = {
+  width: 320,
 } as const;
 const ocrCachePath = 'overwatch-tracker-live-ocr-v1';
 const ocrLanguages = ['kor', 'eng'];
@@ -50,6 +66,136 @@ const getCanvasContext = (canvas: HTMLCanvasElement) => {
   }
 
   return context;
+};
+
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
+const mapSelectionTitleRegion = {
+  height: 0.12,
+  left: 0.38,
+  top: 0.12,
+  width: 0.24,
+} satisfies RelativeRect;
+
+const mapSelectionRandomRegion = {
+  height: 0.1,
+  left: 0.3,
+  top: 0.77,
+  width: 0.4,
+} satisfies RelativeRect;
+
+const readCanvasRegionStats = (canvas: HTMLCanvasElement, region: RelativeRect) => {
+  const context = getCanvasContext(canvas);
+  const rect = getRelativeRect(canvas, region);
+  const width = Math.max(1, rect.width);
+  const height = Math.max(1, rect.height);
+  const data = context.getImageData(rect.left, rect.top, width, height).data;
+  const pixelCount = data.length / 4;
+  let brightPixels = 0;
+  let cyanPixels = 0;
+  let lumaSquares = 0;
+  let lumaTotal = 0;
+  let saturationTotal = 0;
+
+  for (let index = 0; index < data.length; index += 4) {
+    const red = data[index];
+    const green = data[index + 1];
+    const blue = data[index + 2];
+    const luma = red * 0.299 + green * 0.587 + blue * 0.114;
+    const maxChannel = Math.max(red, green, blue);
+    const minChannel = Math.min(red, green, blue);
+    const saturation = maxChannel === 0 ? 0 : (maxChannel - minChannel) / maxChannel;
+
+    lumaTotal += luma;
+    lumaSquares += luma * luma;
+    saturationTotal += saturation;
+
+    if (luma >= 185) {
+      brightPixels += 1;
+    }
+
+    if (green > 130 && blue > 130 && red < 80) {
+      cyanPixels += 1;
+    }
+  }
+
+  const brightness = lumaTotal / Math.max(1, pixelCount);
+  const variance = Math.max(0, lumaSquares / Math.max(1, pixelCount) - brightness * brightness);
+
+  return {
+    brightness,
+    brightRatio: brightPixels / Math.max(1, pixelCount),
+    contrast: Math.sqrt(variance),
+    cyanRatio: cyanPixels / Math.max(1, pixelCount),
+    saturation: saturationTotal / Math.max(1, pixelCount),
+  };
+};
+
+const scoreMapSelectionCardRegion = (canvas: HTMLCanvasElement, region: RelativeRect) => {
+  const stats = readCanvasRegionStats(canvas, region);
+  const brightnessScore = stats.brightness > 28 && stats.brightness < 190 ? 1 : 0.25;
+  const contrastScore = clamp01((stats.contrast - 18) / 42);
+  const saturationScore = clamp01((stats.saturation - 0.12) / 0.28);
+
+  return clamp01(contrastScore * 0.52 + saturationScore * 0.32 + brightnessScore * 0.16);
+};
+
+export const drawLiveProbeFrame = (
+  video: HTMLVideoElement,
+  canvas: HTMLCanvasElement,
+): HTMLCanvasElement | null => {
+  const width = video.videoWidth;
+  const height = video.videoHeight;
+
+  if (width <= 0 || height <= 0) {
+    return null;
+  }
+
+  const frameWidth = Math.min(liveProbeFrameSize.width, width);
+  const frameHeight = Math.max(1, Math.round((height / width) * frameWidth));
+  const context = getCanvasContext(canvas);
+
+  if (canvas.width !== frameWidth || canvas.height !== frameHeight) {
+    canvas.width = frameWidth;
+    canvas.height = frameHeight;
+  }
+
+  context.drawImage(video, 0, 0, frameWidth, frameHeight);
+
+  return canvas;
+};
+
+export const probeLiveVisionCanvas = (canvas: HTMLCanvasElement): LiveVisionProbe => {
+  const cardScores = mapSelectionCardRegions.map(({ region, slot }) => ({
+    score: scoreMapSelectionCardRegion(canvas, region),
+    slot,
+  }));
+  const titleStats = readCanvasRegionStats(canvas, mapSelectionTitleRegion);
+  const randomStats = readCanvasRegionStats(canvas, mapSelectionRandomRegion);
+  const strongCardCount = cardScores.filter((card) => card.score >= 0.46).length;
+  const cardAverage =
+    cardScores.reduce((sum, card) => sum + card.score, 0) / Math.max(1, cardScores.length);
+  const titleScore = clamp01(titleStats.brightRatio * 14 + (titleStats.contrast - 24) / 48);
+  const randomScore = clamp01(
+    randomStats.cyanRatio * 8 + (randomStats.contrast - 16) / 48 + randomStats.brightRatio * 4,
+  );
+  const confidence = clamp01(
+    strongCardCount * 0.15 + cardAverage * 0.42 + titleScore * 0.18 + randomScore * 0.2,
+  );
+  const screenCandidate = confidence >= 0.5 ? 'map_selection' : 'unknown';
+  const evidence = [
+    `${strongCardCount}/3 card-like regions`,
+    `${Math.round(cardAverage * 100)} card score`,
+    `${Math.round(randomScore * 100)} random row score`,
+  ];
+
+  return {
+    analyzedAt: new Date().toISOString(),
+    cardScores,
+    confidence,
+    evidence,
+    screenCandidate,
+  };
 };
 
 const loadHtmlImage = (source: string) =>
@@ -274,6 +420,7 @@ export const drawLiveVisionFrame = (
 
 export const analyzeLiveVisionCanvas = async (
   canvas: HTMLCanvasElement,
+  options: { includeOcr?: boolean } = {},
 ): Promise<LiveVisionAnalysis> => {
   const pixelImage = createPixelImageFromCanvas(canvas, undefined, {
     height: canvas.height,
@@ -284,7 +431,7 @@ export const analyzeLiveVisionCanvas = async (
   const uniqueVisualMapCount = new Set(mapSelection.candidates.map((candidate) => candidate.mapId))
     .size;
 
-  if (mapSelection.confidence >= 0.6 && uniqueVisualMapCount >= 3) {
+  if ((options.includeOcr ?? true) && mapSelection.confidence >= 0.6 && uniqueVisualMapCount >= 3) {
     const textEvidence = await runMapSelectionLabelOcr(canvas);
 
     mapSelection = refineMapSelectionWithTextEvidence(mapSelection, textEvidence);
