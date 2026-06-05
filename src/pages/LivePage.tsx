@@ -23,7 +23,6 @@ import { getMapLabel, getModeLabel } from '@/data/matchOptions';
 import { getMapScreenshotPath } from '@/data/masterAssets';
 import {
   formatLiveNumber,
-  formatLiveSampleTime,
   liveCadenceDescription,
   liveFrameQualityLabel,
   livePreviewIntervalMs,
@@ -93,6 +92,7 @@ const LivePage = () => {
   const startLive = useCallback(() => {
     void startCapture();
   }, [startCapture]);
+  const hasPreviousLiveSnapshot = Boolean(frameMetrics || visionAnalysis || evidenceEvents.length);
 
   useEffect(() => {
     let previewTimer: number | null = null;
@@ -114,6 +114,46 @@ const LivePage = () => {
       }
     };
   }, [drawPreviewToCanvas, isLiveAvailable]);
+
+  if (!isLiveAvailable && hasPreviousLiveSnapshot) {
+    return (
+      <div className="page-stack">
+        <PageHeader
+          eyebrow="마지막 수집"
+          title="LIVE"
+          description="화면 공유는 종료됐고, 마지막으로 인식한 상태만 남겨두었습니다."
+          actions={
+            <Button
+              type="button"
+              disabled={status === 'starting' || status === 'unsupported'}
+              onClick={startLive}
+            >
+              <MonitorUp className="h-4 w-4" />
+              다시 공유
+            </Button>
+          }
+        />
+
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+          <LiveDecisionPanel
+            frameMetrics={frameMetrics}
+            isDataLoading={isMatchesLoading}
+            recommendations={mapRecommendations}
+            sceneSnapshot={sceneSnapshot}
+            visionAnalysis={visionAnalysis}
+          />
+          <LiveSystemPanel
+            evidenceEvents={evidenceEvents}
+            frameMetrics={frameMetrics}
+            sceneSnapshot={sceneSnapshot}
+            streamInfo={streamInfo}
+          />
+        </section>
+
+        <LiveChoiceRail recommendations={mapRecommendations} />
+      </div>
+    );
+  }
 
   if (!isLiveAvailable) {
     return (
@@ -316,7 +356,7 @@ const LivePreviewPanel = ({
             icon={Eye}
             label="품질"
             value={frameMetrics ? liveFrameQualityLabel[frameMetrics.quality] : '대기'}
-            detail={formatLiveSampleTime(frameMetrics?.sampledAt ?? null)}
+            detail="현재 공유 프레임"
           />
           <LiveOverlayMetric
             icon={Activity}
@@ -379,8 +419,8 @@ const LiveDecisionPanel = ({
       <div className="grid grid-cols-3 divide-x divide-border/70 border-y border-border/70 bg-[hsl(var(--surface-2))]">
         <DecisionMetric label="화면" value={liveScenePhaseLabel[sceneSnapshot.phase]} />
         <DecisionMetric
-          label="갱신"
-          value={formatLiveSampleTime(frameMetrics?.sampledAt ?? null)}
+          label="품질"
+          value={frameMetrics ? liveFrameQualityLabel[frameMetrics.quality] : '--'}
         />
         <DecisionMetric label="후보" value={`${detectedCandidates.length}`} />
       </div>
@@ -466,9 +506,6 @@ const LiveSystemPanel = ({
           <ListChecks className="h-4 w-4 shrink-0 text-primary" />
           최근 이벤트
         </span>
-        <Badge variant="outline" className="shrink-0 bg-transparent">
-          {evidenceEvents.length}
-        </Badge>
       </summary>
       <div className="max-h-64 overflow-auto border-t border-border/70">
         {evidenceEvents.length > 0 ? (
@@ -723,7 +760,7 @@ const ChoiceTile = ({
 );
 
 const EvidenceRow = ({ event }: { event: LiveEvidenceEvent }) => (
-  <div className="grid gap-3 p-3 sm:grid-cols-[92px_minmax(0,1fr)_96px] sm:items-center">
+  <div className="grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_72px] sm:items-center">
     <div className="flex items-center gap-2">
       <span
         className={cn(
@@ -735,13 +772,10 @@ const EvidenceRow = ({ event }: { event: LiveEvidenceEvent }) => (
               : 'bg-muted-foreground/60',
         )}
       />
-      <p className="text-xs font-bold text-muted-foreground">
-        {formatLiveSampleTime(event.observedAt)}
-      </p>
-    </div>
-    <div className="min-w-0">
-      <p className="truncate text-sm font-bold">{event.label}</p>
-      <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">{event.detail}</p>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-bold">{event.label}</p>
+        <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">{event.detail}</p>
+      </div>
     </div>
     <Badge variant="outline" className="w-fit bg-transparent sm:ml-auto">
       {Math.round(event.confidence * 100)}%

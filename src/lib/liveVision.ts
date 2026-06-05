@@ -179,10 +179,13 @@ export const probeLiveVisionCanvas = (canvas: HTMLCanvasElement): LiveVisionProb
   const randomScore = clamp01(
     randomStats.cyanRatio * 8 + (randomStats.contrast - 16) / 48 + randomStats.brightRatio * 4,
   );
-  const confidence = clamp01(
+  const rawConfidence = clamp01(
     strongCardCount * 0.15 + cardAverage * 0.42 + titleScore * 0.18 + randomScore * 0.2,
   );
-  const screenCandidate = confidence >= 0.5 ? 'map_selection' : 'unknown';
+  const hasMapSelectionStructure = strongCardCount >= 2 && cardAverage >= 0.42;
+  const confidence = hasMapSelectionStructure ? rawConfidence : Math.min(rawConfidence, 0.42);
+  const screenCandidate =
+    hasMapSelectionStructure && confidence >= 0.58 ? 'map_selection' : 'unknown';
   const evidence = [
     `${strongCardCount}/3 card-like regions`,
     `${Math.round(cardAverage * 100)} card score`,

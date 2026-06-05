@@ -291,17 +291,12 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
       }
 
       setStatus(nextStatus);
-      setStreamInfo(null);
-      setVisionAnalysis(null);
-      frameIndexRef.current = 0;
       lastFrameEvidenceAtRef.current = 0;
       lastFrameMetricsUiAtRef.current = 0;
       lastProbeEvidenceAtRef.current = 0;
       lastScenePhaseRef.current = 'observing';
       lastSceneSnapshotUiAtRef.current = 0;
       lastStableCandidateKeyRef.current = '';
-      liveRuntimeRef.current = createLiveSceneRuntimeState();
-      setSceneSnapshot(getLiveSceneSnapshot(liveRuntimeRef.current, 0));
       visionInFlightRef.current = false;
       void terminateLiveVisionOcr();
     },
@@ -384,10 +379,10 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
         });
       }
 
-      if (requestedAt - lastFrameEvidenceAtRef.current >= 2_000 || quality !== 'readable') {
+      if (quality !== 'readable' && requestedAt - lastFrameEvidenceAtRef.current >= 2_000) {
         lastFrameEvidenceAtRef.current = requestedAt;
         addEvidenceEvent({
-          confidence: quality === 'readable' ? 0.72 : quality === 'soft' ? 0.38 : 0.12,
+          confidence: quality === 'soft' ? 0.38 : 0.12,
           detail: `${formatLiveNumber(brightness)} 밝기 · ${formatLiveNumber(contrast)} 대비`,
           frameIndex,
           kind: 'frame',
