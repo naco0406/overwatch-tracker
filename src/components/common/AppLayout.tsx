@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   BarChart3,
+  ChevronDown,
   Command,
   Grid2X2,
   Home,
@@ -8,16 +9,21 @@ import {
   MonitorUp,
   Radio,
   Settings,
+  ShieldCheck,
   Square,
   Swords,
   TableProperties,
+  UserRound,
   UsersRound,
 } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { useOwnProfile } from '@/hooks/useCommunity';
 import { liveStatusLabel, useLiveCapture } from '@/hooks/useLiveCapture';
 import { cn } from '@/lib/utils';
 
@@ -49,7 +55,16 @@ const navItems: NavItem[] = [
     ],
   },
   { to: '/master-data', label: '마스터', icon: Grid2X2 },
-  { to: '/settings', label: '설정', icon: Settings },
+  {
+    to: '/settings/account',
+    label: '설정',
+    icon: Settings,
+    children: [
+      { to: '/settings/account', label: '내 계정' },
+      { to: '/settings/battle-net', label: '배틀넷' },
+      { to: '/settings/data', label: '데이터' },
+    ],
+  },
 ];
 
 const isPathActive = (to: string, pathname: string) =>
@@ -59,8 +74,11 @@ const isNavItemActive = (item: NavItem, pathname: string) =>
   isPathActive(item.to, pathname) ||
   Boolean(item.children?.some((child) => isPathActive(child.to, pathname)));
 
+const getAccountInitial = (displayName: string) => displayName.trim().slice(0, 1).toUpperCase();
+
 const AppLayout = () => {
   const { signOut, user } = useAuth();
+  const { data: profile, isLoading: isProfileLoading } = useOwnProfile();
   const { isLiveAvailable, startCapture, status: liveStatus, stopCapture } = useLiveCapture();
   const location = useLocation();
   const navigate = useNavigate();
@@ -82,6 +100,10 @@ const AppLayout = () => {
           ? '지원 안 함'
           : '화면 공유';
   const liveNavStatusLabel = liveStatus === 'error' ? '재시도' : liveStatusLabel[liveStatus];
+  const hasNickname = Boolean(profile?.nickname);
+  const accountDisplayName = profile?.nickname ?? '닉네임 미설정';
+  const accountSubtitle = profile?.nickname ? user?.email : '내 계정 설정에서 닉네임을 설정하세요';
+  const accountAvatarUrl = profile?.avatarUrl ?? null;
 
   const handleStartLive = async () => {
     const started = await startCapture();
@@ -225,18 +247,15 @@ const AppLayout = () => {
           </div>
         </div>
         <div className="border-t border-border/70 p-3">
-          <div className="mb-3 rounded-md border border-border/70 bg-secondary/70 px-3 py-2">
-            <p className="metric-label">계정</p>
-            <p className="mt-1 truncate text-sm">{user?.email}</p>
-          </div>
-          <Button
-            variant="outline"
-            className="w-full justify-start bg-transparent"
-            onClick={handleSignOut}
-          >
-            <LogOut className="h-4 w-4" />
-            로그아웃
-          </Button>
+          <AccountMenu
+            avatarUrl={accountAvatarUrl}
+            displayName={accountDisplayName}
+            email={user?.email}
+            hasNickname={hasNickname}
+            isProfileLoading={isProfileLoading}
+            subtitle={accountSubtitle}
+            onSignOut={handleSignOut}
+          />
         </div>
       </aside>
 
@@ -255,11 +274,16 @@ const AppLayout = () => {
               ) : null}
             </div>
           </div>
-          <div className="flex min-w-0 items-center justify-end gap-2">
-            <span className="max-w-[36vw] truncate text-xs text-muted-foreground">
-              {user?.email}
-            </span>
-          </div>
+          <AccountMenu
+            avatarUrl={accountAvatarUrl}
+            compact
+            displayName={accountDisplayName}
+            email={user?.email}
+            hasNickname={hasNickname}
+            isProfileLoading={isProfileLoading}
+            subtitle={accountSubtitle}
+            onSignOut={handleSignOut}
+          />
         </header>
         {activeNavItem?.children ? (
           <nav className="sticky top-14 z-20 border-b border-border/70 bg-background/95 px-3.5 py-2 backdrop-blur-xl xl:hidden">
@@ -311,5 +335,153 @@ const AppLayout = () => {
     </div>
   );
 };
+
+interface AccountMenuProps {
+  avatarUrl?: string | null;
+  compact?: boolean;
+  displayName: string;
+  email?: string;
+  hasNickname: boolean;
+  isProfileLoading: boolean;
+  subtitle?: string;
+  onSignOut: () => void;
+}
+
+const AccountMenu = ({
+  avatarUrl,
+  compact = false,
+  displayName,
+  email,
+  hasNickname,
+  isProfileLoading,
+  subtitle,
+  onSignOut,
+}: AccountMenuProps) => {
+  const initial = hasNickname ? getAccountInitial(displayName) : '';
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            'group flex min-w-0 items-center gap-3 rounded-lg border border-border/70 bg-card text-left transition-[background-color,border-color,box-shadow] hover:border-primary/30 hover:bg-secondary/70 hover:shadow-sm',
+            compact ? 'h-10 max-w-[54vw] px-2' : 'w-full px-2.5 py-2.5',
+          )}
+        >
+          <ProfileAvatar
+            avatarUrl={avatarUrl}
+            compact={compact}
+            displayName={displayName}
+            fallback={initial}
+            hasNickname={hasNickname}
+          />
+          <span className="min-w-0 flex-1">
+            <span
+              className={cn(
+                'block truncate font-black text-foreground',
+                compact ? 'max-w-[24vw] text-xs' : 'text-sm',
+              )}
+            >
+              {isProfileLoading ? '불러오는 중' : displayName}
+            </span>
+            {!compact ? (
+              <span className="mt-0.5 block truncate text-xs font-semibold text-muted-foreground">
+                {subtitle}
+              </span>
+            ) : null}
+          </span>
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align={compact ? 'end' : 'start'}
+        className="w-80 overflow-hidden rounded-lg p-0"
+        side={compact ? 'bottom' : 'top'}
+        sideOffset={10}
+      >
+        <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] p-4">
+          <div className="grid grid-cols-[48px_minmax(0,1fr)] gap-3">
+            <ProfileAvatar
+              avatarUrl={avatarUrl}
+              displayName={displayName}
+              fallback={initial}
+              hasNickname={hasNickname}
+              large
+            />
+            <div className="min-w-0">
+              <p className="truncate text-base font-black">{displayName}</p>
+              <p className="mt-1 truncate text-xs font-bold text-muted-foreground">
+                {email ?? '이메일 없음'}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-1 p-2.5">
+          <PopoverClose asChild>
+            <NavLink
+              to="/settings/account"
+              className="flex h-10 items-center gap-3 rounded-md px-3 text-sm font-bold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <UserRound className="h-4 w-4" />내 계정
+            </NavLink>
+          </PopoverClose>
+          <PopoverClose asChild>
+            <NavLink
+              to="/settings/battle-net"
+              className="flex h-10 items-center gap-3 rounded-md px-3 text-sm font-bold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <Settings className="h-4 w-4" />
+              배틀넷 계정
+            </NavLink>
+          </PopoverClose>
+          <div className="my-1 border-t border-border/70" />
+          <div className="flex items-start gap-2 px-3 py-2 text-xs font-semibold leading-relaxed text-muted-foreground">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <p className="min-w-0">친구에게는 요약 통계만 공개됩니다.</p>
+          </div>
+          <Button
+            variant="outline"
+            className="mt-1 w-full justify-start bg-transparent"
+            onClick={onSignOut}
+          >
+            <LogOut className="h-4 w-4" />
+            로그아웃
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+};
+
+interface ProfileAvatarProps {
+  avatarUrl?: string | null;
+  compact?: boolean;
+  displayName: string;
+  fallback: string;
+  hasNickname: boolean;
+  large?: boolean;
+}
+
+const ProfileAvatar = ({
+  avatarUrl,
+  compact = false,
+  displayName,
+  fallback,
+  hasNickname,
+  large = false,
+}: ProfileAvatarProps) => (
+  <Avatar
+    className={cn(
+      'rounded-lg border border-border/70 bg-card shadow-sm',
+      large ? 'h-12 w-12' : compact ? 'h-8 w-8' : 'h-10 w-10',
+    )}
+  >
+    <AvatarImage alt={displayName} src={avatarUrl ?? undefined} />
+    <AvatarFallback className="rounded-lg bg-primary/10 text-sm font-black text-primary">
+      {hasNickname ? fallback : <UserRound className="h-4 w-4" />}
+    </AvatarFallback>
+  </Avatar>
+);
 
 export { AppLayout };

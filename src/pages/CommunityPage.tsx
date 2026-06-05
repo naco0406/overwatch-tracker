@@ -1,4 +1,18 @@
-import { Check, Search, UserCheck, UserMinus, UserPlus, UsersRound, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  Bell,
+  Check,
+  Network,
+  Search,
+  ShieldCheck,
+  Trophy,
+  UserCheck,
+  UserMinus,
+  UserPlus,
+  UserRound,
+  UsersRound,
+  X,
+} from 'lucide-react';
 import { useMemo, useState, type FormEvent } from 'react';
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { NavLink, useNavigate, useParams } from 'react-router-dom';
@@ -21,7 +35,6 @@ import {
   useOwnProfile,
   useProfileSearch,
   useRemoveFriend,
-  useSaveOwnProfile,
   useSendFriendRequest,
 } from '@/hooks/useCommunity';
 import { cn } from '@/lib/utils';
@@ -51,17 +64,46 @@ const resultTone = {
   win: 'bg-[hsl(var(--success))]',
 };
 
+interface CommunitySummary {
+  averageWinRate: number;
+  bestFriend?: FriendSummary;
+  friendsWithData: number;
+  newestFriend?: FriendSummary;
+  totalSharedMatches: number;
+}
+
+const buildCommunitySummary = (friends: FriendSummary[]): CommunitySummary => {
+  const friendsWithData = friends.filter((friend) => friend.totalMatches > 0);
+  const totalSharedMatches = friends.reduce((total, friend) => total + friend.totalMatches, 0);
+  const averageWinRate =
+    friendsWithData.length > 0
+      ? friendsWithData.reduce((total, friend) => total + friend.winRate, 0) /
+        friendsWithData.length
+      : 0;
+  const bestFriend = [...friendsWithData].sort(
+    (a, b) => b.winRate - a.winRate || b.totalMatches - a.totalMatches,
+  )[0];
+  const newestFriend = [...friends].sort(
+    (a, b) => new Date(b.friendsSince).getTime() - new Date(a.friendsSince).getTime(),
+  )[0];
+
+  return {
+    averageWinRate,
+    bestFriend,
+    friendsWithData: friendsWithData.length,
+    newestFriend,
+    totalSharedMatches,
+  };
+};
+
 const CommunityPage = () => {
   const navigate = useNavigate();
   const { friendId } = useParams<{ friendId?: string }>();
   const { data: profile, isLoading: isProfileLoading } = useOwnProfile();
   const { data: friends = [], isLoading: isFriendsLoading } = useFriends();
   const { data: requests = [], isLoading: isRequestsLoading } = useFriendRequests();
-  const [nicknameDraft, setNicknameDraft] = useState('');
-  const [isNicknameDirty, setIsNicknameDirty] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [submittedQuery, setSubmittedQuery] = useState('');
-  const saveProfile = useSaveOwnProfile();
   const sendRequest = useSendFriendRequest();
   const acceptRequest = useAcceptFriendRequest();
   const declineRequest = useDeclineFriendRequest();
@@ -80,41 +122,21 @@ const CommunityPage = () => {
   );
   const incomingRequests = requests.filter((request) => request.direction === 'incoming');
   const outgoingRequests = requests.filter((request) => request.direction === 'outgoing');
-  const nicknameInput = isNicknameDirty ? nicknameDraft : (profile?.nickname ?? '');
+  const communitySummary = useMemo(() => buildCommunitySummary(friends), [friends]);
+  const leaderboard = useMemo(
+    () =>
+      [...friends]
+        .filter((friend) => friend.totalMatches > 0)
+        .sort((a, b) => b.winRate - a.winRate || b.totalMatches - a.totalMatches)
+        .slice(0, 8),
+    [friends],
+  );
   const isAnyFriendActionPending =
     sendRequest.isPending ||
     acceptRequest.isPending ||
     declineRequest.isPending ||
     cancelRequest.isPending ||
     removeFriend.isPending;
-
-  const strongestFriends = useMemo(
-    () =>
-      [...friends]
-        .filter((friend) => friend.totalMatches > 0)
-        .sort((a, b) => b.winRate - a.winRate || b.totalMatches - a.totalMatches)
-        .slice(0, 3),
-    [friends],
-  );
-
-  const handleSaveProfile = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    try {
-      const savedProfile = await saveProfile.mutateAsync({
-        nickname: nicknameInput,
-      });
-      setNicknameDraft(savedProfile.nickname ?? '');
-      setIsNicknameDirty(false);
-      toast({ title: '닉네임 저장 완료' });
-    } catch (error) {
-      toast({
-        title: '닉네임 저장 실패',
-        description: error instanceof Error ? error.message : '잠시 후 다시 시도하세요.',
-        variant: 'destructive',
-      });
-    }
-  };
 
   const handleSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -202,56 +224,33 @@ const CommunityPage = () => {
     <div className="page-stack">
       <PageHeader
         eyebrow="커뮤니티"
-        title="친구"
-        description="닉네임으로 친구를 추가하고, 서로 허용된 요약 통계만 확인합니다."
+        title="커뮤니티"
+        description="친구들과 요약 통계를 공유하고, 서로의 강점과 최근 흐름을 가볍게 비교합니다."
       />
 
-      <section className="grid gap-4 xl:grid-cols-[390px_minmax(0,1fr)] xl:items-start">
-        <div className="grid gap-4">
-          <ProfilePanel
-            hasNickname={hasNickname}
-            isLoading={isProfileLoading}
-            isSaving={saveProfile.isPending}
-            nicknameInput={nicknameInput}
-            profileNickname={profile?.nickname ?? null}
-            setNicknameInput={(value) => {
-              setIsNicknameDirty(true);
-              setNicknameDraft(value);
-            }}
-            onSave={handleSaveProfile}
-          />
+      <CommunityCommandCenter
+        disabled={!hasNickname}
+        friends={friends}
+        hasNickname={hasNickname}
+        incomingCount={incomingRequests.length}
+        isActionPending={isAnyFriendActionPending}
+        isProfileLoading={isProfileLoading}
+        isSearching={isSearchFetching}
+        outgoingCount={outgoingRequests.length}
+        profileNickname={profile?.nickname ?? null}
+        query={searchInput}
+        results={searchResults}
+        submittedQuery={submittedQuery}
+        summary={communitySummary}
+        setQuery={setSearchInput}
+        onAccept={handleAcceptRequest}
+        onCancel={handleCancelRequest}
+        onDecline={handleDeclineRequest}
+        onSearch={handleSearch}
+        onSend={handleSendRequest}
+      />
 
-          <SearchPanel
-            disabled={!hasNickname}
-            isActionPending={isAnyFriendActionPending}
-            isSearching={isSearchFetching}
-            query={searchInput}
-            results={searchResults}
-            setQuery={setSearchInput}
-            onAccept={handleAcceptRequest}
-            onCancel={handleCancelRequest}
-            onDecline={handleDeclineRequest}
-            onSearch={handleSearch}
-            onSend={handleSendRequest}
-          />
-
-          <RequestPanel
-            incomingRequests={incomingRequests}
-            isActionPending={isAnyFriendActionPending}
-            isLoading={isRequestsLoading}
-            outgoingRequests={outgoingRequests}
-            onAccept={handleAcceptRequest}
-            onCancel={handleCancelRequest}
-            onDecline={handleDeclineRequest}
-          />
-
-          <FriendListPanel
-            friends={friends}
-            isLoading={isFriendsLoading}
-            selectedFriendId={selectedFriend?.friendId}
-          />
-        </div>
-
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_370px] xl:items-start">
         <div className="min-w-0">
           {selectedFriend ? (
             <FriendDetailPanel
@@ -261,92 +260,47 @@ const CommunityPage = () => {
               onRemoveFriend={handleRemoveFriend}
             />
           ) : (
-            <CommunityOverviewPanel
+            <CommunityHubPanel
               friends={friends}
               incomingCount={incomingRequests.length}
               isLoading={isFriendsLoading || isRequestsLoading}
-              strongestFriends={strongestFriends}
+              leaderboard={leaderboard}
+              summary={communitySummary}
             />
           )}
         </div>
+
+        <CommunityRail
+          friends={friends}
+          incomingRequests={incomingRequests}
+          isActionPending={isAnyFriendActionPending}
+          isFriendsLoading={isFriendsLoading}
+          isRequestsLoading={isRequestsLoading}
+          outgoingRequests={outgoingRequests}
+          selectedFriendId={selectedFriend?.friendId}
+          onAccept={handleAcceptRequest}
+          onCancel={handleCancelRequest}
+          onDecline={handleDeclineRequest}
+        />
       </section>
     </div>
   );
 };
 
-interface ProfilePanelProps {
-  hasNickname: boolean;
-  isLoading: boolean;
-  isSaving: boolean;
-  nicknameInput: string;
-  profileNickname: string | null;
-  setNicknameInput: (value: string) => void;
-  onSave: (event: FormEvent<HTMLFormElement>) => void;
-}
-
-const ProfilePanel = ({
-  hasNickname,
-  isLoading,
-  isSaving,
-  nicknameInput,
-  profileNickname,
-  setNicknameInput,
-  onSave,
-}: ProfilePanelProps) => (
-  <section className="workspace-panel overflow-hidden">
-    <div className="section-header flex items-center justify-between gap-3">
-      <div className="min-w-0">
-        <p className="metric-label">내 프로필</p>
-        <h2 className="mt-1 truncate text-base font-bold">
-          {hasNickname ? profileNickname : '닉네임 설정 필요'}
-        </h2>
-      </div>
-      <Badge
-        className={cn(
-          'shrink-0 border-border bg-card text-foreground',
-          !hasNickname && 'border-warning/30 bg-warning/10 text-warning',
-        )}
-        variant="outline"
-      >
-        {hasNickname ? '검색 가능' : '미설정'}
-      </Badge>
-    </div>
-    <form className="section-pad grid gap-3" onSubmit={onSave}>
-      {isLoading ? (
-        <>
-          <SkeletonBlock className="h-10" />
-          <SkeletonBlock className="h-9 w-28" />
-        </>
-      ) : (
-        <>
-          <Input
-            autoComplete="off"
-            maxLength={20}
-            placeholder="닉네임"
-            value={nicknameInput}
-            onChange={(event) => setNicknameInput(event.target.value)}
-          />
-          <div className="flex items-center justify-between gap-3">
-            <p className="min-w-0 text-xs font-semibold leading-relaxed text-muted-foreground">
-              친구 검색에는 이메일이 아니라 닉네임만 사용합니다.
-            </p>
-            <Button className="shrink-0" disabled={isSaving} size="sm" type="submit">
-              <Check className="h-4 w-4" />
-              저장
-            </Button>
-          </div>
-        </>
-      )}
-    </form>
-  </section>
-);
-
-interface SearchPanelProps {
+interface CommunityCommandCenterProps {
   disabled: boolean;
+  friends: FriendSummary[];
+  hasNickname: boolean;
+  incomingCount: number;
   isActionPending: boolean;
+  isProfileLoading: boolean;
   isSearching: boolean;
+  outgoingCount: number;
+  profileNickname: string | null;
   query: string;
   results: ProfileSearchResult[];
+  submittedQuery: string;
+  summary: CommunitySummary;
   setQuery: (query: string) => void;
   onAccept: (requestId: string) => void;
   onCancel: (requestId: string) => void;
@@ -355,71 +309,300 @@ interface SearchPanelProps {
   onSend: (userId: string) => void;
 }
 
-const SearchPanel = ({
+const CommunityCommandCenter = ({
   disabled,
+  friends,
+  hasNickname,
+  incomingCount,
   isActionPending,
+  isProfileLoading,
   isSearching,
+  outgoingCount,
+  profileNickname,
   query,
   results,
+  submittedQuery,
+  summary,
   setQuery,
   onAccept,
   onCancel,
   onDecline,
   onSearch,
   onSend,
-}: SearchPanelProps) => (
+}: CommunityCommandCenterProps) => (
   <section className="workspace-panel overflow-hidden">
-    <div className="section-header">
-      <p className="metric-label">친구 추가</p>
-      <h2 className="mt-1 text-base font-bold">닉네임 검색</h2>
-    </div>
-    <div className="section-pad space-y-3">
-      <form className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]" onSubmit={onSearch}>
-        <div className="relative min-w-0">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            autoComplete="off"
-            className="pl-9"
+    <div className="grid xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.92fr)]">
+      <div className="section-pad bg-[hsl(var(--surface-2))] lg:p-6">
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <p className="metric-label">커뮤니티 프로필</p>
+              <div className="mt-2 flex items-center gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                  <Network className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="truncate text-2xl font-black">
+                    {hasNickname ? profileNickname : '닉네임 설정 필요'}
+                  </h2>
+                  <p className="mt-1 text-sm font-semibold text-muted-foreground">
+                    {hasNickname
+                      ? '친구 검색과 공개 요약 통계를 사용할 수 있습니다.'
+                      : '내 계정 설정에서 닉네임을 설정하면 친구들이 나를 찾을 수 있습니다.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <Badge
+              className={cn(
+                'w-fit shrink-0 gap-1.5 border-border bg-card text-foreground',
+                !hasNickname && 'border-warning/30 bg-warning/10 text-warning',
+              )}
+              variant="outline"
+            >
+              <ShieldCheck className="h-3.5 w-3.5" />
+              {hasNickname ? '닉네임 공개' : '대기 중'}
+            </Badge>
+          </div>
+
+          <div className="grid border-t border-border/70 sm:grid-cols-2 lg:grid-cols-4">
+            <CommunityMiniMetric
+              label="친구"
+              value={formatCount(friends.length)}
+              hint="연결된 플레이어"
+            />
+            <CommunityMiniMetric
+              label="공유 경기"
+              value={formatCount(summary.totalSharedMatches)}
+              hint="친구 요약 기준"
+            />
+            <CommunityMiniMetric
+              label="평균 승률"
+              value={formatPercent(summary.averageWinRate)}
+              hint={`${formatCount(summary.friendsWithData)}명 데이터`}
+            />
+            <CommunityMiniMetric
+              label="요청"
+              value={formatCount(incomingCount + outgoingCount)}
+              hint={`${formatCount(incomingCount)}개 수신`}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-border/70 bg-card xl:border-l xl:border-t-0">
+        <div className="grid divide-y divide-border/70">
+          <CommunityProfileStatus
+            hasNickname={hasNickname}
+            isLoading={isProfileLoading}
+            profileNickname={profileNickname}
+          />
+          <DiscoveryForm
             disabled={disabled}
-            placeholder={disabled ? '닉네임을 먼저 저장하세요' : '친구 닉네임'}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            isActionPending={isActionPending}
+            isSearching={isSearching}
+            query={query}
+            results={results}
+            setQuery={setQuery}
+            submittedQuery={submittedQuery}
+            onAccept={onAccept}
+            onCancel={onCancel}
+            onDecline={onDecline}
+            onSearch={onSearch}
+            onSend={onSend}
           />
         </div>
-        <Button disabled={disabled || isSearching} type="submit">
-          <Search className="h-4 w-4" />
-          검색
-        </Button>
-      </form>
-
-      {isSearching ? (
-        <div className="space-y-2">
-          <SkeletonBlock className="h-11" />
-          <SkeletonBlock className="h-11" />
-        </div>
-      ) : results.length > 0 ? (
-        <div className="overflow-hidden rounded-md border border-border/70">
-          {results.map((result) => (
-            <ProfileSearchRow
-              key={result.userId}
-              disabled={isActionPending}
-              result={result}
-              onAccept={onAccept}
-              onCancel={onCancel}
-              onDecline={onDecline}
-              onSend={onSend}
-            />
-          ))}
-        </div>
-      ) : (
-        <InlineEmptyState
-          title="검색 결과가 없습니다."
-          description="정확한 닉네임 일부를 입력해서 친구를 찾아보세요."
-        />
-      )}
+      </div>
     </div>
   </section>
 );
+
+interface CommunityMiniMetricProps {
+  hint: string;
+  label: string;
+  value: string;
+}
+
+const CommunityMiniMetric = ({ hint, label, value }: CommunityMiniMetricProps) => (
+  <div className="min-w-0 border-b border-border/70 p-3 last:border-b-0 sm:border-r sm:last:border-r-0 lg:border-b-0">
+    <p className="metric-label">{label}</p>
+    <p className="mt-2 truncate text-xl font-black">{value}</p>
+    <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">{hint}</p>
+  </div>
+);
+
+interface CommunityProfileStatusProps {
+  hasNickname: boolean;
+  isLoading: boolean;
+  profileNickname: string | null;
+}
+
+const CommunityProfileStatus = ({
+  hasNickname,
+  isLoading,
+  profileNickname,
+}: CommunityProfileStatusProps) => (
+  <div className="grid gap-3 p-3.5 sm:p-4 lg:p-5">
+    <div>
+      <p className="metric-label">내 커뮤니티 프로필</p>
+      <h3 className="mt-1 text-base font-bold">
+        {isLoading ? '불러오는 중' : hasNickname ? profileNickname : '닉네임 설정 필요'}
+      </h3>
+    </div>
+    {isLoading ? (
+      <div className="grid gap-2">
+        <SkeletonBlock className="h-10" />
+        <SkeletonBlock className="h-9 w-28" />
+      </div>
+    ) : (
+      <div className="grid gap-3">
+        <p className="text-xs font-semibold leading-relaxed text-muted-foreground">
+          닉네임은 내 계정 설정에서 관리합니다. 닉네임을 설정해야 친구 검색과 친구 신청을 사용할 수
+          있습니다.
+        </p>
+        <Button
+          asChild
+          className="w-full justify-start"
+          variant={hasNickname ? 'outline' : 'default'}
+        >
+          <NavLink to="/settings/account">
+            <UserRound className="h-4 w-4" />
+            {hasNickname ? '닉네임 변경' : '닉네임 설정'}
+          </NavLink>
+        </Button>
+      </div>
+    )}
+  </div>
+);
+
+interface DiscoveryFormProps {
+  disabled: boolean;
+  isActionPending: boolean;
+  isSearching: boolean;
+  query: string;
+  results: ProfileSearchResult[];
+  setQuery: (query: string) => void;
+  submittedQuery: string;
+  onAccept: (requestId: string) => void;
+  onCancel: (requestId: string) => void;
+  onDecline: (requestId: string) => void;
+  onSearch: (event: FormEvent<HTMLFormElement>) => void;
+  onSend: (userId: string) => void;
+}
+
+const DiscoveryForm = ({
+  disabled,
+  isActionPending,
+  isSearching,
+  query,
+  results,
+  setQuery,
+  submittedQuery,
+  onAccept,
+  onCancel,
+  onDecline,
+  onSearch,
+  onSend,
+}: DiscoveryFormProps) => (
+  <div className="grid gap-3 p-3.5 sm:p-4 lg:p-5">
+    <div>
+      <p className="metric-label">플레이어 찾기</p>
+      <h3 className="mt-1 text-base font-bold">닉네임으로 연결</h3>
+    </div>
+    <form className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]" onSubmit={onSearch}>
+      <div className="relative min-w-0">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          autoComplete="off"
+          className="pl-9"
+          disabled={disabled}
+          placeholder={disabled ? '닉네임을 먼저 설정하세요' : '친구 닉네임'}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </div>
+      <Button disabled={disabled || isSearching} type="submit">
+        <Search className="h-4 w-4" />
+        검색
+      </Button>
+    </form>
+
+    <SearchResultList
+      disabled={isActionPending}
+      isSearching={isSearching}
+      results={results}
+      submittedQuery={submittedQuery}
+      onAccept={onAccept}
+      onCancel={onCancel}
+      onDecline={onDecline}
+      onSend={onSend}
+    />
+  </div>
+);
+
+interface SearchResultListProps {
+  disabled: boolean;
+  isSearching: boolean;
+  results: ProfileSearchResult[];
+  submittedQuery: string;
+  onAccept: (requestId: string) => void;
+  onCancel: (requestId: string) => void;
+  onDecline: (requestId: string) => void;
+  onSend: (userId: string) => void;
+}
+
+const SearchResultList = ({
+  disabled,
+  isSearching,
+  results,
+  submittedQuery,
+  onAccept,
+  onCancel,
+  onDecline,
+  onSend,
+}: SearchResultListProps) => {
+  if (isSearching) {
+    return (
+      <div className="grid gap-2">
+        <SkeletonBlock className="h-11" />
+        <SkeletonBlock className="h-11" />
+      </div>
+    );
+  }
+
+  if (results.length > 0) {
+    return (
+      <div className="max-h-[210px] overflow-y-auto rounded-md border border-border/70">
+        {results.map((result) => (
+          <ProfileSearchRow
+            key={result.userId}
+            disabled={disabled}
+            result={result}
+            onAccept={onAccept}
+            onCancel={onCancel}
+            onDecline={onDecline}
+            onSend={onSend}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (submittedQuery.trim()) {
+    return (
+      <InlineEmptyState
+        title="검색 결과가 없습니다."
+        description="정확한 닉네임 일부를 입력해서 다시 찾아보세요."
+      />
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-dashed border-border/70 bg-[hsl(var(--surface-2))] px-3 py-2.5 text-xs font-semibold leading-relaxed text-muted-foreground">
+      친구가 닉네임을 설정하면 이곳에서 검색하고 신청할 수 있습니다.
+    </div>
+  );
+};
 
 interface ProfileSearchRowProps {
   disabled: boolean;
@@ -523,7 +706,207 @@ const SearchResultAction = ({
   );
 };
 
-interface RequestPanelProps {
+interface CommunityHubPanelProps {
+  friends: FriendSummary[];
+  incomingCount: number;
+  isLoading: boolean;
+  leaderboard: FriendSummary[];
+  summary: CommunitySummary;
+}
+
+const CommunityHubPanel = ({
+  friends,
+  incomingCount,
+  isLoading,
+  leaderboard,
+  summary,
+}: CommunityHubPanelProps) => (
+  <section className="workspace-panel overflow-hidden">
+    <div className="section-header flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+      <div>
+        <p className="metric-label">커뮤니티 보드</p>
+        <h2 className="mt-1 text-2xl font-black">친구 요약</h2>
+      </div>
+      <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
+        친구들의 원본 경기 기록은 열람하지 않고, 공개 가능한 요약 지표만 모아 봅니다.
+      </p>
+    </div>
+
+    <div className="metric-strip grid-cols-2 lg:grid-cols-4">
+      <MetricCell label="연결" value={isLoading ? null : `${formatCount(friends.length)}명`} />
+      <MetricCell
+        label="데이터 있는 친구"
+        value={isLoading ? null : `${formatCount(summary.friendsWithData)}명`}
+      />
+      <MetricCell
+        label="평균 승률"
+        value={isLoading ? null : formatPercent(summary.averageWinRate)}
+      />
+      <MetricCell label="받은 요청" value={isLoading ? null : formatCount(incomingCount)} />
+    </div>
+
+    <div className="section-pad">
+      {isLoading ? (
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <SkeletonBlock className="h-[360px]" />
+          <SkeletonBlock className="h-[360px]" />
+        </div>
+      ) : friends.length === 0 ? (
+        <EmptyState
+          icon={UsersRound}
+          title="아직 커뮤니티 연결이 없습니다."
+          description="닉네임으로 친구를 추가하면 이곳에서 친구들의 요약 통계와 흐름을 볼 수 있습니다."
+        />
+      ) : (
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_330px]">
+          <LeaderboardPanel leaderboard={leaderboard} />
+          <CommunityPulsePanel summary={summary} />
+        </div>
+      )}
+    </div>
+  </section>
+);
+
+const LeaderboardPanel = ({ leaderboard }: { leaderboard: FriendSummary[] }) => (
+  <section className="overflow-hidden border border-border/70 bg-card">
+    <div className="section-header flex items-center justify-between gap-3">
+      <div>
+        <p className="metric-label">리더보드</p>
+        <h3 className="mt-1 text-base font-bold">친구 승률 순위</h3>
+      </div>
+      <Trophy className="h-5 w-5 text-primary" />
+    </div>
+    <div className="divide-y divide-border/70">
+      {leaderboard.length > 0 ? (
+        leaderboard.map((friend, index) => (
+          <NavLink
+            key={friend.friendId}
+            to={`/community/friends/${friend.friendId}`}
+            className="grid gap-3 px-4 py-3 transition-colors hover:bg-secondary/70 sm:grid-cols-[34px_minmax(0,1fr)_92px] sm:items-center"
+          >
+            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary text-xs font-black text-muted-foreground">
+              {index + 1}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold">{friend.nickname}</p>
+              <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                {formatCount(friend.totalMatches)}전 · {formatCount(friend.wins)}승{' '}
+                {formatCount(friend.losses)}패
+              </p>
+            </div>
+            <div className="text-left sm:text-right">
+              <p className="text-base font-black text-primary">{formatPercent(friend.winRate)}</p>
+              <p className="mt-1 text-[11px] font-semibold text-muted-foreground">승률</p>
+            </div>
+          </NavLink>
+        ))
+      ) : (
+        <div className="flex min-h-[220px] items-center justify-center px-4 text-sm font-semibold text-muted-foreground">
+          아직 비교할 친구 기록이 없습니다.
+        </div>
+      )}
+    </div>
+  </section>
+);
+
+const CommunityPulsePanel = ({ summary }: { summary: CommunitySummary }) => (
+  <section className="overflow-hidden border border-border/70 bg-[hsl(var(--surface-2))]">
+    <PulseItem
+      icon={Trophy}
+      label="최고 승률"
+      title={summary.bestFriend?.nickname ?? '데이터 없음'}
+      value={summary.bestFriend ? formatPercent(summary.bestFriend.winRate) : '-'}
+    />
+    <PulseItem
+      icon={Network}
+      label="최근 연결"
+      title={summary.newestFriend?.nickname ?? '친구 없음'}
+      value={summary.newestFriend ? formatShortDate(summary.newestFriend.friendsSince) : '-'}
+    />
+    <PulseItem
+      icon={ShieldCheck}
+      label="공유 규모"
+      title="친구 요약 경기"
+      value={`${formatCount(summary.totalSharedMatches)}전`}
+    />
+  </section>
+);
+
+interface PulseItemProps {
+  icon: typeof Trophy;
+  label: string;
+  title: string;
+  value: string;
+}
+
+const PulseItem = ({ icon: Icon, label, title, value }: PulseItemProps) => (
+  <div className="flat-row p-4">
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="metric-label">{label}</p>
+        <h3 className="mt-2 truncate text-base font-bold">{title}</h3>
+        <p className="mt-3 text-2xl font-black text-primary">{value}</p>
+      </div>
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-card text-primary">
+        <Icon className="h-5 w-5" />
+      </div>
+    </div>
+  </div>
+);
+
+interface CommunityRailProps {
+  friends: FriendSummary[];
+  incomingRequests: FriendRequest[];
+  isActionPending: boolean;
+  isFriendsLoading: boolean;
+  isRequestsLoading: boolean;
+  outgoingRequests: FriendRequest[];
+  selectedFriendId?: string;
+  onAccept: (requestId: string) => void;
+  onCancel: (requestId: string) => void;
+  onDecline: (requestId: string) => void;
+}
+
+const CommunityRail = ({
+  friends,
+  incomingRequests,
+  isActionPending,
+  isFriendsLoading,
+  isRequestsLoading,
+  outgoingRequests,
+  selectedFriendId,
+  onAccept,
+  onCancel,
+  onDecline,
+}: CommunityRailProps) => (
+  <aside className="workspace-panel overflow-hidden xl:sticky xl:top-8">
+    <div className="section-header flex items-center justify-between gap-3">
+      <div>
+        <p className="metric-label">네트워크</p>
+        <h2 className="mt-1 text-base font-bold">요청과 친구</h2>
+      </div>
+      <UsersRound className="h-5 w-5 text-muted-foreground" />
+    </div>
+    <div className="divide-y divide-border/70">
+      <RequestQueue
+        incomingRequests={incomingRequests}
+        isActionPending={isActionPending}
+        isLoading={isRequestsLoading}
+        outgoingRequests={outgoingRequests}
+        onAccept={onAccept}
+        onCancel={onCancel}
+        onDecline={onDecline}
+      />
+      <FriendDirectory
+        friends={friends}
+        isLoading={isFriendsLoading}
+        selectedFriendId={selectedFriendId}
+      />
+    </div>
+  </aside>
+);
+
+interface RequestQueueProps {
   incomingRequests: FriendRequest[];
   isActionPending: boolean;
   isLoading: boolean;
@@ -533,7 +916,7 @@ interface RequestPanelProps {
   onDecline: (requestId: string) => void;
 }
 
-const RequestPanel = ({
+const RequestQueue = ({
   incomingRequests,
   isActionPending,
   isLoading,
@@ -541,18 +924,18 @@ const RequestPanel = ({
   onAccept,
   onCancel,
   onDecline,
-}: RequestPanelProps) => (
-  <section className="workspace-panel overflow-hidden">
-    <div className="section-header flex items-center justify-between gap-3">
+}: RequestQueueProps) => (
+  <section className="p-3.5 sm:p-4">
+    <div className="mb-3 flex items-center justify-between gap-3">
       <div>
-        <p className="metric-label">요청</p>
-        <h2 className="mt-1 text-base font-bold">대기 중</h2>
+        <p className="metric-label">요청 큐</p>
+        <h3 className="mt-1 text-sm font-bold">
+          {formatCount(incomingRequests.length + outgoingRequests.length)}개 대기
+        </h3>
       </div>
-      <Badge className="border-border bg-card text-foreground" variant="outline">
-        {incomingRequests.length + outgoingRequests.length}
-      </Badge>
+      <Bell className="h-4 w-4 text-muted-foreground" />
     </div>
-    <div className="section-pad space-y-3">
+    <div className="grid gap-2">
       {isLoading ? (
         <>
           <SkeletonBlock className="h-12" />
@@ -597,7 +980,7 @@ interface RequestRowProps {
 }
 
 const RequestRow = ({ disabled, request, onAccept, onCancel, onDecline }: RequestRowProps) => (
-  <div className="grid gap-2 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+  <div className="grid gap-2 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3">
     <div className="min-w-0">
       <p className="truncate text-sm font-bold">{request.nickname}</p>
       <p className="mt-1 text-xs font-semibold text-muted-foreground">
@@ -606,7 +989,7 @@ const RequestRow = ({ disabled, request, onAccept, onCancel, onDecline }: Reques
       </p>
     </div>
     {request.direction === 'incoming' ? (
-      <div className="grid grid-cols-2 gap-2 sm:flex">
+      <div className="grid grid-cols-2 gap-2">
         <Button disabled={disabled} size="sm" onClick={() => onAccept(request.requestId)}>
           <Check className="h-4 w-4" />
           수락
@@ -635,30 +1018,35 @@ const RequestRow = ({ disabled, request, onAccept, onCancel, onDecline }: Reques
   </div>
 );
 
-interface FriendListPanelProps {
+interface FriendDirectoryProps {
   friends: FriendSummary[];
   isLoading: boolean;
   selectedFriendId?: string;
 }
 
-const FriendListPanel = ({ friends, isLoading, selectedFriendId }: FriendListPanelProps) => (
-  <section className="workspace-panel overflow-hidden">
-    <div className="section-header flex items-center justify-between gap-3">
+const FriendDirectory = ({ friends, isLoading, selectedFriendId }: FriendDirectoryProps) => (
+  <section>
+    <div className="flex items-center justify-between gap-3 px-3.5 py-3 sm:px-4">
       <div>
-        <p className="metric-label">친구 목록</p>
-        <h2 className="mt-1 text-base font-bold">{formatCount(friends.length)}명</h2>
+        <p className="metric-label">친구 디렉터리</p>
+        <h3 className="mt-1 text-sm font-bold">{formatCount(friends.length)}명</h3>
       </div>
-      <UsersRound className="h-5 w-5 text-muted-foreground" />
+      <Button asChild className="bg-transparent" size="sm" variant="outline">
+        <NavLink to="/community">
+          <ArrowLeft className="h-4 w-4" />
+          허브
+        </NavLink>
+      </Button>
     </div>
-    <div className="max-h-[480px] overflow-y-auto">
+    <div className="max-h-[520px] overflow-y-auto border-t border-border/70">
       {isLoading ? (
-        <div className="section-pad space-y-2">
+        <div className="grid gap-2 p-3.5 sm:p-4">
           <SkeletonBlock className="h-14" />
           <SkeletonBlock className="h-14" />
           <SkeletonBlock className="h-14" />
         </div>
       ) : friends.length === 0 ? (
-        <div className="section-pad">
+        <div className="p-3.5 sm:p-4">
           <InlineEmptyState
             title="아직 친구가 없습니다."
             description="닉네임으로 친구를 찾아 추가하면 이곳에 표시됩니다."
@@ -691,83 +1079,6 @@ const FriendListPanel = ({ friends, isLoading, selectedFriendId }: FriendListPan
   </section>
 );
 
-interface CommunityOverviewPanelProps {
-  friends: FriendSummary[];
-  incomingCount: number;
-  isLoading: boolean;
-  strongestFriends: FriendSummary[];
-}
-
-const CommunityOverviewPanel = ({
-  friends,
-  incomingCount,
-  isLoading,
-  strongestFriends,
-}: CommunityOverviewPanelProps) => (
-  <section className="workspace-panel min-h-[540px] overflow-hidden">
-    <div className="metric-strip grid-cols-3">
-      <MetricCell label="친구" value={isLoading ? null : formatCount(friends.length)} />
-      <MetricCell label="받은 요청" value={isLoading ? null : formatCount(incomingCount)} />
-      <MetricCell
-        label="공유 경기"
-        value={
-          isLoading
-            ? null
-            : formatCount(friends.reduce((total, friend) => total + friend.totalMatches, 0))
-        }
-      />
-    </div>
-    <div className="section-pad grid gap-5">
-      <div className="rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <UsersRound className="h-5 w-5" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-lg font-bold">친구를 선택하세요</h2>
-            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-              친구의 원본 경기 기록은 열람하지 않고, 승률과 강점 전장 같은 요약만 표시합니다.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {isLoading ? (
-        <div className="grid gap-3 lg:grid-cols-3">
-          <SkeletonBlock className="h-28" />
-          <SkeletonBlock className="h-28" />
-          <SkeletonBlock className="h-28" />
-        </div>
-      ) : strongestFriends.length > 0 ? (
-        <div className="grid gap-3 lg:grid-cols-3">
-          {strongestFriends.map((friend, index) => (
-            <NavLink
-              key={friend.friendId}
-              to={`/community/friends/${friend.friendId}`}
-              className="rounded-lg border border-border/70 bg-card p-4 transition-colors hover:border-primary/35 hover:bg-secondary/50"
-            >
-              <p className="metric-label">승률 순위 {index + 1}</p>
-              <h3 className="mt-2 truncate text-base font-bold">{friend.nickname}</h3>
-              <p className="mt-4 text-2xl font-black text-primary">
-                {formatPercent(friend.winRate)}
-              </p>
-              <p className="mt-1 text-xs font-semibold text-muted-foreground">
-                {formatCount(friend.totalMatches)}전 {formatCount(friend.wins)}승
-              </p>
-            </NavLink>
-          ))}
-        </div>
-      ) : (
-        <EmptyState
-          icon={UserPlus}
-          title="요약할 친구 데이터가 없습니다."
-          description="친구를 추가하면 이 화면에서 친구들의 공개 요약 통계를 빠르게 비교할 수 있습니다."
-        />
-      )}
-    </div>
-  </section>
-);
-
 interface FriendDetailPanelProps {
   friend: FriendSummary;
   isLoading: boolean;
@@ -784,18 +1095,26 @@ const FriendDetailPanel = ({
   <section className="workspace-panel overflow-hidden">
     <div className="section-header flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div className="min-w-0">
-        <p className="metric-label">친구 통계</p>
+        <p className="metric-label">친구 공개 분석</p>
         <h2 className="mt-1 truncate text-2xl font-black">{friend.nickname}</h2>
       </div>
-      <Button
-        className="w-full bg-transparent lg:w-auto"
-        size="sm"
-        variant="outline"
-        onClick={() => onRemoveFriend(friend)}
-      >
-        <UserMinus className="h-4 w-4" />
-        친구 삭제
-      </Button>
+      <div className="grid gap-2 sm:flex">
+        <Button asChild className="bg-transparent" size="sm" variant="outline">
+          <NavLink to="/community">
+            <ArrowLeft className="h-4 w-4" />
+            커뮤니티
+          </NavLink>
+        </Button>
+        <Button
+          className="bg-transparent"
+          size="sm"
+          variant="outline"
+          onClick={() => onRemoveFriend(friend)}
+        >
+          <UserMinus className="h-4 w-4" />
+          친구 삭제
+        </Button>
+      </div>
     </div>
 
     {isLoading || !stats ? (

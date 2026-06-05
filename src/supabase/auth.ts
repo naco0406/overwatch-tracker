@@ -10,6 +10,11 @@ interface SignUpWithPasswordInput {
   password: string;
 }
 
+interface UpdatePasswordInput {
+  currentPassword: string;
+  password: string;
+}
+
 const getSession = () => supabase.auth.getSession();
 
 const signInWithPassword = ({ email, password }: SignInWithPasswordInput) =>
@@ -18,6 +23,24 @@ const signInWithPassword = ({ email, password }: SignInWithPasswordInput) =>
 const signUpWithPassword = ({ email, password }: SignUpWithPasswordInput) =>
   supabase.auth.signUp({ email, password });
 
+const updatePassword = ({ currentPassword, password }: UpdatePasswordInput) =>
+  supabase.auth.updateUser({
+    current_password: currentPassword,
+    password,
+  });
+
+const deleteCurrentUser = () => supabase.rpc('delete_current_user');
+
 const signOut = () => supabase.auth.signOut();
 
-export { getSession, signInWithPassword, signOut, signUpWithPassword };
+const signOutLocally = () => supabase.auth.signOut({ scope: 'local' });
+
+export {
+  deleteCurrentUser,
+  getSession,
+  signInWithPassword,
+  signOut,
+  signOutLocally,
+  signUpWithPassword,
+  updatePassword,
+};

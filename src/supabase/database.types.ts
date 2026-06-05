@@ -228,6 +228,8 @@ export interface Database {
       };
       user_profiles: {
         Row: {
+          avatar_updated_at: string | null;
+          avatar_url: string | null;
           created_at: string;
           is_discoverable: boolean;
           nickname: string | null;
@@ -236,6 +238,8 @@ export interface Database {
           user_id: string;
         };
         Insert: {
+          avatar_updated_at?: string | null;
+          avatar_url?: string | null;
           created_at?: string;
           is_discoverable?: boolean;
           nickname?: string | null;
@@ -244,6 +248,8 @@ export interface Database {
           user_id: string;
         };
         Update: {
+          avatar_updated_at?: string | null;
+          avatar_url?: string | null;
           created_at?: string;
           is_discoverable?: boolean;
           nickname?: string | null;
@@ -269,6 +275,10 @@ export interface Database {
       };
       cancel_friend_request: {
         Args: { p_request_id: string };
+        Returns: undefined;
+      };
+      delete_current_user: {
+        Args: Record<PropertyKey, never>;
         Returns: undefined;
       };
       decline_friend_request: {

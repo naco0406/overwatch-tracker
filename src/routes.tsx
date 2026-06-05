@@ -72,7 +72,8 @@ const AppRoutes = () => (
           }
         />
         <Route path="/master-data" element={<MasterDataPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/settings" element={<Navigate to="/settings/account" replace />} />
+        <Route path="/settings/:section" element={<SettingsPage />} />
       </Route>
     </Route>
   </Routes>

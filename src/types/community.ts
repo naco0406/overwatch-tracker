@@ -1,6 +1,8 @@
 import type { MatchResult, ModeId } from '@/types/match';
 
 export interface UserProfile {
+  avatarUpdatedAt: string | null;
+  avatarUrl: string | null;
   createdAt: string;
   isDiscoverable: boolean;
   nickname: string | null;

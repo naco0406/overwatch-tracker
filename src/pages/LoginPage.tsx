@@ -30,6 +30,7 @@ const LoginPage = () => {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -38,8 +39,35 @@ const LoginPage = () => {
     }
   }, [isLoading, navigate, redirectPath, session]);
 
+  const handleModeChange = (nextMode: 'signin' | 'signup') => {
+    setMode(nextMode);
+    setPassword('');
+    setPasswordConfirm('');
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    if (mode === 'signup') {
+      if (password.length < 8) {
+        toast({
+          title: '비밀번호가 너무 짧습니다.',
+          description: '8자 이상으로 입력하세요.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (password !== passwordConfirm) {
+        toast({
+          title: '비밀번호가 일치하지 않습니다.',
+          description: '확인 입력값을 다시 확인하세요.',
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -133,7 +161,7 @@ const LoginPage = () => {
                   <button
                     key={value}
                     type="button"
-                    onClick={() => setMode(value as 'signin' | 'signup')}
+                    onClick={() => handleModeChange(value as 'signin' | 'signup')}
                     className={cn(
                       'tap-target h-10 rounded-md text-sm font-semibold text-muted-foreground',
                       mode === value && 'bg-card text-foreground',
@@ -165,12 +193,36 @@ const LoginPage = () => {
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-                    minLength={6}
+                    minLength={mode === 'signin' ? 6 : 8}
                     disabled={isSubmitting}
                     required
                   />
                 </div>
-                <Button size="lg" type="submit" disabled={isSubmitting || !email || !password}>
+                {mode === 'signup' ? (
+                  <div className="grid gap-2">
+                    <Label htmlFor="password-confirm">비밀번호 확인</Label>
+                    <Input
+                      id="password-confirm"
+                      type="password"
+                      value={passwordConfirm}
+                      onChange={(event) => setPasswordConfirm(event.target.value)}
+                      autoComplete="new-password"
+                      minLength={8}
+                      disabled={isSubmitting}
+                      required
+                    />
+                    <p className="text-xs font-semibold leading-relaxed text-muted-foreground">
+                      가입 후 커뮤니티에서 사용할 닉네임은 로그인 후 설정합니다.
+                    </p>
+                  </div>
+                ) : null}
+                <Button
+                  size="lg"
+                  type="submit"
+                  disabled={
+                    isSubmitting || !email || !password || (mode === 'signup' && !passwordConfirm)
+                  }
+                >
                   {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
                   {mode === 'signin' ? '로그인' : '계정 만들기'}
                 </Button>

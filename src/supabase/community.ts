@@ -26,6 +26,7 @@ type FriendStatsRow = Database['public']['Functions']['get_friend_stats']['Retur
 type ProfileSearchRow = Database['public']['Functions']['search_user_profiles']['Returns'][number];
 
 interface SaveUserProfileInput {
+  avatarUrl?: string | null;
   isDiscoverable?: boolean;
   nickname: string;
 }
@@ -37,6 +38,60 @@ const matchResultValues: MatchResult[] = ['draw', 'loss', 'win'];
 const modeValues: ModeId[] = ['control', 'escort', 'flashpoint', 'hybrid', 'push'];
 
 const normalizeNickname = (nickname: string) => nickname.trim();
+
+const sanitizeNickname = (nickname: string | null) => {
+  if (!nickname || nickname.includes('@')) {
+    return null;
+  }
+
+  return nickname;
+};
+
+const normalizeAvatarUrl = (avatarUrl?: string | null) => {
+  const normalized = avatarUrl?.trim() ?? '';
+
+  return normalized || null;
+};
+
+const sanitizeAvatarUrl = (avatarUrl: string | null) => {
+  if (!avatarUrl) {
+    return null;
+  }
+
+  try {
+    const url = new URL(avatarUrl);
+
+    return url.protocol === 'https:' ? url.toString() : null;
+  } catch {
+    return null;
+  }
+};
+
+const ensureAvatarUrl = (avatarUrl?: string | null) => {
+  const normalized = normalizeAvatarUrl(avatarUrl);
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized.length > 500) {
+    throw new Error('프로필 이미지 URL은 500자 이하로 입력하세요.');
+  }
+
+  let url: URL;
+
+  try {
+    url = new URL(normalized);
+  } catch {
+    throw new Error('프로필 이미지 URL을 다시 확인하세요.');
+  }
+
+  if (url.protocol !== 'https:') {
+    throw new Error('프로필 이미지 URL은 https:// 주소만 사용할 수 있습니다.');
+  }
+
+  return url.toString();
+};
 
 const ensureNickname = (nickname: string) => {
   const normalized = normalizeNickname(nickname);
@@ -54,6 +109,22 @@ const ensureNickname = (nickname: string) => {
   }
 
   return normalized;
+};
+
+const toProfileSaveError = (error: { code?: string; message?: string }) => {
+  if (error.code === '23505' && error.message?.includes('user_profiles_normalized_nickname_key')) {
+    return new Error('이미 사용 중인 닉네임입니다. 다른 닉네임을 입력하세요.');
+  }
+
+  if (error.code === '23514' && error.message?.includes('avatar_url')) {
+    return new Error('프로필 이미지 URL은 https:// 주소만 사용할 수 있습니다.');
+  }
+
+  if (error.code === '23514') {
+    return new Error('닉네임은 2~20자의 한글, 영문, 숫자, 밑줄만 사용할 수 있습니다.');
+  }
+
+  return new Error(error.message ?? '프로필 저장에 실패했습니다.');
 };
 
 const asRecord = (value: Json): Record<string, unknown> =>
@@ -94,9 +165,11 @@ const asMatchResult = (value: unknown): MatchResult | null =>
     : null;
 
 const rowToProfile = (row: UserProfileRow): UserProfile => ({
+  avatarUpdatedAt: row.avatar_updated_at,
+  avatarUrl: sanitizeAvatarUrl(row.avatar_url),
   createdAt: row.created_at,
   isDiscoverable: row.is_discoverable,
-  nickname: row.nickname,
+  nickname: sanitizeNickname(row.nickname),
   updatedAt: row.updated_at,
   userId: row.user_id,
 });
@@ -223,11 +296,18 @@ export const getOwnProfile = async () => {
 
 export const saveOwnProfile = async (input: SaveUserProfileInput) => {
   const user = await getCurrentUserOrThrow();
+  const avatarUrl = input.avatarUrl === undefined ? undefined : ensureAvatarUrl(input.avatarUrl);
   const row: UserProfileInsert = {
     is_discoverable: input.isDiscoverable ?? true,
     nickname: ensureNickname(input.nickname),
     user_id: user.id,
   };
+
+  if (avatarUrl !== undefined) {
+    row.avatar_updated_at = new Date().toISOString();
+    row.avatar_url = avatarUrl;
+  }
+
   const { data, error } = await supabase
     .from('user_profiles')
     .upsert(row, { onConflict: 'user_id' })
@@ -235,7 +315,7 @@ export const saveOwnProfile = async (input: SaveUserProfileInput) => {
     .single();
 
   if (error) {
-    throw error;
+    throw toProfileSaveError(error);
   }
 
   return rowToProfile(data);
