@@ -1,6 +1,6 @@
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { BarChart3, Loader2, LockKeyhole, Shield, Swords, Target } from 'lucide-react';
+import { BarChart3, Loader2, LockKeyhole, MonitorUp, Shield, Swords, Target } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
@@ -21,6 +21,24 @@ const getRedirectPath = (state: unknown) => {
 
   return '/';
 };
+
+const loginFeatureCards = [
+  {
+    description: '맵, 영웅, 결과를 한 화면에서 빠르게 저장',
+    icon: Target,
+    label: '빠른 기록',
+  },
+  {
+    description: '전장, 모드, 영웅별 흐름을 자동으로 집계',
+    icon: BarChart3,
+    label: '전적 분석',
+  },
+  {
+    description: '공유 화면 기반 맵 선택 추천을 실험 중',
+    icon: MonitorUp,
+    label: 'LIVE',
+  },
+] as const;
 
 const LoginPage = () => {
   const { isLoading, session, signIn, signUp } = useAuth();
@@ -103,32 +121,37 @@ const LoginPage = () => {
         </div>
 
         <div className="relative z-10 max-w-3xl">
-          <p className="metric-label">세션 콕핏</p>
+          <p className="metric-label">Private match log</p>
           <h1 className="mt-4 max-w-2xl text-4xl font-semibold leading-tight tracking-normal">
             입력은 빠르게, 판단은 선명하게.
           </h1>
-          <div className="mt-8 grid max-w-2xl gap-3 sm:grid-cols-3">
-            <div className="surface-panel interactive-lift p-4">
-              <Target className="h-5 w-5 text-primary" />
-              <p className="mt-5 text-2xl font-semibold">--</p>
-              <p className="metric-label mt-2">승률</p>
-            </div>
-            <div className="surface-panel interactive-lift p-4">
-              <BarChart3 className="h-5 w-5 text-[hsl(var(--warning))]" />
-              <p className="mt-5 text-2xl font-semibold">0</p>
-              <p className="metric-label mt-2">경기</p>
-            </div>
-            <div className="surface-panel interactive-lift p-4">
-              <Shield className="h-5 w-5 text-[hsl(var(--success))]" />
-              <p className="mt-5 text-2xl font-semibold">Solo</p>
-              <p className="metric-label mt-2">기본 큐</p>
-            </div>
+          <div className="mt-8 grid max-w-2xl gap-3">
+            {loginFeatureCards.map((feature) => (
+              <div
+                key={feature.label}
+                className="surface-panel interactive-lift grid grid-cols-[44px_minmax(0,1fr)] items-center gap-4 p-4"
+              >
+                <div className="flex h-11 w-11 items-center justify-center rounded-md border border-primary/15 bg-primary/5 text-primary">
+                  <feature.icon className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold">{feature.label}</p>
+                  <p className="mt-1 text-xs font-semibold leading-relaxed text-muted-foreground">
+                    {feature.description}
+                  </p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
-        <p className="relative z-10 max-w-xl text-sm leading-6 text-muted-foreground">
-          Private match log
-        </p>
+        <div className="relative z-10 flex max-w-xl items-center gap-3 rounded-md border border-border/70 bg-card/55 p-4">
+          <Shield className="h-5 w-5 shrink-0 text-[hsl(var(--success))]" />
+          <p className="text-sm font-semibold leading-6 text-muted-foreground">
+            개인 기록은 로그인한 계정에만 연결됩니다. 가입 후 배틀태그와 닉네임을 설정할 수
+            있습니다.
+          </p>
+        </div>
       </section>
 
       <section className="flex min-h-[calc(100vh-4rem)] items-center justify-center xl:min-h-screen">
