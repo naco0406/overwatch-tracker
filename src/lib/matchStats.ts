@@ -321,7 +321,7 @@ export const rankLiveMapChoices = ({
     poolSize: randomPool.length,
     recommendationScore:
       Math.round((poolTotals.recommendationScore / randomPool.length - 1.5) * 10) / 10,
-    reason: `${randomPool.length}개 남은 전장 평균 보정 기대값`,
+    reason: '남은 전장 평균',
     smoothedWinRate: Math.round(poolTotals.smoothedWinRate / randomPool.length),
     total: poolTotals.total,
     winRate: null,

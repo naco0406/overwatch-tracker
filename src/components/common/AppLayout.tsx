@@ -16,6 +16,7 @@ import {
   UserRound,
   UsersRound,
 } from 'lucide-react';
+import type { MouseEvent } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -106,11 +107,8 @@ const AppLayout = () => {
   const accountAvatarUrl = profile?.avatarUrl ?? null;
 
   const handleStartLive = async () => {
-    const started = await startCapture();
-
-    if (started) {
-      navigate('/live');
-    }
+    navigate('/live');
+    await startCapture();
   };
 
   const handleStopLive = () => {
@@ -124,6 +122,15 @@ const AppLayout = () => {
     }
 
     void handleStartLive();
+  };
+
+  const handleLiveCardClick = () => {
+    navigate('/live');
+  };
+
+  const handleLiveActionClick = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    handleLiveAction();
   };
 
   const handleSignOut = async () => {
@@ -195,7 +202,7 @@ const AppLayout = () => {
         <div className="mx-3 mb-3 border-t border-border/70 pt-3">
           <div
             className={cn(
-              'rounded-lg border p-3 transition-colors',
+              'relative rounded-lg border p-3 transition-[background-color,border-color,box-shadow] hover:border-primary/30 hover:shadow-sm',
               isLiveAvailable
                 ? 'border-destructive/30 bg-destructive/10'
                 : liveActive
@@ -203,15 +210,20 @@ const AppLayout = () => {
                   : 'border-border/70 bg-[hsl(var(--surface-2))]',
             )}
           >
-            <NavLink
-              to="/live"
+            <button
+              type="button"
+              className="absolute inset-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              aria-label="LIVE 맵 추천으로 이동"
+              onClick={handleLiveCardClick}
+            />
+            <div
               className={cn(
-                'flex h-10 items-center justify-between gap-3 rounded-md px-2 transition-colors',
+                'pointer-events-none relative flex h-10 items-center justify-between gap-3 rounded-md px-2 transition-colors',
                 isLiveAvailable
-                  ? 'text-destructive hover:bg-destructive/10'
+                  ? 'text-destructive'
                   : liveActive
-                    ? 'text-primary hover:bg-primary/10'
-                    : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+                    ? 'text-primary'
+                    : 'text-muted-foreground',
               )}
             >
               <span className="flex min-w-0 items-center gap-2">
@@ -228,18 +240,18 @@ const AppLayout = () => {
                 <span className="truncate text-sm font-bold">LIVE</span>
               </span>
               <span className="text-xs font-bold">{liveNavStatusLabel}</span>
-            </NavLink>
+            </div>
             <Button
               type="button"
               variant={isLiveAvailable ? 'outline' : 'default'}
               size="sm"
               className={cn(
-                'mt-3 w-full justify-start',
+                'relative z-10 mt-3 w-full justify-start',
                 isLiveAvailable &&
                   'border-destructive/30 bg-card text-destructive hover:text-destructive',
               )}
               disabled={liveStatus === 'starting' || liveStatus === 'unsupported'}
-              onClick={handleLiveAction}
+              onClick={handleLiveActionClick}
             >
               {isLiveAvailable ? <Square className="h-4 w-4" /> : <MonitorUp className="h-4 w-4" />}
               {liveActionLabel}

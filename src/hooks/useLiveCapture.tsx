@@ -9,7 +9,6 @@ import {
   type ReactNode,
 } from 'react';
 
-import { getMapLabel } from '@/data/matchOptions';
 import {
   createLiveSceneRuntimeState,
   createStableMapSelectionAnalysis,
@@ -47,33 +46,9 @@ export interface LiveFrameMetrics {
   sampledAt: string;
 }
 
-export interface LiveEvidenceEvent {
-  confidence: number;
-  detail: string;
-  frameIndex: number;
-  id: string;
-  kind: 'capture' | 'frame' | 'vision';
-  label: string;
-  observedAt: string;
-}
-
-export interface LiveDebugEvent {
-  data?: Record<string, unknown>;
-  detail: string;
-  frameIndex: number;
-  id: string;
-  level: 'error' | 'info' | 'success' | 'warn';
-  observedAt: string;
-  stage: 'capture' | 'frame' | 'probe' | 'vision';
-  title: string;
-}
-
 interface LiveCaptureContextValue {
-  clearDebugEvents: () => void;
-  debugEvents: LiveDebugEvent[];
   drawPreviewToCanvas: (canvas: HTMLCanvasElement) => boolean;
   errorMessage: string;
-  evidenceEvents: LiveEvidenceEvent[];
   frameMetrics: LiveFrameMetrics | null;
   isLiveAvailable: boolean;
   sceneSnapshot: LiveSceneSnapshot;
@@ -104,12 +79,11 @@ const fallbackDisplayMediaOptions = {
 } satisfies DisplayMediaStreamOptions;
 export const liveSampleIntervalMs = liveFrameSchedule.probeIntervalMs;
 export const livePreviewIntervalMs = 1_000;
-export const liveCadenceDescription = '250ms probe · adaptive OCR';
+export const liveCadenceDescription = '화면 변화에 맞춰 정밀 분석';
 const liveUiUpdateIntervalMs = 1_000;
-const liveDebugEventLimit = 2_000;
 
 export const liveStatusLabel = {
-  capturing: '수집 중',
+  capturing: '공유 중',
   error: '오류',
   idle: '대기',
   starting: '연결 중',
@@ -205,20 +179,8 @@ const createHiddenVideo = (stream: MediaStream) => {
   return video;
 };
 
-const formatMapSelectionDetail = (analysis: LiveVisionAnalysis) => {
-  const candidates = analysis.mapSelection?.candidates ?? [];
-
-  if (candidates.length === 0) {
-    return '후보 없음';
-  }
-
-  return candidates.map((candidate) => getMapLabel(candidate.mapId)).join(' · ');
-};
-
 export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
   const [errorMessage, setErrorMessage] = useState('');
-  const [debugEvents, setDebugEvents] = useState<LiveDebugEvent[]>([]);
-  const [evidenceEvents, setEvidenceEvents] = useState<LiveEvidenceEvent[]>([]);
   const [frameMetrics, setFrameMetrics] = useState<LiveFrameMetrics | null>(null);
   const [sceneSnapshot, setSceneSnapshot] = useState<LiveSceneSnapshot>(() =>
     getLiveSceneSnapshot(createLiveSceneRuntimeState(), 0),
@@ -230,14 +192,11 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
   const fallbackFrameTimerRef = useRef<number | null>(null);
   const frameCallbackHandleRef = useRef<number | null>(null);
   const frameIndexRef = useRef(0);
-  const lastFrameEvidenceAtRef = useRef(0);
-  const lastFrameDebugAtRef = useRef(0);
   const lastFrameMetricsUiAtRef = useRef(0);
-  const lastProbeDebugAtRef = useRef(0);
-  const lastProbeEvidenceAtRef = useRef(0);
   const lastScenePhaseRef = useRef<LiveSceneSnapshot['phase']>('observing');
   const lastSceneSnapshotUiAtRef = useRef(0);
   const lastStableCandidateKeyRef = useRef('');
+  const liveSessionIdRef = useRef(0);
   const liveRuntimeRef = useRef(createLiveSceneRuntimeState());
   const probeCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const scheduleFrameSamplingRef = useRef<() => void>(() => undefined);
@@ -258,36 +217,6 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
       window.clearTimeout(fallbackFrameTimerRef.current);
       fallbackFrameTimerRef.current = null;
     }
-  }, []);
-
-  const addEvidenceEvent = useCallback((event: Omit<LiveEvidenceEvent, 'id' | 'observedAt'>) => {
-    setEvidenceEvents((current) =>
-      [
-        {
-          ...event,
-          id: `${Date.now()}-${event.frameIndex}-${event.kind}`,
-          observedAt: new Date().toISOString(),
-        },
-        ...current,
-      ].slice(0, 12),
-    );
-  }, []);
-
-  const addDebugEvent = useCallback((event: Omit<LiveDebugEvent, 'id' | 'observedAt'>) => {
-    setDebugEvents((current) =>
-      [
-        {
-          ...event,
-          id: `${Date.now()}-${event.frameIndex}-${event.stage}`,
-          observedAt: new Date().toISOString(),
-        },
-        ...current,
-      ].slice(0, liveDebugEventLimit),
-    );
-  }, []);
-
-  const clearDebugEvents = useCallback(() => {
-    setDebugEvents([]);
   }, []);
 
   const publishSceneSnapshot = useCallback(
@@ -326,11 +255,13 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
       }
 
       setStatus(nextStatus);
-      lastFrameEvidenceAtRef.current = 0;
-      lastFrameDebugAtRef.current = 0;
+      liveSessionIdRef.current += 1;
+      liveRuntimeRef.current = createLiveSceneRuntimeState();
+      setFrameMetrics(null);
+      setSceneSnapshot(getLiveSceneSnapshot(liveRuntimeRef.current, 0));
+      setStreamInfo(null);
+      setVisionAnalysis(null);
       lastFrameMetricsUiAtRef.current = 0;
-      lastProbeDebugAtRef.current = 0;
-      lastProbeEvidenceAtRef.current = 0;
       lastScenePhaseRef.current = 'observing';
       lastSceneSnapshotUiAtRef.current = 0;
       lastStableCandidateKeyRef.current = '';
@@ -416,44 +347,6 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
         });
       }
 
-      if (
-        lastFrameDebugAtRef.current === 0 ||
-        requestedAt - lastFrameDebugAtRef.current >= liveUiUpdateIntervalMs
-      ) {
-        lastFrameDebugAtRef.current = requestedAt;
-        addDebugEvent({
-          data: {
-            brightness,
-            contrast,
-            initialPlan,
-            quality,
-            video: {
-              height,
-              readyState: video.readyState,
-              width,
-            },
-          },
-          detail: `${formatLiveNumber(brightness)} brightness · ${formatLiveNumber(
-            contrast,
-          )} contrast`,
-          frameIndex,
-          level: quality === 'readable' ? 'info' : 'warn',
-          stage: 'frame',
-          title: quality === 'readable' ? 'Frame readable' : 'Frame degraded',
-        });
-      }
-
-      if (quality !== 'readable' && requestedAt - lastFrameEvidenceAtRef.current >= 2_000) {
-        lastFrameEvidenceAtRef.current = requestedAt;
-        addEvidenceEvent({
-          confidence: quality === 'soft' ? 0.38 : 0.12,
-          detail: `${formatLiveNumber(brightness)} 밝기 · ${formatLiveNumber(contrast)} 대비`,
-          frameIndex,
-          kind: 'frame',
-          label: liveFrameQualityLabel[quality],
-        });
-      }
-
       if (quality !== 'readable') {
         return;
       }
@@ -468,41 +361,6 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
       const probe = probeLiveVisionCanvas(probeCanvas);
       reduceLiveProbe(runtime, probe, requestedAt);
       publishSceneSnapshot(getLiveSceneSnapshot(runtime, requestedAt), requestedAt);
-
-      if (
-        lastProbeDebugAtRef.current === 0 ||
-        requestedAt - lastProbeDebugAtRef.current >= liveUiUpdateIntervalMs
-      ) {
-        lastProbeDebugAtRef.current = requestedAt;
-        addDebugEvent({
-          data: {
-            cardScores: probe.cardScores,
-            confidence: probe.confidence,
-            evidence: probe.evidence,
-            phaseAfterProbe: runtime.phase,
-            screenCandidate: probe.screenCandidate,
-          },
-          detail: `${probe.screenCandidate} · ${Math.round(probe.confidence * 100)}%`,
-          frameIndex,
-          level: probe.screenCandidate === 'map_selection' ? 'success' : 'info',
-          stage: 'probe',
-          title: 'Probe result',
-        });
-      }
-
-      if (
-        probe.screenCandidate === 'map_selection' &&
-        requestedAt - lastProbeEvidenceAtRef.current >= 1_000
-      ) {
-        lastProbeEvidenceAtRef.current = requestedAt;
-        addEvidenceEvent({
-          confidence: probe.confidence,
-          detail: probe.evidence.join(' · '),
-          frameIndex,
-          kind: 'vision',
-          label: '맵 선택 후보',
-        });
-      }
 
       const isMapSelectionProbe = probe.screenCandidate === 'map_selection';
       const shouldPromoteMapSelectionVision =
@@ -534,24 +392,15 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
       }
 
       visionInFlightRef.current = true;
-      const visionStartedAt = performance.now();
-      addDebugEvent({
-        data: {
-          includeOcr: visionPlan.includeOcr,
-          phaseBeforeVision: runtime.phase,
-          plannedBeforeProbe: initialPlan,
-          visionPlan,
-        },
-        detail: visionPlan.includeOcr ? 'template match + OCR' : 'template match only',
-        frameIndex,
-        level: 'info',
-        stage: 'vision',
-        title: 'Heavy vision started',
-      });
+      const liveSessionId = liveSessionIdRef.current;
       void analyzeLiveVisionCanvas(visionCanvas, {
         includeOcr: visionPlan.includeOcr,
       })
         .then((analysis) => {
+          if (liveSessionId !== liveSessionIdRef.current) {
+            return;
+          }
+
           const finishedAt = performance.now();
 
           reduceLiveVisionAnalysis(runtime, analysis, finishedAt, {
@@ -566,84 +415,15 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
 
           publishSceneSnapshot(nextSnapshot, finishedAt, true);
           setVisionAnalysis(stableAnalysis);
-          addDebugEvent({
-            data: {
-              durationMs: Math.round(finishedAt - visionStartedAt),
-              includedOcr: visionPlan.includeOcr,
-              mapSelection: stableAnalysis.mapSelection
-                ? {
-                    candidates: stableAnalysis.mapSelection.candidates.map((candidate) => ({
-                      alternatives: candidate.alternatives.slice(0, 3),
-                      confidence: candidate.confidence,
-                      mapId: candidate.mapId,
-                      margin: candidate.margin,
-                      slot: candidate.slot,
-                      temporalMatched: candidate.temporalMatched ?? false,
-                      textConfidence: candidate.textConfidence,
-                      textMatched: candidate.textMatched ?? false,
-                      visualConfidence: candidate.visualConfidence,
-                      visualMapId: candidate.visualMapId,
-                      visualMargin: candidate.visualMargin,
-                    })),
-                    confidence: stableAnalysis.mapSelection.confidence,
-                    evidence: stableAnalysis.mapSelection.evidence,
-                    textEvidenceCount: stableAnalysis.mapSelection.textEvidenceCount,
-                    uniqueVisualMapCount: stableAnalysis.mapSelection.uniqueVisualMapCount,
-                  }
-                : null,
-              phaseAfterVision: nextSnapshot.phase,
-              screen: stableAnalysis.screen,
-              stableMapCandidateIds: nextSnapshot.stableMapCandidateIds,
-              textEvidence: stableAnalysis.textEvidence ?? [],
-            },
-            detail: `${stableAnalysis.screen.screenType} · ${Math.round(
-              stableAnalysis.screen.confidence * 100,
-            )}% · ${stableAnalysis.mapSelection?.candidates.length ?? 0} candidates`,
-            frameIndex,
-            level: stableAnalysis.screen.screenType === 'map_selection' ? 'success' : 'warn',
-            stage: 'vision',
-            title: 'Heavy vision result',
-          });
-
-          if (stableAnalysis.screen.screenType === 'map_selection' && stableAnalysis.mapSelection) {
-            addEvidenceEvent({
-              confidence: stableAnalysis.screen.confidence,
-              detail: `${formatMapSelectionDetail(stableAnalysis)}${
-                visionPlan.includeOcr ? ' · OCR 보정' : ''
-              }`,
-              frameIndex,
-              kind: 'vision',
-              label:
-                nextSnapshot.phase === 'stable-map-selection' ? '맵 선택 안정' : '맵 선택 확인',
-            });
-          }
         })
-        .catch((error) => {
-          addDebugEvent({
-            data: {
-              durationMs: Math.round(performance.now() - visionStartedAt),
-              error: error instanceof Error ? error.message : String(error),
-              includeOcr: visionPlan.includeOcr,
-            },
-            detail: error instanceof Error ? error.message : '분석 실패',
-            frameIndex,
-            level: 'error',
-            stage: 'vision',
-            title: 'Heavy vision failed',
-          });
-          addEvidenceEvent({
-            confidence: 0,
-            detail: error instanceof Error ? error.message : '분석 실패',
-            frameIndex,
-            kind: 'vision',
-            label: '분석 실패',
-          });
-        })
+        .catch(() => undefined)
         .finally(() => {
-          visionInFlightRef.current = false;
+          if (liveSessionId === liveSessionIdRef.current) {
+            visionInFlightRef.current = false;
+          }
         });
     },
-    [addDebugEvent, addEvidenceEvent, publishSceneSnapshot],
+    [publishSceneSnapshot],
   );
 
   const scheduleFrameSampling = useCallback(() => {
@@ -701,43 +481,20 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
     if (!navigator.mediaDevices?.getDisplayMedia) {
       setStatus('unsupported');
       setErrorMessage('이 브라우저에서는 화면 캡처를 사용할 수 없습니다.');
-      addDebugEvent({
-        detail: 'navigator.mediaDevices.getDisplayMedia is unavailable',
-        frameIndex: 0,
-        level: 'error',
-        stage: 'capture',
-        title: 'Capture unsupported',
-      });
       return false;
     }
 
     stopCapture('starting');
     setErrorMessage('');
-    setDebugEvents([]);
-    setEvidenceEvents([]);
     setFrameMetrics(null);
     setVisionAnalysis(null);
     frameIndexRef.current = 0;
-    lastFrameEvidenceAtRef.current = 0;
-    lastFrameDebugAtRef.current = 0;
     lastFrameMetricsUiAtRef.current = 0;
-    lastProbeDebugAtRef.current = 0;
-    lastProbeEvidenceAtRef.current = 0;
     lastScenePhaseRef.current = 'observing';
     lastSceneSnapshotUiAtRef.current = 0;
     lastStableCandidateKeyRef.current = '';
     liveRuntimeRef.current = createLiveSceneRuntimeState();
     setSceneSnapshot(getLiveSceneSnapshot(liveRuntimeRef.current, 0));
-    addDebugEvent({
-      data: {
-        displayMediaOptions,
-      },
-      detail: 'Requesting display media stream',
-      frameIndex: 0,
-      level: 'info',
-      stage: 'capture',
-      title: 'Capture requested',
-    });
 
     try {
       void prewarmLiveVisionOcr();
@@ -753,28 +510,10 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
       streamRef.current = stream;
       videoRef.current = video;
       setStreamInfo(readStreamInfo(videoTrack));
-      addDebugEvent({
-        data: {
-          streamInfo: readStreamInfo(videoTrack),
-          trackSettings: videoTrack.getSettings(),
-        },
-        detail: 'MediaStream connected',
-        frameIndex: 0,
-        level: 'success',
-        stage: 'capture',
-        title: 'Capture connected',
-      });
 
       videoTrack.addEventListener(
         'ended',
         () => {
-          addDebugEvent({
-            detail: 'Video track ended',
-            frameIndex: frameIndexRef.current,
-            level: 'warn',
-            stage: 'capture',
-            title: 'Capture ended',
-          });
           stopCapture('idle');
         },
         {
@@ -784,13 +523,6 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
 
       await video.play();
       setStatus('capturing');
-      addEvidenceEvent({
-        confidence: 1,
-        detail: 'MediaStream 연결',
-        frameIndex: 0,
-        kind: 'capture',
-        label: '화면 공유',
-      });
       sampleFrame();
       scheduleFrameSampling();
 
@@ -798,20 +530,9 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       stopCapture('error');
       setErrorMessage(getErrorMessage(error));
-      addDebugEvent({
-        data: {
-          error: error instanceof Error ? error.message : String(error),
-          name: getErrorName(error),
-        },
-        detail: getErrorMessage(error),
-        frameIndex: frameIndexRef.current,
-        level: 'error',
-        stage: 'capture',
-        title: 'Capture failed',
-      });
       return false;
     }
-  }, [addDebugEvent, addEvidenceEvent, sampleFrame, scheduleFrameSampling, stopCapture]);
+  }, [sampleFrame, scheduleFrameSampling, stopCapture]);
 
   useEffect(
     () => () => {
@@ -822,11 +543,8 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
 
   const value = useMemo(
     () => ({
-      clearDebugEvents,
-      debugEvents,
       drawPreviewToCanvas,
       errorMessage,
-      evidenceEvents,
       frameMetrics,
       isLiveAvailable: status === 'capturing',
       sceneSnapshot,
@@ -837,11 +555,8 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
       visionAnalysis,
     }),
     [
-      clearDebugEvents,
-      debugEvents,
       drawPreviewToCanvas,
       errorMessage,
-      evidenceEvents,
       frameMetrics,
       sceneSnapshot,
       startCapture,

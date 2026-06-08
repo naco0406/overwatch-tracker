@@ -8,17 +8,41 @@ interface PageHeaderProps {
   title: string;
   description?: string;
   className?: string;
+  compact?: boolean;
 }
 
-const PageHeader = ({ actions, className, description, eyebrow, title }: PageHeaderProps) => (
-  <div className={cn('flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between', className)}>
+const PageHeader = ({
+  actions,
+  className,
+  compact = false,
+  description,
+  eyebrow,
+  title,
+}: PageHeaderProps) => (
+  <div
+    className={cn(
+      'flex flex-col sm:flex-row sm:justify-between',
+      compact ? 'gap-2 sm:items-center' : 'gap-3 sm:items-end',
+      className,
+    )}
+  >
     <div className="min-w-0">
-      {eyebrow && <p className="metric-label mb-1.5">{eyebrow}</p>}
-      <h1 className="break-words text-[26px] font-bold leading-tight tracking-normal text-foreground sm:text-3xl">
+      {eyebrow && <p className={cn('metric-label', compact ? 'mb-1' : 'mb-1.5')}>{eyebrow}</p>}
+      <h1
+        className={cn(
+          'break-words font-bold leading-tight tracking-normal text-foreground',
+          compact ? 'text-2xl sm:text-[26px]' : 'text-[26px] sm:text-3xl',
+        )}
+      >
         {title}
       </h1>
       {description && (
-        <p className="mt-2 max-w-2xl break-words text-sm leading-relaxed text-muted-foreground">
+        <p
+          className={cn(
+            'max-w-2xl break-words text-sm leading-relaxed text-muted-foreground',
+            compact ? 'mt-1.5' : 'mt-2',
+          )}
+        >
           {description}
         </p>
       )}

@@ -1,21 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import {
-  Activity,
-  Bug,
-  CircleAlert,
-  ClipboardCopy,
-  Download,
-  Eye,
-  FileCheck2,
-  Gauge,
-  ListChecks,
-  MapIcon,
-  MonitorUp,
-  Shuffle,
-  Square,
-  Trash2,
-  TimerReset,
-} from 'lucide-react';
+import { CircleAlert, Eye, MapIcon, MonitorUp, Shuffle, Square, TimerReset } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { RefObject } from 'react';
 
@@ -26,16 +10,11 @@ import { Button } from '@/components/ui/button';
 import { getMapLabel, getModeLabel } from '@/data/matchOptions';
 import { getMapScreenshotPath } from '@/data/masterAssets';
 import {
-  formatLiveNumber,
-  liveCadenceDescription,
   liveFrameQualityLabel,
   livePreviewIntervalMs,
   liveStatusLabel,
-  type LiveDebugEvent,
-  type LiveEvidenceEvent,
   type LiveFrameMetrics,
   type LiveStatus,
-  type LiveStreamInfo,
   useLiveCapture,
 } from '@/hooks/useLiveCapture';
 import { useMatches } from '@/hooks/useMatches';
@@ -48,19 +27,15 @@ import {
 } from '@/lib/matchStats';
 import { cn } from '@/lib/utils';
 
-const formatResolution = (streamInfo: LiveStreamInfo | null) =>
-  streamInfo ? `${streamInfo.width ?? '--'}x${streamInfo.height ?? '--'}` : '--';
-
-const liveScenePhaseLabel = {
-  'confirming-map-selection': '확인 중',
-  observing: '감시',
-  'stable-map-selection': '안정',
-  'suspecting-map-selection': '후보',
-} satisfies Record<LiveSceneSnapshot['phase'], string>;
-
 type LiveMapSelectionCandidate = NonNullable<
   LiveVisionAnalysis['mapSelection']
 >['candidates'][number];
+
+const mapSelectionSlotLabel = {
+  center: '가운데',
+  left: '왼쪽',
+  right: '오른쪽',
+} satisfies Record<LiveMapSelectionCandidate['slot'], string>;
 
 const isStrongVisualMapSelectionCandidate = (candidate: LiveMapSelectionCandidate) => {
   const visualConfidence = candidate.visualConfidence ?? candidate.confidence;
@@ -101,18 +76,14 @@ const getReadyMapSelectionIds = (analysis: LiveVisionAnalysis | null | undefined
 
 const LivePage = () => {
   const {
-    clearDebugEvents,
-    debugEvents,
     drawPreviewToCanvas,
     errorMessage,
-    evidenceEvents,
     frameMetrics,
     isLiveAvailable,
     sceneSnapshot,
     startCapture,
     status,
     stopCapture,
-    streamInfo,
     visionAnalysis,
   } = useLiveCapture();
   const { data: matches = [], isLoading: isMatchesLoading } = useMatches();
@@ -144,50 +115,6 @@ const LivePage = () => {
       }),
     [mapSelectionIds, matches],
   );
-  const createDebugPayload = useCallback(
-    () => ({
-      events: [...debugEvents].reverse(),
-      frameMetrics,
-      generatedAt: new Date().toISOString(),
-      recommendations: mapRecommendations,
-      recommendationInput: {
-        mapIds: mapSelectionIds,
-      },
-      sceneSnapshot,
-      status,
-      streamInfo,
-      visionAnalysis,
-    }),
-    [
-      debugEvents,
-      frameMetrics,
-      mapRecommendations,
-      mapSelectionIds,
-      sceneSnapshot,
-      status,
-      streamInfo,
-      visionAnalysis,
-    ],
-  );
-  const copyDebugLogs = useCallback(() => {
-    const payload = JSON.stringify(createDebugPayload(), null, 2);
-
-    void navigator.clipboard?.writeText(payload);
-  }, [createDebugPayload]);
-  const downloadDebugLogs = useCallback(() => {
-    const payload = JSON.stringify(createDebugPayload(), null, 2);
-    const blob = new Blob([payload], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-
-    anchor.href = url;
-    anchor.download = `overwatch-live-debug-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }, [createDebugPayload]);
-
   const stopLive = useCallback(() => {
     stopCapture('idle');
   }, [stopCapture]);
@@ -195,7 +122,6 @@ const LivePage = () => {
   const startLive = useCallback(() => {
     void startCapture();
   }, [startCapture]);
-  const hasPreviousLiveSnapshot = Boolean(frameMetrics || visionAnalysis || evidenceEvents.length);
 
   useEffect(() => {
     let previewTimer: number | null = null;
@@ -218,60 +144,10 @@ const LivePage = () => {
     };
   }, [drawPreviewToCanvas, isLiveAvailable]);
 
-  if (!isLiveAvailable && hasPreviousLiveSnapshot) {
-    return (
-      <div className="page-stack">
-        <PageHeader
-          eyebrow="마지막 수집"
-          title="LIVE"
-          description="화면 공유는 종료됐고, 마지막으로 인식한 상태만 남겨두었습니다."
-          actions={
-            <Button
-              type="button"
-              disabled={status === 'starting' || status === 'unsupported'}
-              onClick={startLive}
-            >
-              <MonitorUp className="h-4 w-4" />
-              다시 공유
-            </Button>
-          }
-        />
-
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
-          <LiveDecisionPanel
-            frameMetrics={frameMetrics}
-            isDataLoading={isMatchesLoading}
-            recommendations={mapRecommendations}
-            sceneSnapshot={sceneSnapshot}
-            visionAnalysis={visionAnalysis}
-          />
-          <LiveSystemPanel
-            evidenceEvents={evidenceEvents}
-            frameMetrics={frameMetrics}
-            sceneSnapshot={sceneSnapshot}
-            streamInfo={streamInfo}
-          />
-        </section>
-
-        <LiveChoiceRail recommendations={mapRecommendations} />
-        <LiveDebugExportPanel
-          debugEvents={debugEvents}
-          onClear={clearDebugEvents}
-          onCopy={copyDebugLogs}
-          onDownload={downloadDebugLogs}
-        />
-      </div>
-    );
-  }
-
   if (!isLiveAvailable) {
     return (
       <div className="page-stack">
-        <PageHeader
-          eyebrow="PC 전용"
-          title="LIVE"
-          description="오버워치 창을 공유하면 맵 선택 추천과 경기 결과 기록 후보를 이 화면에서 확인합니다."
-        />
+        <PageHeader compact title="LIVE" />
 
         <section className="workspace-panel overflow-hidden">
           <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_300px]">
@@ -286,7 +162,7 @@ const LivePage = () => {
                     오버워치 창을 연결하세요
                   </h2>
                   <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                    LIVE는 게임 위에 무언가를 띄우지 않고, 공유된 화면을 웹서비스 안에서 분석합니다.
+                    LIVE는 공유된 맵 선택 화면만 분석해서 후보 맵과 추천 순위를 보여줍니다.
                   </p>
                 </div>
               </div>
@@ -294,21 +170,15 @@ const LivePage = () => {
               <div className="mt-6 divide-y divide-border/70 border-y border-border/70">
                 <LiveReadinessRow
                   icon={MapIcon}
-                  label="맵 선택 화면"
+                  label="맵 선택 추천"
                   status="추천 준비"
                   value="후보 맵을 기준으로 내 승률을 비교"
                 />
                 <LiveReadinessRow
-                  icon={FileCheck2}
-                  label="결과 화면"
-                  status="기록 준비"
-                  value="스코어와 승패 후보를 저장 전 확인"
-                />
-                <LiveReadinessRow
                   icon={TimerReset}
-                  label="샘플링"
+                  label="실시간 분석"
                   status="적응형"
-                  value="짧은 probe 후 필요한 순간에만 OCR 실행"
+                  value="화면 변화에 맞춰 필요한 순간에만 정밀 분석"
                 />
               </div>
             </div>
@@ -345,9 +215,9 @@ const LivePage = () => {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="실시간 수집"
+        compact
+        eyebrow="실시간 맵 추천"
         title="LIVE"
-        description="공유 화면에서 현재 상황과 맵 선택 후보를 실시간으로 추적합니다."
         actions={
           <Button variant="outline" className="bg-transparent" onClick={stopLive}>
             <Square className="h-4 w-4" />
@@ -356,39 +226,23 @@ const LivePage = () => {
         }
       />
 
-      <section className="grid gap-4 2xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.55fr)] 2xl:items-start">
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.45fr)] xl:items-stretch">
         <LivePreviewPanel
           canvasRef={canvasRef}
           frameMetrics={frameMetrics}
           sceneSnapshot={sceneSnapshot}
           status={status}
-          streamInfo={streamInfo}
         />
 
         <LiveDecisionPanel
           frameMetrics={frameMetrics}
           isDataLoading={isMatchesLoading}
           recommendations={mapRecommendations}
-          sceneSnapshot={sceneSnapshot}
           visionAnalysis={visionAnalysis}
         />
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
-        <LiveChoiceRail recommendations={mapRecommendations} />
-        <LiveSystemPanel
-          evidenceEvents={evidenceEvents}
-          frameMetrics={frameMetrics}
-          sceneSnapshot={sceneSnapshot}
-          streamInfo={streamInfo}
-        />
-        <LiveDebugExportPanel
-          debugEvents={debugEvents}
-          onClear={clearDebugEvents}
-          onCopy={copyDebugLogs}
-          onDownload={downloadDebugLogs}
-        />
-      </section>
+      <LiveChoiceRail recommendations={mapRecommendations} />
     </div>
   );
 };
@@ -432,19 +286,17 @@ const LivePreviewPanel = ({
   frameMetrics,
   sceneSnapshot,
   status,
-  streamInfo,
 }: {
   canvasRef: RefObject<HTMLCanvasElement>;
   frameMetrics: LiveFrameMetrics | null;
   sceneSnapshot: LiveSceneSnapshot;
   status: LiveStatus;
-  streamInfo: LiveStreamInfo | null;
 }) => (
-  <div className="workspace-panel overflow-hidden">
+  <div className="workspace-panel flex h-full flex-col overflow-hidden">
     <div className="section-header flex items-center justify-between gap-3">
       <div className="min-w-0">
         <p className="metric-label">입력 화면</p>
-        <h2 className="mt-1 truncate text-lg font-bold">공유 프레임</h2>
+        <h2 className="mt-1 truncate text-lg font-bold">공유 화면</h2>
       </div>
       <Badge className="shrink-0 gap-2 border-destructive/20 bg-destructive/10 text-destructive hover:bg-destructive/10">
         <span className="h-2 w-2 animate-pulse rounded-full bg-destructive" />
@@ -452,39 +304,24 @@ const LivePreviewPanel = ({
       </Badge>
     </div>
 
-    <div className="section-pad">
-      <div className="relative overflow-hidden rounded-lg border border-border/70 bg-slate-950 shadow-sm">
+    <div className="section-pad flex flex-1 flex-col">
+      <div className="relative overflow-hidden rounded-xl border border-border/70 bg-slate-950 shadow-sm">
         <canvas
           ref={canvasRef}
-          className="aspect-video h-full max-h-[68vh] min-h-[280px] w-full bg-slate-950 object-contain"
+          className="aspect-video h-full max-h-[70vh] min-h-[320px] w-full bg-slate-950 object-contain"
         />
-        <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-center gap-2 bg-gradient-to-b from-slate-950/80 to-transparent px-3 py-3 text-white sm:px-4">
-          <LiveOverlayBadge label="상태" value={liveStatusLabel[status]} />
-          <LiveOverlayBadge label="화면" value={liveScenePhaseLabel[sceneSnapshot.phase]} />
-          <LiveOverlayBadge
-            label="신뢰도"
-            value={`${Math.round(sceneSnapshot.confidence * 100)}%`}
-          />
-        </div>
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 grid gap-2 bg-gradient-to-t from-slate-950/88 to-transparent p-3 text-white sm:grid-cols-3 sm:p-4">
-          <LiveOverlayMetric
-            icon={Eye}
-            label="품질"
-            value={frameMetrics ? liveFrameQualityLabel[frameMetrics.quality] : '대기'}
-            detail="현재 공유 프레임"
-          />
-          <LiveOverlayMetric
-            icon={Activity}
-            label="분석"
-            value={sceneSnapshot.cadenceLabel}
-            detail={liveCadenceDescription}
-          />
-          <LiveOverlayMetric
-            icon={Gauge}
-            label="입력"
-            value={formatResolution(streamInfo)}
-            detail={streamInfo?.displaySurface ?? 'window'}
-          />
+        <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-end bg-gradient-to-b from-slate-950/72 to-transparent px-3 py-3 text-white sm:px-4">
+          <div className="flex max-w-full flex-wrap justify-end gap-2">
+            <LiveOverlayBadge label="상태" value={liveStatusLabel[status]} />
+            <LiveOverlayBadge
+              label="품질"
+              value={frameMetrics ? liveFrameQualityLabel[frameMetrics.quality] : '대기'}
+            />
+            <LiveOverlayBadge
+              label="정확도"
+              value={`${Math.round(sceneSnapshot.confidence * 100)}%`}
+            />
+          </div>
         </div>
         {!frameMetrics ? (
           <div className="absolute inset-0 flex min-h-[280px] items-center justify-center bg-slate-950 text-center text-white">
@@ -503,44 +340,33 @@ const LiveDecisionPanel = ({
   frameMetrics,
   isDataLoading,
   recommendations,
-  sceneSnapshot,
   visionAnalysis,
 }: {
   frameMetrics: LiveFrameMetrics | null;
   isDataLoading: boolean;
   recommendations: LiveMapChoiceRecommendation[];
-  sceneSnapshot: LiveSceneSnapshot;
   visionAnalysis: LiveVisionAnalysis | null;
 }) => {
   const detectedMapSelection = visionAnalysis?.mapSelection;
   const shouldShowDataSkeleton = isDataLoading && Boolean(detectedMapSelection);
   const bestRecommendation = shouldShowDataSkeleton ? undefined : recommendations[0];
   const detectedCandidates = detectedMapSelection?.candidates ?? [];
+  const panelTitle = bestRecommendation
+    ? '추천 준비 완료'
+    : detectedCandidates.length > 0
+      ? '후보 확인 중'
+      : '맵 선택 대기';
 
   return (
-    <div className="workspace-panel overflow-hidden">
-      <div className="section-header flex items-start justify-between gap-3">
+    <div className="workspace-panel flex h-full flex-col overflow-hidden">
+      <div className="section-header">
         <div className="min-w-0">
-          <p className="metric-label">실시간 인식</p>
-          <h2 className="mt-1 truncate text-lg font-bold">
-            {sceneSnapshot.phase === 'observing' ? '상황 감시 중' : '맵 선택 화면 추적'}
-          </h2>
+          <p className="metric-label">추천 판단</p>
+          <h2 className="mt-1 truncate text-lg font-bold">{panelTitle}</h2>
         </div>
-        <Badge variant="outline" className="shrink-0 bg-transparent">
-          {Math.round(sceneSnapshot.confidence * 100)}%
-        </Badge>
       </div>
 
-      <div className="grid grid-cols-3 divide-x divide-border/70 border-y border-border/70 bg-[hsl(var(--surface-2))]">
-        <DecisionMetric label="화면" value={liveScenePhaseLabel[sceneSnapshot.phase]} />
-        <DecisionMetric
-          label="품질"
-          value={frameMetrics ? liveFrameQualityLabel[frameMetrics.quality] : '--'}
-        />
-        <DecisionMetric label="후보" value={`${detectedCandidates.length}`} />
-      </div>
-
-      <div className="section-pad space-y-4">
+      <div className="section-pad flex flex-1 flex-col space-y-3.5 p-3.5 sm:p-4">
         <DetectedCandidateStrip candidates={detectedCandidates} />
 
         <div className="h-px bg-border/70" />
@@ -548,7 +374,10 @@ const LiveDecisionPanel = ({
         {shouldShowDataSkeleton ? (
           <LiveRecommendationSkeleton />
         ) : bestRecommendation ? (
-          <PrimaryRecommendation recommendation={bestRecommendation} />
+          <PrimaryRecommendation
+            recommendation={bestRecommendation}
+            runnerUpRecommendation={recommendations[1]}
+          />
         ) : (
           <EmptyRecognitionState hasFrame={Boolean(frameMetrics)} />
         )}
@@ -569,7 +398,7 @@ const LiveChoiceRail = ({
         <h2 className="mt-1 truncate text-lg font-bold">추천 순위</h2>
       </div>
       <Badge variant="outline" className="shrink-0 bg-transparent">
-        {recommendations.length} choices
+        {recommendations.length}개
       </Badge>
     </div>
     {recommendations.length > 0 ? (
@@ -590,226 +419,11 @@ const LiveChoiceRail = ({
   </div>
 );
 
-const debugLevelLabel = {
-  error: '오류',
-  info: '정보',
-  success: '성공',
-  warn: '주의',
-} satisfies Record<LiveDebugEvent['level'], string>;
-
-const debugLevelClassName = {
-  error: 'border-destructive/25 bg-destructive/10 text-destructive',
-  info: 'border-border/70 bg-secondary text-muted-foreground',
-  success: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700',
-  warn: 'border-amber-500/25 bg-amber-500/10 text-amber-700',
-} satisfies Record<LiveDebugEvent['level'], string>;
-
-const formatDebugEventTime = (value: string) =>
-  new Intl.DateTimeFormat('ko-KR', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).format(new Date(value));
-
-const LiveDebugExportPanel = ({
-  debugEvents,
-  onClear,
-  onCopy,
-  onDownload,
-}: {
-  debugEvents: LiveDebugEvent[];
-  onClear: () => void;
-  onCopy: () => void;
-  onDownload: () => void;
-}) => {
-  const latestEvent = debugEvents[0];
-  const stageCounts = debugEvents.reduce<Record<LiveDebugEvent['stage'], number>>(
-    (counts, event) => ({
-      ...counts,
-      [event.stage]: counts[event.stage] + 1,
-    }),
-    {
-      capture: 0,
-      frame: 0,
-      probe: 0,
-      vision: 0,
-    },
-  );
-
-  return (
-    <div className="workspace-panel overflow-hidden xl:col-span-2">
-      <div className="section-header flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="metric-label">임시 디버그</p>
-          <h2 className="mt-1 truncate text-lg font-bold">LIVE 로그 내보내기</h2>
-        </div>
-        <Badge variant="outline" className="shrink-0 bg-transparent">
-          {debugEvents.length.toLocaleString('ko-KR')} events
-        </Badge>
-      </div>
-
-      <div className="section-pad space-y-4">
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" size="sm" disabled={debugEvents.length === 0} onClick={onCopy}>
-            <ClipboardCopy className="h-4 w-4" />
-            전체 복사
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={debugEvents.length === 0}
-            onClick={onDownload}
-          >
-            <Download className="h-4 w-4" />
-            JSON 다운로드
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={debugEvents.length === 0}
-            onClick={onClear}
-          >
-            <Trash2 className="h-4 w-4" />
-            지우기
-          </Button>
-        </div>
-
-        <div className="grid gap-2 sm:grid-cols-4">
-          <DebugCount label="capture" value={stageCounts.capture} />
-          <DebugCount label="frame" value={stageCounts.frame} />
-          <DebugCount label="probe" value={stageCounts.probe} />
-          <DebugCount label="vision" value={stageCounts.vision} />
-        </div>
-
-        {latestEvent ? (
-          <div className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Bug className="h-4 w-4 text-primary" />
-              <Badge
-                variant="outline"
-                className={cn('bg-transparent', debugLevelClassName[latestEvent.level])}
-              >
-                {debugLevelLabel[latestEvent.level]}
-              </Badge>
-              <span className="text-xs font-bold text-muted-foreground">
-                {formatDebugEventTime(latestEvent.observedAt)}
-              </span>
-              <span className="text-xs font-bold text-muted-foreground">
-                frame #{latestEvent.frameIndex}
-              </span>
-            </div>
-            <p className="mt-2 text-sm font-bold">{latestEvent.title}</p>
-            <p className="mt-1 text-xs font-semibold leading-relaxed text-muted-foreground">
-              {latestEvent.detail}
-            </p>
-          </div>
-        ) : (
-          <div className="rounded-md border border-dashed border-border/80 bg-[hsl(var(--surface-2))] p-4 text-sm font-semibold text-muted-foreground">
-            화면 공유를 시작하면 export 가능한 JSON 로그가 누적됩니다.
-          </div>
-        )}
-
-        <p className="text-xs font-semibold leading-relaxed text-muted-foreground">
-          복사/다운로드에는 시간순 events, 현재 프레임 상태, scene snapshot, latest vision result,
-          recommendation input과 ranking이 포함됩니다.
-        </p>
-      </div>
-    </div>
-  );
-};
-
-const DebugCount = ({ label, value }: { label: string; value: number }) => (
-  <div className="rounded-md border border-border/70 bg-card px-3 py-2">
-    <p className="metric-label">{label}</p>
-    <p className="mt-1 text-sm font-black tabular-nums">{value.toLocaleString('ko-KR')}</p>
-  </div>
-);
-
-const LiveSystemPanel = ({
-  evidenceEvents,
-  frameMetrics,
-  sceneSnapshot,
-  streamInfo,
-}: {
-  evidenceEvents: LiveEvidenceEvent[];
-  frameMetrics: LiveFrameMetrics | null;
-  sceneSnapshot: LiveSceneSnapshot;
-  streamInfo: LiveStreamInfo | null;
-}) => (
-  <div className="workspace-panel overflow-hidden">
-    <div className="section-header">
-      <p className="metric-label">시스템</p>
-      <h2 className="mt-1 text-lg font-bold">입력 상태</h2>
-    </div>
-    <div className="grid grid-cols-2 border-y border-border/70 bg-[hsl(var(--surface-2))]">
-      <CompactMetric label="해상도" value={formatResolution(streamInfo)} />
-      <CompactMetric
-        label="품질"
-        value={frameMetrics ? liveFrameQualityLabel[frameMetrics.quality] : '--'}
-      />
-      <CompactMetric label="분석" value={sceneSnapshot.cadenceLabel} />
-      <CompactMetric label="FPS" value={formatLiveNumber(streamInfo?.frameRate ?? null, 'fps')} />
-    </div>
-    <details className="group">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-bold">
-        <span className="flex min-w-0 items-center gap-2">
-          <ListChecks className="h-4 w-4 shrink-0 text-primary" />
-          최근 이벤트
-        </span>
-      </summary>
-      <div className="max-h-64 overflow-auto border-t border-border/70">
-        {evidenceEvents.length > 0 ? (
-          evidenceEvents.slice(0, 5).map((event) => <EvidenceRow key={event.id} event={event} />)
-        ) : (
-          <div className="p-4 text-sm font-semibold text-muted-foreground">기록 없음</div>
-        )}
-      </div>
-    </details>
-  </div>
-);
-
 const LiveOverlayBadge = ({ label, value }: { label: string; value: string }) => (
   <span className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-white/10 bg-white/10 px-2.5 py-1 text-xs font-bold backdrop-blur">
     <span className="text-white/55">{label}</span>
     <span className="truncate text-white">{value}</span>
   </span>
-);
-
-const LiveOverlayMetric = ({
-  detail,
-  icon: Icon,
-  label,
-  value,
-}: {
-  detail: string;
-  icon: LucideIcon;
-  label: string;
-  value: string;
-}) => (
-  <div className="flex min-w-0 items-center gap-2 rounded-md border border-white/10 bg-white/10 px-3 py-2 backdrop-blur">
-    <Icon className="h-4 w-4 shrink-0 text-cyan-200" />
-    <div className="min-w-0">
-      <p className="text-[10px] font-bold uppercase text-white/50">{label}</p>
-      <p className="truncate text-sm font-black text-white">{value}</p>
-      <p className="truncate text-[10px] font-semibold text-white/55">{detail}</p>
-    </div>
-  </div>
-);
-
-const DecisionMetric = ({ label, value }: { label: string; value: string }) => (
-  <div className="min-w-0 px-3 py-3 text-center">
-    <p className="metric-label">{label}</p>
-    <p className="mt-1 truncate text-sm font-black">{value}</p>
-  </div>
-);
-
-const CompactMetric = ({ label, value }: { label: string; value: string }) => (
-  <div className="min-w-0 border-b border-r border-border/70 px-3 py-3 last:border-r-0">
-    <p className="metric-label">{label}</p>
-    <p className="mt-1 truncate text-sm font-bold">{value}</p>
-  </div>
 );
 
 const DetectedCandidateStrip = ({
@@ -819,19 +433,19 @@ const DetectedCandidateStrip = ({
 }) => (
   <div>
     <div className="mb-2 flex items-center justify-between gap-3">
-      <p className="metric-label">감지된 후보</p>
+      <p className="metric-label">선택 후보</p>
       <Badge variant="outline" className="bg-transparent">
         {candidates.length}/3
       </Badge>
     </div>
     {candidates.length > 0 ? (
-      <div className="grid gap-2">
+      <div className="overflow-hidden rounded-md border border-border/70 bg-card">
         {candidates.map((candidate) => (
           <DetectedCandidateRow key={candidate.slot} candidate={candidate} />
         ))}
       </div>
     ) : (
-      <div className="flex min-h-24 items-center gap-3 rounded-md border border-dashed border-border/80 bg-[hsl(var(--surface-2))] p-4">
+      <div className="flex min-h-20 items-center gap-3 rounded-md border border-dashed border-border/80 bg-[hsl(var(--surface-2))] p-3">
         <Eye className="h-4 w-4 shrink-0 text-muted-foreground" />
         <p className="text-sm font-semibold text-muted-foreground">
           맵 선택 화면이 안정적으로 잡히면 후보 맵이 표시됩니다.
@@ -847,36 +461,42 @@ const DetectedCandidateRow = ({
   candidate: NonNullable<LiveVisionAnalysis['mapSelection']>['candidates'][number];
 }) => {
   const sourceLabel = candidate.textMatched
-    ? 'OCR'
+    ? '글자 인식'
     : candidate.temporalMatched
-      ? 'temporal'
-      : 'visual';
+      ? '이전 선택 유지'
+      : '화면 비교';
 
   return (
-    <div className="grid grid-cols-[54px_minmax(0,1fr)_52px] items-center gap-3 rounded-md border border-border/70 bg-card p-2">
-      <img
-        src={getMapScreenshotPath(candidate.mapId)}
-        alt=""
-        className="h-10 w-14 rounded object-cover"
-      />
+    <div className="grid min-w-0 grid-cols-[46px_minmax(0,1fr)_42px] items-center gap-2.5 border-b border-border/70 px-2.5 py-2 last:border-b-0">
+      <div className="relative h-8 w-[46px] overflow-hidden rounded bg-slate-950">
+        <img
+          src={getMapScreenshotPath(candidate.mapId)}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      </div>
       <div className="min-w-0">
         <p className="truncate text-sm font-bold">{getMapLabel(candidate.mapId)}</p>
         <p className="mt-0.5 truncate text-[11px] font-semibold text-muted-foreground">
-          {candidate.slot} · {sourceLabel} · margin {Math.round(candidate.margin * 1000) / 10}
+          {mapSelectionSlotLabel[candidate.slot]} · {sourceLabel}
         </p>
       </div>
-      <p className="text-right text-xs font-black">{Math.round(candidate.confidence * 100)}%</p>
+      <p className="text-right text-xs font-black tabular-nums">
+        {Math.round(candidate.confidence * 100)}%
+      </p>
     </div>
   );
 };
 
 const PrimaryRecommendation = ({
   recommendation,
+  runnerUpRecommendation,
 }: {
   recommendation: LiveMapChoiceRecommendation;
+  runnerUpRecommendation?: LiveMapChoiceRecommendation;
 }) => (
   <div className="overflow-hidden rounded-lg border border-border/70 bg-card">
-    <div className="relative min-h-[210px] overflow-hidden bg-slate-950">
+    <div className="relative min-h-[160px] overflow-hidden bg-slate-950">
       {recommendation.choiceType === 'map' ? (
         <img
           src={getMapScreenshotPath(recommendation.mapId)}
@@ -887,7 +507,7 @@ const PrimaryRecommendation = ({
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(34,211,238,0.28),transparent_34%),linear-gradient(135deg,#0f172a,#111827_48%,#020617)]" />
       )}
       <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-slate-950/10" />
-      <div className="relative flex min-h-[210px] flex-col justify-end p-4 text-white">
+      <div className="relative flex min-h-[160px] flex-col justify-end p-3.5 text-white">
         <div className="mb-auto flex items-start justify-between gap-3">
           <Badge className="bg-white text-slate-950 hover:bg-white">BEST</Badge>
           <Badge className="bg-cyan-300 text-slate-950 hover:bg-cyan-300">
@@ -897,19 +517,58 @@ const PrimaryRecommendation = ({
         <p className="text-xs font-bold text-white/70">
           {getRecommendationContext(recommendation)}
         </p>
-        <h3 className="mt-1 truncate text-2xl font-black">
+        <h3 className="mt-1 truncate text-xl font-black">
           {getRecommendationTitle(recommendation)}
         </h3>
-        <p className="mt-2 text-sm font-semibold leading-relaxed text-white/72">
+        <p className="mt-1.5 line-clamp-2 text-xs font-semibold leading-relaxed text-white/72">
           {getRecommendationDetail(recommendation)}
         </p>
       </div>
     </div>
+    <RecommendationRationale
+      recommendation={recommendation}
+      runnerUpRecommendation={runnerUpRecommendation}
+    />
   </div>
 );
 
+const RecommendationRationale = ({
+  recommendation,
+  runnerUpRecommendation,
+}: {
+  recommendation: LiveMapChoiceRecommendation;
+  runnerUpRecommendation?: LiveMapChoiceRecommendation;
+}) => {
+  const scoreGap = runnerUpRecommendation
+    ? Math.max(0, recommendation.recommendationScore - runnerUpRecommendation.recommendationScore)
+    : null;
+  const primaryReason =
+    recommendation.choiceType === 'random'
+      ? '남은 전장 평균 기준'
+      : recommendation.decisive > 0
+        ? `${recommendation.wins}승 ${recommendation.losses}패`
+        : '기록 없음';
+  const secondaryReason =
+    recommendation.choiceType === 'random'
+      ? `보정 ${recommendation.smoothedWinRate}%`
+      : recommendation.decisive > 0
+        ? `${recommendation.decisive}경기 · 보정 ${recommendation.smoothedWinRate}%`
+        : `전체 승률 보정 ${recommendation.smoothedWinRate}%`;
+
+  return (
+    <div className="border-t border-border/70 bg-[hsl(var(--surface-2))] px-3.5 py-2.5">
+      <p className="metric-label">판단 근거</p>
+      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-muted-foreground">
+        <span className="font-black text-foreground">{primaryReason}</span>
+        <span>{secondaryReason}</span>
+        {scoreGap !== null && scoreGap >= 0.1 ? <span>2위 +{scoreGap.toFixed(1)}</span> : null}
+      </div>
+    </div>
+  );
+};
+
 const EmptyRecognitionState = ({ hasFrame }: { hasFrame: boolean }) => (
-  <div className="flex min-h-[210px] items-center gap-3 rounded-lg border border-dashed border-border/80 bg-[hsl(var(--surface-2))] p-5">
+  <div className="flex min-h-[168px] items-center gap-3 rounded-lg border border-dashed border-border/80 bg-[hsl(var(--surface-2))] p-4">
     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-secondary text-primary">
       <MapIcon className="h-4 w-4" />
     </div>
@@ -923,7 +582,7 @@ const EmptyRecognitionState = ({ hasFrame }: { hasFrame: boolean }) => (
 );
 
 const LiveRecommendationSkeleton = () => (
-  <div className="border-y border-border/70 p-4">
+  <div className="rounded-lg border border-border/70 p-3.5">
     <div className="flex items-start gap-3">
       <SkeletonBlock className="h-9 w-9 shrink-0" />
       <div className="min-w-0 flex-1">
@@ -944,7 +603,7 @@ const getRecommendationContext = (recommendation: LiveMapChoiceRecommendation) =
 
 const getRecommendationDetail = (recommendation: LiveMapChoiceRecommendation) =>
   recommendation.choiceType === 'random'
-    ? `${recommendation.reason} · 보정 ${recommendation.smoothedWinRate}%`
+    ? recommendation.reason
     : recommendation.decisive > 0
       ? `${recommendation.wins}승 ${recommendation.losses}패 · ${recommendation.decisive}경기`
       : recommendation.reason;
@@ -1016,30 +675,6 @@ const ChoiceTile = ({
         ? `${recommendation.smoothedWinRate}%`
         : formatWinRate(recommendation.winRate)}
     </p>
-  </div>
-);
-
-const EvidenceRow = ({ event }: { event: LiveEvidenceEvent }) => (
-  <div className="grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_72px] sm:items-center">
-    <div className="flex items-center gap-2">
-      <span
-        className={cn(
-          'h-2 w-2 rounded-full',
-          event.kind === 'capture'
-            ? 'bg-destructive'
-            : event.kind === 'vision'
-              ? 'bg-primary'
-              : 'bg-muted-foreground/60',
-        )}
-      />
-      <div className="min-w-0">
-        <p className="truncate text-sm font-bold">{event.label}</p>
-        <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">{event.detail}</p>
-      </div>
-    </div>
-    <Badge variant="outline" className="w-fit bg-transparent sm:ml-auto">
-      {Math.round(event.confidence * 100)}%
-    </Badge>
   </div>
 );
 
