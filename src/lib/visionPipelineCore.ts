@@ -1174,7 +1174,7 @@ export const mapSelectionLabelRegions = [
 }[];
 
 const reliableMapSelectionConfidence = 0.84;
-const reliableMapSelectionMargin = 0.006;
+const reliableMapSelectionMargin = 0.02;
 
 export const compactVisionScreenText = (text: string) =>
   text

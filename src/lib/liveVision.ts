@@ -35,6 +35,7 @@ export interface LiveVisionAnalysis {
   analyzedAt: string;
   mapSelection?: MapSelectionDetection<MapOption['value']>;
   screen: VisionScreenDetection<MapOption['value']>;
+  textEvidence?: MapSelectionTextEvidence<MapOption['value']>[];
 }
 
 type TesseractModule = typeof import('tesseract.js');
@@ -457,12 +458,10 @@ export const analyzeLiveVisionCanvas = async (
   });
   const templates = await loadMapSelectionTemplates();
   let mapSelection = detectMapSelection(pixelImage, templates);
-  const uniqueVisualMapCount = new Set(mapSelection.candidates.map((candidate) => candidate.mapId))
-    .size;
+  let textEvidence: MapSelectionTextEvidence<MapOption['value']>[] = [];
 
-  if ((options.includeOcr ?? true) && mapSelection.confidence >= 0.6 && uniqueVisualMapCount >= 2) {
-    const textEvidence = await runMapSelectionLabelOcr(canvas);
-
+  if ((options.includeOcr ?? true) && mapSelection.candidates.length >= 3) {
+    textEvidence = await runMapSelectionLabelOcr(canvas);
     mapSelection = refineMapSelectionWithTextEvidence(mapSelection, textEvidence);
   }
 
@@ -477,5 +476,6 @@ export const analyzeLiveVisionCanvas = async (
     analyzedAt: new Date().toISOString(),
     mapSelection: screen.screenType === 'map_selection' ? mapSelection : undefined,
     screen,
+    textEvidence,
   };
 };

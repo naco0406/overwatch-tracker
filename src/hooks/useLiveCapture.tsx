@@ -571,6 +571,7 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
               phaseAfterVision: nextSnapshot.phase,
               screen: stableAnalysis.screen,
               stableMapCandidateIds: nextSnapshot.stableMapCandidateIds,
+              textEvidence: stableAnalysis.textEvidence ?? [],
             },
             detail: `${stableAnalysis.screen.screenType} · ${Math.round(
               stableAnalysis.screen.confidence * 100,

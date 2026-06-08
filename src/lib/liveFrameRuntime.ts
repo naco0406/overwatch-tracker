@@ -267,8 +267,13 @@ export const reduceLiveVisionAnalysis = (
   );
 
   const stableCandidates = getStableMapCandidateIds(state.recentMapSelections);
+  const stableUniqueCandidateCount = new Set(stableCandidates).size;
 
-  if (stableCandidates.length >= 2 && getRecentMapSelectionConfidence(state) >= 0.78) {
+  if (
+    stableCandidates.length >= 3 &&
+    stableUniqueCandidateCount >= 3 &&
+    getRecentMapSelectionConfidence(state) >= 0.78
+  ) {
     state.stableMapCandidateIds = stableCandidates;
     state.stableScreenType = 'map_selection';
     setPhase(state, 'stable-map-selection', now);
