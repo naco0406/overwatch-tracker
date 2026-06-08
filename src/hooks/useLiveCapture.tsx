@@ -503,7 +503,7 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
         });
       }
 
-      const visionPlan = getLiveFrameAnalysisPlan(runtime, requestedAt, visionInFlightRef.current);
+      const visionPlan = initialPlan;
 
       if (!visionPlan.shouldRunVision) {
         return;
@@ -522,6 +522,7 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
         data: {
           includeOcr: visionPlan.includeOcr,
           phaseBeforeVision: runtime.phase,
+          plannedBeforeProbe: initialPlan,
           visionPlan,
         },
         detail: visionPlan.includeOcr ? 'template match + OCR' : 'template match only',
