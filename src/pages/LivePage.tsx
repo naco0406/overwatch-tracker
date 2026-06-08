@@ -1,7 +1,10 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   Activity,
+  Bug,
   CircleAlert,
+  ClipboardCopy,
+  Download,
   Eye,
   FileCheck2,
   Gauge,
@@ -10,6 +13,7 @@ import {
   MonitorUp,
   Shuffle,
   Square,
+  Trash2,
   TimerReset,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
@@ -27,6 +31,7 @@ import {
   liveFrameQualityLabel,
   livePreviewIntervalMs,
   liveStatusLabel,
+  type LiveDebugEvent,
   type LiveEvidenceEvent,
   type LiveFrameMetrics,
   type LiveStatus,
@@ -55,6 +60,8 @@ const liveScenePhaseLabel = {
 
 const LivePage = () => {
   const {
+    clearDebugEvents,
+    debugEvents,
     drawPreviewToCanvas,
     errorMessage,
     evidenceEvents,
@@ -69,13 +76,16 @@ const LivePage = () => {
   } = useLiveCapture();
   const { data: matches = [], isLoading: isMatchesLoading } = useMatches();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const mapSelectionIds = useMemo(
-    () =>
-      sceneSnapshot.stableMapCandidateIds.length > 0
-        ? sceneSnapshot.stableMapCandidateIds
-        : (visionAnalysis?.mapSelection?.candidates.map((candidate) => candidate.mapId) ?? []),
-    [sceneSnapshot.stableMapCandidateIds, visionAnalysis],
-  );
+  const mapSelectionIds = useMemo(() => {
+    const latestCandidateIds =
+      visionAnalysis?.mapSelection?.candidates.map((candidate) => candidate.mapId) ?? [];
+
+    if (sceneSnapshot.stableMapCandidateIds.length >= 3) {
+      return sceneSnapshot.stableMapCandidateIds;
+    }
+
+    return latestCandidateIds.length > 0 ? latestCandidateIds : sceneSnapshot.stableMapCandidateIds;
+  }, [sceneSnapshot.stableMapCandidateIds, visionAnalysis]);
   const mapRecommendations = useMemo(
     () =>
       rankLiveMapChoices({
@@ -84,6 +94,49 @@ const LivePage = () => {
       }),
     [mapSelectionIds, matches],
   );
+  const createDebugPayload = useCallback(
+    () => ({
+      events: [...debugEvents].reverse(),
+      frameMetrics,
+      generatedAt: new Date().toISOString(),
+      recommendations: mapRecommendations,
+      recommendationInput: {
+        mapIds: mapSelectionIds,
+      },
+      sceneSnapshot,
+      status,
+      streamInfo,
+      visionAnalysis,
+    }),
+    [
+      debugEvents,
+      frameMetrics,
+      mapRecommendations,
+      mapSelectionIds,
+      sceneSnapshot,
+      status,
+      streamInfo,
+      visionAnalysis,
+    ],
+  );
+  const copyDebugLogs = useCallback(() => {
+    const payload = JSON.stringify(createDebugPayload(), null, 2);
+
+    void navigator.clipboard?.writeText(payload);
+  }, [createDebugPayload]);
+  const downloadDebugLogs = useCallback(() => {
+    const payload = JSON.stringify(createDebugPayload(), null, 2);
+    const blob = new Blob([payload], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+
+    anchor.href = url;
+    anchor.download = `overwatch-live-debug-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, [createDebugPayload]);
 
   const stopLive = useCallback(() => {
     stopCapture('idle');
@@ -151,6 +204,12 @@ const LivePage = () => {
         </section>
 
         <LiveChoiceRail recommendations={mapRecommendations} />
+        <LiveDebugExportPanel
+          debugEvents={debugEvents}
+          onClear={clearDebugEvents}
+          onCopy={copyDebugLogs}
+          onDownload={downloadDebugLogs}
+        />
       </div>
     );
   }
@@ -272,6 +331,12 @@ const LivePage = () => {
           frameMetrics={frameMetrics}
           sceneSnapshot={sceneSnapshot}
           streamInfo={streamInfo}
+        />
+        <LiveDebugExportPanel
+          debugEvents={debugEvents}
+          onClear={clearDebugEvents}
+          onCopy={copyDebugLogs}
+          onDownload={downloadDebugLogs}
         />
       </section>
     </div>
@@ -472,6 +537,143 @@ const LiveChoiceRail = ({
         맵 선택 후보가 잡히면 이 영역에서 후보와 무작위를 비교합니다.
       </div>
     )}
+  </div>
+);
+
+const debugLevelLabel = {
+  error: '오류',
+  info: '정보',
+  success: '성공',
+  warn: '주의',
+} satisfies Record<LiveDebugEvent['level'], string>;
+
+const debugLevelClassName = {
+  error: 'border-destructive/25 bg-destructive/10 text-destructive',
+  info: 'border-border/70 bg-secondary text-muted-foreground',
+  success: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700',
+  warn: 'border-amber-500/25 bg-amber-500/10 text-amber-700',
+} satisfies Record<LiveDebugEvent['level'], string>;
+
+const formatDebugEventTime = (value: string) =>
+  new Intl.DateTimeFormat('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(new Date(value));
+
+const LiveDebugExportPanel = ({
+  debugEvents,
+  onClear,
+  onCopy,
+  onDownload,
+}: {
+  debugEvents: LiveDebugEvent[];
+  onClear: () => void;
+  onCopy: () => void;
+  onDownload: () => void;
+}) => {
+  const latestEvent = debugEvents[0];
+  const stageCounts = debugEvents.reduce<Record<LiveDebugEvent['stage'], number>>(
+    (counts, event) => ({
+      ...counts,
+      [event.stage]: counts[event.stage] + 1,
+    }),
+    {
+      capture: 0,
+      frame: 0,
+      probe: 0,
+      vision: 0,
+    },
+  );
+
+  return (
+    <div className="workspace-panel overflow-hidden xl:col-span-2">
+      <div className="section-header flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="metric-label">임시 디버그</p>
+          <h2 className="mt-1 truncate text-lg font-bold">LIVE 로그 내보내기</h2>
+        </div>
+        <Badge variant="outline" className="shrink-0 bg-transparent">
+          {debugEvents.length.toLocaleString('ko-KR')} events
+        </Badge>
+      </div>
+
+      <div className="section-pad space-y-4">
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" disabled={debugEvents.length === 0} onClick={onCopy}>
+            <ClipboardCopy className="h-4 w-4" />
+            전체 복사
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={debugEvents.length === 0}
+            onClick={onDownload}
+          >
+            <Download className="h-4 w-4" />
+            JSON 다운로드
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={debugEvents.length === 0}
+            onClick={onClear}
+          >
+            <Trash2 className="h-4 w-4" />
+            지우기
+          </Button>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-4">
+          <DebugCount label="capture" value={stageCounts.capture} />
+          <DebugCount label="frame" value={stageCounts.frame} />
+          <DebugCount label="probe" value={stageCounts.probe} />
+          <DebugCount label="vision" value={stageCounts.vision} />
+        </div>
+
+        {latestEvent ? (
+          <div className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Bug className="h-4 w-4 text-primary" />
+              <Badge
+                variant="outline"
+                className={cn('bg-transparent', debugLevelClassName[latestEvent.level])}
+              >
+                {debugLevelLabel[latestEvent.level]}
+              </Badge>
+              <span className="text-xs font-bold text-muted-foreground">
+                {formatDebugEventTime(latestEvent.observedAt)}
+              </span>
+              <span className="text-xs font-bold text-muted-foreground">
+                frame #{latestEvent.frameIndex}
+              </span>
+            </div>
+            <p className="mt-2 text-sm font-bold">{latestEvent.title}</p>
+            <p className="mt-1 text-xs font-semibold leading-relaxed text-muted-foreground">
+              {latestEvent.detail}
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-md border border-dashed border-border/80 bg-[hsl(var(--surface-2))] p-4 text-sm font-semibold text-muted-foreground">
+            화면 공유를 시작하면 export 가능한 JSON 로그가 누적됩니다.
+          </div>
+        )}
+
+        <p className="text-xs font-semibold leading-relaxed text-muted-foreground">
+          복사/다운로드에는 시간순 events, 현재 프레임 상태, scene snapshot, latest vision result,
+          recommendation input과 ranking이 포함됩니다.
+        </p>
+      </div>
+    </div>
+  );
+};
+
+const DebugCount = ({ label, value }: { label: string; value: number }) => (
+  <div className="rounded-md border border-border/70 bg-card px-3 py-2">
+    <p className="metric-label">{label}</p>
+    <p className="mt-1 text-sm font-black tabular-nums">{value.toLocaleString('ko-KR')}</p>
   </div>
 );
 

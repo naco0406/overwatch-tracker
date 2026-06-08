@@ -46,6 +46,7 @@ const liveVisionFrameSize = {
 const liveProbeFrameSize = {
   width: 320,
 } as const;
+const liveVisualMapSelectionConfidence = 0.88;
 const ocrCachePath = 'overwatch-tracker-live-ocr-v1';
 const ocrLanguages = ['kor', 'eng'];
 const loadedMapSelectionTemplates = new Map<
@@ -396,6 +397,31 @@ const runMapSelectionLabelOcr = async (
   return evidence;
 };
 
+const getLiveMapSelectionScreen = (
+  screen: VisionScreenDetection<MapOption['value']>,
+  mapSelection: MapSelectionDetection<MapOption['value']>,
+): VisionScreenDetection<MapOption['value']> => {
+  if (screen.screenType === 'map_selection') {
+    return screen;
+  }
+
+  const hasEnoughVisualAgreement =
+    mapSelection.candidates.length >= 3 &&
+    mapSelection.uniqueVisualMapCount >= 2 &&
+    mapSelection.confidence >= liveVisualMapSelectionConfidence;
+
+  if (!hasEnoughVisualAgreement) {
+    return screen;
+  }
+
+  return {
+    confidence: mapSelection.confidence,
+    evidence: [...mapSelection.evidence, 'live visual map-card agreement'],
+    mapSelection,
+    screenType: 'map_selection',
+  };
+};
+
 export const drawLiveVisionFrame = (
   video: HTMLVideoElement,
   canvas: HTMLCanvasElement,
@@ -434,15 +460,18 @@ export const analyzeLiveVisionCanvas = async (
   const uniqueVisualMapCount = new Set(mapSelection.candidates.map((candidate) => candidate.mapId))
     .size;
 
-  if ((options.includeOcr ?? true) && mapSelection.confidence >= 0.6 && uniqueVisualMapCount >= 3) {
+  if ((options.includeOcr ?? true) && mapSelection.confidence >= 0.6 && uniqueVisualMapCount >= 2) {
     const textEvidence = await runMapSelectionLabelOcr(canvas);
 
     mapSelection = refineMapSelectionWithTextEvidence(mapSelection, textEvidence);
   }
 
-  const screen = detectVisionScreenType({
+  const screen = getLiveMapSelectionScreen(
+    detectVisionScreenType({
+      mapSelection,
+    }),
     mapSelection,
-  });
+  );
 
   return {
     analyzedAt: new Date().toISOString(),

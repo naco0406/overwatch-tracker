@@ -140,12 +140,10 @@ export const getLiveFrameAnalysisPlan = (
         ? liveFrameSchedule.heavyVisionIntervalMs * 2
         : liveFrameSchedule.heavyVisionIntervalMs;
   const shouldRunVision =
-    !visionInFlight &&
-    shouldProbe &&
-    state.phase !== 'observing' &&
-    now - state.lastVisionAt >= visionInterval;
+    !visionInFlight && shouldProbe && now - state.lastVisionAt >= visionInterval;
   const includeOcr =
     shouldRunVision &&
+    state.phase !== 'observing' &&
     state.phase !== 'suspecting-map-selection' &&
     now - state.lastOcrAt >= liveFrameSchedule.ocrCooldownMs;
 
