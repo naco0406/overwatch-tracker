@@ -115,6 +115,12 @@ export interface MapSelectionCandidate<
   margin: number;
   rect: RelativeRect;
   slot: 'center' | 'left' | 'right';
+  temporalMatched?: boolean;
+  textConfidence?: number;
+  textMatched?: boolean;
+  visualConfidence?: number;
+  visualMapId?: TMapId;
+  visualMargin?: number;
 }
 
 export interface MapSelectionDetection<TMapId extends string = string> {
@@ -729,6 +735,14 @@ export const getCandidateMargin = (candidates: RankedCandidate[]) =>
     ? candidates[0].confidence - candidates[1].confidence
     : (candidates[0]?.confidence ?? 0);
 
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
+const calibrateMapSelectionCandidateConfidence = (confidence: number, margin: number) => {
+  const marginScore = clamp01((margin - 0.004) / 0.026);
+
+  return confidence * (0.7 + marginScore * 0.3);
+};
+
 export const isReliableMapCandidate = (candidates: RankedCandidate[]) =>
   Boolean(
     candidates[0] &&
@@ -1173,6 +1187,88 @@ export const mapSelectionLabelRegions = [
   slot: MapSelectionCandidate['slot'];
 }[];
 
+export const mapSelectionLabelRegionCandidates = [
+  {
+    regions: [
+      {
+        height: 0.052,
+        left: 0.217,
+        top: 0.503,
+        width: 0.155,
+      },
+      {
+        height: 0.075,
+        left: 0.244,
+        top: 0.518,
+        width: 0.13,
+      },
+      {
+        height: 0.125,
+        left: 0.195,
+        top: 0.49,
+        width: 0.175,
+      },
+    ],
+    slot: 'left',
+  },
+  {
+    regions: [
+      {
+        height: 0.052,
+        left: 0.431,
+        top: 0.503,
+        width: 0.17,
+      },
+      {
+        height: 0.075,
+        left: 0.464,
+        top: 0.518,
+        width: 0.13,
+      },
+      {
+        height: 0.125,
+        left: 0.414,
+        top: 0.49,
+        width: 0.175,
+      },
+    ],
+    slot: 'center',
+  },
+  {
+    regions: [
+      {
+        height: 0.052,
+        left: 0.665,
+        top: 0.503,
+        width: 0.17,
+      },
+      {
+        height: 0.075,
+        left: 0.695,
+        top: 0.518,
+        width: 0.13,
+      },
+      {
+        height: 0.125,
+        left: 0.645,
+        top: 0.49,
+        width: 0.175,
+      },
+    ],
+    slot: 'right',
+  },
+] as const satisfies {
+  regions: RelativeRect[];
+  slot: MapSelectionCandidate['slot'];
+}[];
+
+export const mapSelectionNameBandRegion = {
+  height: 0.058,
+  left: 0.18,
+  top: 0.509,
+  width: 0.64,
+} satisfies RelativeRect;
+
 const reliableMapSelectionConfidence = 0.84;
 const reliableMapSelectionMargin = 0.02;
 
@@ -1188,7 +1284,13 @@ export interface VisionTextOption<TValue extends string = string> {
   value: TValue;
 }
 
-export const findVisionTextOption = <TValue extends string>(
+export interface VisionTextOptionMatch<TValue extends string = string> {
+  alias: string;
+  option: VisionTextOption<TValue>;
+  position: number;
+}
+
+export const findVisionTextOptionMatches = <TValue extends string>(
   text: string,
   options: VisionTextOption<TValue>[],
 ) => {
@@ -1197,14 +1299,132 @@ export const findVisionTextOption = <TValue extends string>(
     .flatMap((option) =>
       [option.label, option.value, ...(option.aliases ?? [])]
         .map((alias) => ({
+          alias,
           option,
           position: compact.indexOf(compactVisionScreenText(alias)),
         }))
         .filter((match) => match.position >= 0),
     )
     .sort((left, right) => left.position - right.position);
+  const uniqueMatches = new Map<TValue, VisionTextOptionMatch<TValue>>();
 
-  return matches[0]?.option;
+  for (const match of matches) {
+    if (!uniqueMatches.has(match.option.value)) {
+      uniqueMatches.set(match.option.value, match);
+    }
+  }
+
+  return [...uniqueMatches.values()];
+};
+
+export const findVisionTextOption = <TValue extends string>(
+  text: string,
+  options: VisionTextOption<TValue>[],
+) => findVisionTextOptionMatches(text, options)[0]?.option;
+
+export const mergeMapSelectionTextBandEvidence = <TMapId extends string>({
+  confidence,
+  evidence,
+  matches,
+  modeIdForMap,
+  rawText,
+  slots = ['left', 'center', 'right'],
+}: {
+  confidence: number;
+  evidence: MapSelectionTextEvidence<TMapId>[];
+  matches: VisionTextOptionMatch<TMapId>[];
+  modeIdForMap: (mapId: TMapId) => string | undefined;
+  rawText: string;
+  slots?: readonly MapSelectionTextEvidence<TMapId>['slot'][];
+}) => {
+  const evidenceBySlot = new Map(evidence.map((item, index) => [item.slot, { index, item }]));
+  const slotIndexes = new Map(slots.map((slot, index) => [slot, index]));
+  const matchedSlotsByMapId = new Map<TMapId, number>();
+
+  for (const item of evidence) {
+    const slotIndex = slotIndexes.get(item.slot);
+
+    if (item.mapId && slotIndex !== undefined) {
+      matchedSlotsByMapId.set(item.mapId, slotIndex);
+    }
+  }
+
+  const openSlots = slots.filter((slot) => !evidenceBySlot.get(slot)?.item.mapId);
+  const unmatchedMatches = matches.filter((match) => !matchedSlotsByMapId.has(match.option.value));
+  const assignedSlots = new Set<MapSelectionTextEvidence<TMapId>['slot']>();
+
+  const applyMatchToSlot = (
+    match: VisionTextOptionMatch<TMapId>,
+    slot: MapSelectionTextEvidence<TMapId>['slot'],
+  ) => {
+    const evidenceEntry = evidenceBySlot.get(slot);
+    const nextEvidence = {
+      confidence,
+      mapId: match.option.value,
+      modeId: modeIdForMap(match.option.value),
+      rawText,
+      slot,
+    };
+
+    if (evidenceEntry) {
+      evidence[evidenceEntry.index] = nextEvidence;
+    } else {
+      evidence.push(nextEvidence);
+    }
+
+    assignedSlots.add(slot);
+  };
+
+  if (openSlots.length === 0 || unmatchedMatches.length === 0) {
+    return evidence;
+  }
+
+  if (openSlots.length === unmatchedMatches.length) {
+    unmatchedMatches.forEach((match, index) => {
+      applyMatchToSlot(match, openSlots[index]);
+    });
+    return evidence;
+  }
+
+  matches.forEach((match, matchIndex) => {
+    if (matchedSlotsByMapId.has(match.option.value)) {
+      return;
+    }
+
+    let minSlotIndex = 0;
+    let maxSlotIndex = slots.length - 1;
+
+    matches.forEach((anchor, anchorIndex) => {
+      const anchorSlotIndex = matchedSlotsByMapId.get(anchor.option.value);
+
+      if (anchorSlotIndex === undefined) {
+        return;
+      }
+
+      if (anchorIndex < matchIndex) {
+        minSlotIndex = Math.max(minSlotIndex, anchorSlotIndex + 1);
+      } else if (anchorIndex > matchIndex) {
+        maxSlotIndex = Math.min(maxSlotIndex, anchorSlotIndex - 1);
+      }
+    });
+
+    const candidateSlots = openSlots.filter((slot) => {
+      const slotIndex = slotIndexes.get(slot);
+
+      return (
+        slotIndex !== undefined &&
+        !assignedSlots.has(slot) &&
+        slotIndex >= minSlotIndex &&
+        slotIndex <= maxSlotIndex
+      );
+    });
+
+    if (candidateSlots.length === 1) {
+      applyMatchToSlot(match, candidateSlots[0]);
+    }
+  });
+
+  return evidence;
 };
 
 export const refineMapSelectionWithTextEvidence = <TMapId extends string>(
@@ -1213,43 +1433,46 @@ export const refineMapSelectionWithTextEvidence = <TMapId extends string>(
 ): MapSelectionDetection<TMapId> => {
   const textEvidenceBySlot = new Map(textEvidence.map((evidence) => [evidence.slot, evidence]));
   let changed = false;
+  let correctedCount = 0;
   const candidates = detection.candidates.map((candidate) => {
     const evidence = textEvidenceBySlot.get(candidate.slot);
 
-    if (!evidence?.mapId || evidence.mapId === candidate.mapId) {
+    if (!evidence?.mapId) {
       return candidate;
     }
 
+    correctedCount += 1;
     changed = true;
+    const textConfidence = Math.max(0, Math.min(1, evidence.confidence));
+    const visualConfidence = candidate.visualConfidence ?? candidate.confidence;
+    const visualMargin = candidate.visualMargin ?? candidate.margin;
+    const visualMapId = candidate.visualMapId ?? candidate.mapId;
+    const textAlternative = {
+      confidence: textConfidence,
+      mapId: evidence.mapId,
+      modeId: evidence.modeId,
+    };
 
     return {
       ...candidate,
       alternatives: [
-        {
-          confidence: evidence.confidence,
-          mapId: evidence.mapId,
-          modeId: evidence.modeId,
-        },
+        textAlternative,
         ...candidate.alternatives.filter((alternative) => alternative.mapId !== evidence.mapId),
       ],
-      confidence: Math.max(candidate.confidence, evidence.confidence),
+      confidence: Math.max(candidate.confidence, textConfidence),
       mapId: evidence.mapId,
-      margin: Math.max(candidate.margin, evidence.confidence - candidate.confidence),
+      margin: Math.max(candidate.margin, textConfidence - candidate.confidence),
       modeId: evidence.modeId ?? candidate.modeId,
+      textConfidence,
+      textMatched: true,
+      visualConfidence,
+      visualMapId,
+      visualMargin,
     };
   });
 
-  const correctedCount = textEvidence.filter((evidence) => evidence.mapId).length;
-
   if (!changed) {
-    return correctedCount > 0
-      ? {
-          ...detection,
-          confidence: Math.min(0.99, Math.max(detection.confidence, 0.76 + correctedCount * 0.06)),
-          evidence: [...detection.evidence, `${correctedCount} OCR map labels`],
-          textEvidenceCount: correctedCount,
-        }
-      : detection;
+    return detection;
   }
 
   return {
@@ -1287,15 +1510,22 @@ export const detectMapSelection = <TMapId extends string>(
         .sort((left, right) => right.confidence - left.confidence)
         .slice(0, 5);
       const best = alternatives[0];
+      const margin = getCandidateMargin(alternatives);
+      const confidence = best
+        ? calibrateMapSelectionCandidateConfidence(best.confidence, margin)
+        : 0;
 
       return {
         alternatives,
-        confidence: best?.confidence ?? 0,
+        confidence,
         mapId: best?.mapId ?? ('' as TMapId),
-        margin: getCandidateMargin(alternatives),
+        margin,
         modeId: best?.modeId,
         rect: region,
         slot,
+        visualConfidence: best?.confidence ?? 0,
+        visualMapId: best?.mapId,
+        visualMargin: margin,
       };
     })
     .filter((candidate) => candidate.mapId);
@@ -1340,17 +1570,22 @@ export const detectVisionScreenType = <TMapId extends string>({
 }): VisionScreenDetection<TMapId> => {
   const evidence: string[] = [];
 
-  if (
-    mapSelection &&
-    mapSelection.confidence >= (mapSelection.textEvidenceCount > 0 ? 0.72 : 0.97) &&
-    (mapSelection.textEvidenceCount > 0 || mapSelection.uniqueVisualMapCount >= 2)
-  ) {
-    return {
-      confidence: mapSelection.confidence,
-      evidence: [...mapSelection.evidence, 'map cards detected'],
-      mapSelection,
-      screenType: 'map_selection',
-    };
+  if (mapSelection) {
+    const hasTextBackedMapSelection =
+      mapSelection.candidates.length >= 3 &&
+      mapSelection.textEvidenceCount >= 2 &&
+      mapSelection.confidence >= 0.82;
+    const hasStrongVisualMapSelection =
+      mapSelection.confidence >= 0.97 && mapSelection.uniqueVisualMapCount >= 2;
+
+    if (hasTextBackedMapSelection || hasStrongVisualMapSelection) {
+      return {
+        confidence: mapSelection.confidence,
+        evidence: [...mapSelection.evidence, 'map cards detected'],
+        mapSelection,
+        screenType: 'map_selection',
+      };
+    }
   }
 
   if (ocrText) {

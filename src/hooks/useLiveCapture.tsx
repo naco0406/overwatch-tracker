@@ -24,6 +24,7 @@ import {
   analyzeLiveVisionCanvas,
   drawLiveProbeFrame,
   drawLiveVisionFrame,
+  prewarmLiveVisionOcr,
   probeLiveVisionCanvas,
   terminateLiveVisionOcr,
   type LiveVisionAnalysis,
@@ -503,7 +504,23 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
         });
       }
 
-      const visionPlan = initialPlan;
+      const isMapSelectionProbe = probe.screenCandidate === 'map_selection';
+      const shouldPromoteMapSelectionVision =
+        isMapSelectionProbe &&
+        runtime.phase !== 'stable-map-selection' &&
+        !visionInFlightRef.current &&
+        requestedAt - runtime.lastVisionAt >= liveFrameSchedule.heavyVisionIntervalMs;
+      const shouldRunVision = initialPlan.shouldRunVision || shouldPromoteMapSelectionVision;
+      const includeOcr =
+        shouldRunVision &&
+        (initialPlan.includeOcr ||
+          (isMapSelectionProbe &&
+            requestedAt - runtime.lastOcrAt >= liveFrameSchedule.ocrCooldownMs));
+      const visionPlan = {
+        ...initialPlan,
+        includeOcr,
+        shouldRunVision,
+      };
 
       if (!visionPlan.shouldRunVision) {
         return;
@@ -542,10 +559,10 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
           });
 
           const nextSnapshot = getLiveSceneSnapshot(runtime, finishedAt);
-          const stableAnalysis = createStableMapSelectionAnalysis(
-            analysis,
-            nextSnapshot.stableMapCandidateIds,
-          );
+          const stableAnalysis =
+            nextSnapshot.phase === 'stable-map-selection'
+              ? createStableMapSelectionAnalysis(analysis, nextSnapshot.stableMapCandidateIds)
+              : analysis;
 
           publishSceneSnapshot(nextSnapshot, finishedAt, true);
           setVisionAnalysis(stableAnalysis);
@@ -561,6 +578,12 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
                       mapId: candidate.mapId,
                       margin: candidate.margin,
                       slot: candidate.slot,
+                      temporalMatched: candidate.temporalMatched ?? false,
+                      textConfidence: candidate.textConfidence,
+                      textMatched: candidate.textMatched ?? false,
+                      visualConfidence: candidate.visualConfidence,
+                      visualMapId: candidate.visualMapId,
+                      visualMargin: candidate.visualMargin,
                     })),
                     confidence: stableAnalysis.mapSelection.confidence,
                     evidence: stableAnalysis.mapSelection.evidence,
@@ -717,6 +740,7 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
     });
 
     try {
+      void prewarmLiveVisionOcr();
       const stream = await createDisplayMediaStream();
       const [videoTrack] = stream.getVideoTracks();
 

@@ -1,14 +1,17 @@
-import type { MapOption } from '@/data/matchOptions';
+import { mapOptions, type MapOption } from '@/data/matchOptions';
 import type { LiveVisionAnalysis, LiveVisionProbe } from '@/lib/liveVision';
-import type { VisionScreenType } from '@/lib/visionPipelineCore';
+import type { MapSelectionDetection, VisionScreenType } from '@/lib/visionPipelineCore';
 
 export const liveFrameSchedule = {
   confirmProbeIntervalMs: 125,
-  heavyVisionIntervalMs: 700,
-  observingVisionIntervalMs: 2_500,
-  ocrCooldownMs: 1_800,
+  heavyVisionIntervalMs: 450,
+  mapSelectionEvidenceTtlMs: 6_500,
+  mapSelectionScreenHoldMs: 1_600,
+  observingVisionIntervalMs: 1_800,
+  ocrCooldownMs: 550,
   probeIntervalMs: 250,
-  stableMapSelectionTtlMs: 2_600,
+  stableOcrCooldownMs: 2_500,
+  stableMapSelectionTtlMs: 2_500,
   stableWindowMs: 1_500,
 } as const;
 
@@ -56,13 +59,19 @@ interface TimedMapSelection {
     mapId: MapOption['value'];
     margin: number;
     slot: string;
-    textEvidenceCount: number;
+    temporalMatched: boolean;
+    textConfidence: number;
+    textMatched: boolean;
+    visualConfidence: number;
+    visualMapId: MapOption['value'];
+    visualMargin: number;
   }[];
   observedAt: number;
 }
 
 export interface LiveSceneRuntimeState {
   classifier: LiveSceneClassifierEngine;
+  lastMapSelectionAt: number;
   lastOcrAt: number;
   lastPhaseChangedAt: number;
   lastProbeAt: number;
@@ -76,9 +85,14 @@ export interface LiveSceneRuntimeState {
 
 const mapSelectionProbeThreshold = 0.5;
 const mapSelectionConfirmThreshold = 0.66;
+const temporalVisualMarginFloor = 0.008;
+const temporalSlotScoreThreshold = 1.35;
+const slots = ['left', 'center', 'right'] as const;
+const mapModeById = new Map(mapOptions.map((map) => [map.value, map.modeId] as const));
 
 export const createLiveSceneRuntimeState = (): LiveSceneRuntimeState => ({
   classifier: 'heuristic-v1',
+  lastMapSelectionAt: 0,
   lastOcrAt: 0,
   lastPhaseChangedAt: 0,
   lastProbeAt: 0,
@@ -123,6 +137,16 @@ const getMapSelectionProbeConfidence = (state: LiveSceneRuntimeState) => {
   return mapProbes.reduce((sum, probe) => sum + probe.confidence, 0) / mapProbes.length;
 };
 
+const hasRecentMapSelectionProbe = (state: LiveSceneRuntimeState) =>
+  state.recentProbes.some(
+    (probe) =>
+      probe.screenCandidate === 'map_selection' && probe.confidence >= mapSelectionProbeThreshold,
+  );
+
+const hasRecentNonMapProbeWindow = (state: LiveSceneRuntimeState) =>
+  state.recentProbes.length >= 3 &&
+  state.recentProbes.every((probe) => probe.screenCandidate !== 'map_selection');
+
 export const getLiveFrameAnalysisPlan = (
   state: LiveSceneRuntimeState,
   now: number,
@@ -141,11 +165,12 @@ export const getLiveFrameAnalysisPlan = (
         : liveFrameSchedule.heavyVisionIntervalMs;
   const shouldRunVision =
     !visionInFlight && shouldProbe && now - state.lastVisionAt >= visionInterval;
+  const ocrCooldown =
+    state.phase === 'stable-map-selection'
+      ? liveFrameSchedule.stableOcrCooldownMs
+      : liveFrameSchedule.ocrCooldownMs;
   const includeOcr =
-    shouldRunVision &&
-    state.phase !== 'observing' &&
-    state.phase !== 'suspecting-map-selection' &&
-    now - state.lastOcrAt >= liveFrameSchedule.ocrCooldownMs;
+    shouldRunVision && state.phase !== 'observing' && now - state.lastOcrAt >= ocrCooldown;
 
   return {
     includeOcr,
@@ -180,6 +205,26 @@ export const reduceLiveProbe = (
   ).length;
   const probeConfidence = getMapSelectionProbeConfidence(state);
 
+  if (
+    state.phase === 'stable-map-selection' &&
+    hasRecentNonMapProbeWindow(state) &&
+    !hasRecentMapSelectionProbe(state)
+  ) {
+    state.stableMapCandidateIds = [];
+    state.stableScreenType = 'unknown';
+    setPhase(state, 'observing', now);
+    return;
+  }
+
+  if (
+    state.phase === 'stable-map-selection' &&
+    probe.screenCandidate === 'map_selection' &&
+    probe.confidence >= mapSelectionProbeThreshold
+  ) {
+    state.stableScreenType = 'map_selection';
+    return;
+  }
+
   if (mapProbeCount >= 2 && probeConfidence >= mapSelectionConfirmThreshold) {
     setPhase(state, 'confirming-map-selection', now);
     return;
@@ -196,27 +241,50 @@ export const reduceLiveProbe = (
 };
 
 const getStableMapCandidateIds = (selections: TimedMapSelection[]): MapOption['value'][] => {
-  const slots = ['left', 'center', 'right'];
-
   return slots
     .map((slot) => {
       const scores = new Map<MapOption['value'], number>();
 
       for (const selection of selections) {
         for (const candidate of selection.mapCandidates.filter((item) => item.slot === slot)) {
-          const confidenceScore =
-            candidate.confidence * 1.2 +
-            candidate.margin * 14 +
-            selection.confidence * 0.6 +
-            candidate.textEvidenceCount * 0.35;
+          const textScore = candidate.textMatched
+            ? 3.2 + candidate.textConfidence * 1.4 + selection.confidence * 0.4
+            : 0;
+          const visualScore =
+            candidate.visualMargin >= temporalVisualMarginFloor
+              ? candidate.visualConfidence * 0.75 +
+                candidate.visualMargin * 18 +
+                selection.confidence * 0.25
+              : 0;
+          const confidenceScore = textScore + visualScore + (candidate.temporalMatched ? 0.35 : 0);
 
-          scores.set(candidate.mapId, (scores.get(candidate.mapId) ?? 0) + confidenceScore);
+          if (confidenceScore > 0) {
+            scores.set(candidate.mapId, (scores.get(candidate.mapId) ?? 0) + confidenceScore);
+          }
         }
       }
 
-      return [...scores.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] ?? null;
+      const winner = [...scores.entries()].sort((left, right) => right[1] - left[1])[0];
+
+      return winner && winner[1] >= temporalSlotScoreThreshold ? winner[0] : null;
     })
     .filter((mapId): mapId is MapOption['value'] => Boolean(mapId));
+};
+
+const getTrackableMapSelection = (
+  analysis: LiveVisionAnalysis,
+): MapSelectionDetection<MapOption['value']> | undefined => {
+  if (analysis.mapSelection) {
+    return analysis.mapSelection;
+  }
+
+  const mapSelection = analysis.screen.mapSelection;
+
+  if (!mapSelection || mapSelection.textEvidenceCount <= 0) {
+    return undefined;
+  }
+
+  return mapSelection;
 };
 
 export const reduceLiveVisionAnalysis = (
@@ -231,39 +299,66 @@ export const reduceLiveVisionAnalysis = (
     state.lastOcrAt = now;
   }
 
-  if (analysis.screen.screenType !== 'map_selection' || !analysis.mapSelection) {
+  const trackableMapSelection = getTrackableMapSelection(analysis);
+
+  if (!trackableMapSelection) {
     state.recentMapSelections = pruneByAge(
       state.recentMapSelections,
       now,
-      liveFrameSchedule.stableMapSelectionTtlMs,
+      liveFrameSchedule.mapSelectionEvidenceTtlMs,
     );
 
-    if (now - state.lastPhaseChangedAt > liveFrameSchedule.stableMapSelectionTtlMs) {
-      state.stableMapCandidateIds = [];
-      state.stableScreenType = analysis.screen.screenType;
-      setPhase(state, 'observing', now);
+    const hasFreshStableMapSelection =
+      state.stableMapCandidateIds.length > 0 &&
+      state.lastMapSelectionAt > 0 &&
+      now - state.lastMapSelectionAt <= liveFrameSchedule.stableMapSelectionTtlMs;
+    const hasFreshMapSelectionActivity =
+      hasRecentMapSelectionProbe(state) ||
+      (state.lastMapSelectionAt > 0 &&
+        now - state.lastMapSelectionAt <= liveFrameSchedule.mapSelectionScreenHoldMs);
+
+    if (hasFreshStableMapSelection) {
+      state.stableScreenType = 'map_selection';
+      setPhase(state, 'stable-map-selection', now);
+      return;
     }
 
+    if (hasFreshMapSelectionActivity) {
+      state.stableMapCandidateIds = [];
+      state.stableScreenType = 'map_selection';
+      setPhase(state, 'confirming-map-selection', now);
+      return;
+    }
+
+    state.stableMapCandidateIds = [];
+    state.stableScreenType = analysis.screen.screenType;
+    setPhase(state, 'observing', now);
     return;
   }
 
+  state.lastMapSelectionAt = now;
   state.recentMapSelections = pruneByAge(
     [
       ...state.recentMapSelections,
       {
-        confidence: analysis.screen.confidence,
-        mapCandidates: analysis.mapSelection.candidates.map((candidate) => ({
+        confidence: Math.max(analysis.screen.confidence, trackableMapSelection.confidence),
+        mapCandidates: trackableMapSelection.candidates.map((candidate) => ({
           confidence: candidate.confidence,
           mapId: candidate.mapId as MapOption['value'],
           margin: candidate.margin,
           slot: candidate.slot,
-          textEvidenceCount: analysis.mapSelection?.textEvidenceCount ?? 0,
+          temporalMatched: candidate.temporalMatched ?? false,
+          textConfidence: candidate.textConfidence ?? 0,
+          textMatched: candidate.textMatched ?? false,
+          visualConfidence: candidate.visualConfidence ?? candidate.confidence,
+          visualMapId: (candidate.visualMapId ?? candidate.mapId) as MapOption['value'],
+          visualMargin: candidate.visualMargin ?? candidate.margin,
         })),
         observedAt: now,
       },
     ],
     now,
-    liveFrameSchedule.stableMapSelectionTtlMs,
+    liveFrameSchedule.mapSelectionEvidenceTtlMs,
   );
 
   const stableCandidates = getStableMapCandidateIds(state.recentMapSelections);
@@ -317,18 +412,14 @@ export const createStableMapSelectionAnalysis = (
   analysis: LiveVisionAnalysis,
   stableMapCandidateIds: MapOption['value'][],
 ): LiveVisionAnalysis => {
-  if (
-    analysis.screen.screenType !== 'map_selection' ||
-    !analysis.mapSelection ||
-    stableMapCandidateIds.length === 0
-  ) {
+  const sourceMapSelection = analysis.mapSelection ?? analysis.screen.mapSelection;
+
+  if (!sourceMapSelection || stableMapCandidateIds.length === 0) {
     return analysis;
   }
 
-  const stableBySlot = new Map(
-    ['left', 'center', 'right'].map((slot, index) => [slot, stableMapCandidateIds[index]]),
-  );
-  const candidates = analysis.mapSelection.candidates.map((candidate) => {
+  const stableBySlot = new Map(slots.map((slot, index) => [slot, stableMapCandidateIds[index]]));
+  const candidates = sourceMapSelection.candidates.map((candidate) => {
     const stableMapId = stableBySlot.get(candidate.slot);
 
     if (!stableMapId || stableMapId === candidate.mapId) {
@@ -350,22 +441,26 @@ export const createStableMapSelectionAnalysis = (
       confidence: Math.max(candidate.confidence, matchedAlternative?.confidence ?? 0.82),
       mapId: stableMapId,
       margin: Math.max(candidate.margin, matchedAlternative ? candidate.margin : 0.012),
-      modeId: matchedAlternative?.modeId ?? candidate.modeId,
+      modeId: matchedAlternative?.modeId ?? mapModeById.get(stableMapId) ?? candidate.modeId,
+      temporalMatched: true,
     };
   });
+  const mapSelection = {
+    ...sourceMapSelection,
+    candidates,
+    confidence: Math.max(sourceMapSelection.confidence, 0.86),
+    evidence: [...sourceMapSelection.evidence, 'temporal map agreement'],
+  };
 
   return {
     ...analysis,
-    mapSelection: {
-      ...analysis.mapSelection,
-      candidates,
-      confidence: Math.max(analysis.mapSelection.confidence, 0.86),
-      evidence: [...analysis.mapSelection.evidence, 'temporal map agreement'],
-    },
+    mapSelection,
     screen: {
       ...analysis.screen,
+      mapSelection,
       confidence: Math.max(analysis.screen.confidence, 0.86),
       evidence: [...analysis.screen.evidence, 'temporal map agreement'],
+      screenType: 'map_selection',
     },
   };
 };

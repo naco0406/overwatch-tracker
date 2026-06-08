@@ -4,11 +4,14 @@ import {
   detectMapSelection,
   detectVisionScreenType,
   findVisionTextOption,
+  findVisionTextOptionMatches,
   getCoverSourceRect,
   getRelativeRect,
   mapSelectionCardRegions,
-  mapSelectionLabelRegions,
+  mapSelectionLabelRegionCandidates,
   mapSelectionMatchSize,
+  mapSelectionNameBandRegion,
+  mergeMapSelectionTextBandEvidence,
   refineMapSelectionWithTextEvidence,
   type MapSelectionDetection,
   type MapSelectionTextEvidence,
@@ -42,12 +45,12 @@ type TesseractModule = typeof import('tesseract.js');
 type LabelOcrWorker = Awaited<ReturnType<TesseractModule['createWorker']>>;
 
 const liveVisionFrameSize = {
-  width: 960,
+  width: 1280,
 } as const;
 const liveProbeFrameSize = {
   width: 320,
 } as const;
-const liveVisualMapSelectionConfidence = 0.88;
+const liveVisualMapSelectionConfidence = 0.97;
 const ocrCachePath = 'overwatch-tracker-live-ocr-v1';
 const ocrLanguages = ['kor', 'eng'];
 const loadedMapSelectionTemplates = new Map<
@@ -179,12 +182,16 @@ export const probeLiveVisionCanvas = (canvas: HTMLCanvasElement): LiveVisionProb
     cardScores.reduce((sum, card) => sum + card.score, 0) / Math.max(1, cardScores.length);
   const titleScore = clamp01(titleStats.brightRatio * 14 + (titleStats.contrast - 24) / 48);
   const randomScore = clamp01(
-    randomStats.cyanRatio * 8 + (randomStats.contrast - 16) / 48 + randomStats.brightRatio * 4,
+    randomStats.cyanRatio * 8 +
+      (randomStats.contrast - 16) / 48 +
+      Math.max(0, randomStats.brightRatio - 0.08) * 1.5,
   );
+  const isMismatchedRandomRow = randomScore >= 0.9 && randomStats.cyanRatio < 0.02;
   const rawConfidence = clamp01(
     strongCardCount * 0.15 + cardAverage * 0.42 + titleScore * 0.18 + randomScore * 0.2,
   );
-  const hasMapSelectionStructure = strongCardCount >= 2 && cardAverage >= 0.42;
+  const hasMapSelectionStructure =
+    !isMismatchedRandomRow && strongCardCount >= 2 && cardAverage >= 0.42;
   const confidence = hasMapSelectionStructure ? rawConfidence : Math.min(rawConfidence, 0.42);
   const screenCandidate =
     hasMapSelectionStructure && confidence >= 0.58 ? 'map_selection' : 'unknown';
@@ -192,6 +199,7 @@ export const probeLiveVisionCanvas = (canvas: HTMLCanvasElement): LiveVisionProb
     `${strongCardCount}/3 card-like regions`,
     `${Math.round(cardAverage * 100)} card score`,
     `${Math.round(randomScore * 100)} random row score`,
+    ...(isMismatchedRandomRow ? ['random row mismatch'] : []),
   ];
 
   return {
@@ -316,12 +324,13 @@ const getMapTextOptions = (): VisionTextOption<MapOption['value']>[] =>
   }));
 
 const createOcrCropCanvas = (sourceCanvas: HTMLCanvasElement, rect: PixelRect) => {
-  const scale = 4;
+  const scale = 5;
   const cropCanvas = document.createElement('canvas');
   const context = getCanvasContext(cropCanvas);
 
   cropCanvas.width = rect.width * scale;
   cropCanvas.height = rect.height * scale;
+  context.imageSmoothingEnabled = true;
   context.drawImage(
     sourceCanvas,
     rect.left,
@@ -360,6 +369,10 @@ const getLabelOcrWorker = async () => {
   return labelOcrWorker;
 };
 
+export const prewarmLiveVisionOcr = async () => {
+  await getLabelOcrWorker();
+};
+
 export const terminateLiveVisionOcr = async () => {
   if (!labelOcrWorker) {
     return;
@@ -376,26 +389,72 @@ const runMapSelectionLabelOcr = async (
   const worker = await getLabelOcrWorker();
   const textOptions = getMapTextOptions();
   const evidence: MapSelectionTextEvidence<MapOption['value']>[] = [];
+  const slots: MapSelectionTextEvidence<MapOption['value']>['slot'][] = ['left', 'center', 'right'];
+  const nameBandRect = getRelativeRect(canvas, mapSelectionNameBandRegion);
+  const nameBandCropCanvas = createOcrCropCanvas(canvas, nameBandRect);
+  const nameBandResult = await worker.recognize(nameBandCropCanvas);
+  const nameBandRawText = nameBandResult.data.text.trim();
+  const nameBandMatches = findVisionTextOptionMatches(nameBandRawText, textOptions);
 
-  for (const labelRegion of mapSelectionLabelRegions) {
-    const rect = getRelativeRect(canvas, labelRegion.region);
-    const cropCanvas = createOcrCropCanvas(canvas, rect);
-    const result = await worker.recognize(cropCanvas);
-    const rawText = result.data.text.trim();
-    const option = findVisionTextOption(rawText, textOptions);
+  mergeMapSelectionTextBandEvidence({
+    confidence: Math.max(0.88, nameBandResult.data.confidence / 100),
+    evidence,
+    matches: nameBandMatches,
+    modeIdForMap: (mapId) => mapModeById.get(mapId),
+    rawText: nameBandRawText,
+    slots,
+  });
 
-    evidence.push({
-      confidence: option
-        ? Math.max(0.9, result.data.confidence / 100)
-        : result.data.confidence / 100,
-      mapId: option?.value,
-      modeId: option ? mapModeById.get(option.value) : undefined,
-      rawText,
-      slot: labelRegion.slot,
+  for (const labelRegion of mapSelectionLabelRegionCandidates) {
+    if (evidence.some((item) => item.slot === labelRegion.slot && item.mapId)) {
+      continue;
+    }
+
+    const attempts = [];
+
+    for (const region of labelRegion.regions) {
+      const rect = getRelativeRect(canvas, region);
+      const cropCanvas = createOcrCropCanvas(canvas, rect);
+      const result = await worker.recognize(cropCanvas);
+      const rawText = result.data.text.trim();
+      const option = findVisionTextOption(rawText, textOptions);
+
+      attempts.push({
+        confidence: option
+          ? Math.max(0.9, result.data.confidence / 100)
+          : result.data.confidence / 100,
+        mapId: option?.value,
+        modeId: option ? mapModeById.get(option.value) : undefined,
+        rawText,
+        slot: labelRegion.slot,
+      });
+    }
+
+    const selected =
+      attempts
+        .filter((attempt) => attempt.mapId)
+        .sort((left, right) => right.confidence - left.confidence)[0] ??
+      attempts.sort((left, right) => right.confidence - left.confidence)[0];
+
+    evidence.push(selected);
+  }
+
+  const matchedMapCount = evidence.filter((item) => item.mapId).length;
+
+  if (matchedMapCount < slots.length) {
+    mergeMapSelectionTextBandEvidence({
+      confidence: Math.max(0.88, nameBandResult.data.confidence / 100),
+      evidence,
+      matches: nameBandMatches,
+      modeIdForMap: (mapId) => mapModeById.get(mapId),
+      rawText: nameBandRawText,
+      slots,
     });
   }
 
-  return evidence;
+  return slots
+    .map((slot) => evidence.find((item) => item.slot === slot))
+    .filter((item): item is MapSelectionTextEvidence<MapOption['value']> => Boolean(item));
 };
 
 const getLiveMapSelectionScreen = (

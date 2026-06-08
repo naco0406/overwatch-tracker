@@ -26,9 +26,12 @@ import {
   isReliableHeroCandidate,
   isReliableMapCandidate,
   findVisionTextOption,
-  mapSelectionLabelRegions,
+  findVisionTextOptionMatches,
+  mapSelectionLabelRegionCandidates,
   mapSelectionMatchSize,
+  mapSelectionNameBandRegion,
   mapMatchSize,
+  mergeMapSelectionTextBandEvidence,
   parseOcrText,
   rankHeroTemplates,
   refineMapSelectionWithTextEvidence,
@@ -44,6 +47,7 @@ const expectationsPath = resolve(repoRoot, 'samples/vision/expectations.json');
 const accountName = process.env.OW_SAMPLE_ACCOUNT ?? 'LUXY';
 const tesseractCachePath = process.env.OW_TESSERACT_CACHE ?? join(tmpdir(), 'ow-vision-tesseract');
 const ocrLanguages = ['kor', 'eng'];
+const liveVisionFrameWidth = 1280;
 
 const loadSampleSpecs = () => {
   if (!existsSync(expectationsPath)) {
@@ -596,7 +600,7 @@ const getMapTextOptions = () =>
     value: map.value,
   }));
 
-const runMapSelectionLabelOcr = async ({ sampleImage, tempDir }) => {
+const runMapSelectionLabelOcr = async ({ inputPath = samplePath, sampleImage, tempDir }) => {
   start('screen:map-selection:label-ocr');
   const mapModes = loadMapModes();
 
@@ -622,39 +626,95 @@ const runMapSelectionLabelOcr = async ({ sampleImage, tempDir }) => {
 
     const textOptions = getMapTextOptions();
     const evidence = [];
+    const slots = ['left', 'center', 'right'];
+    const nameBandRect = getRelativeRect(sampleImage, mapSelectionNameBandRegion);
+    const nameBandCropPath = cropResizeToPng({
+      image: sampleImage,
+      inputPath,
+      name: 'sample-map-selection-label-name-band',
+      rect: nameBandRect,
+      resize: {
+        height: nameBandRect.height * 5,
+        width: nameBandRect.width * 5,
+      },
+      tempDir,
+    });
+    const nameBandResult = await worker.recognize(nameBandCropPath);
+    const nameBandRawText = nameBandResult.data.text.trim();
+    const nameBandMatches = findVisionTextOptionMatches(nameBandRawText, textOptions);
 
-    for (const labelRegion of mapSelectionLabelRegions) {
-      const rect = getRelativeRect(sampleImage, labelRegion.region);
-      const cropPath = cropResizeToPng({
-        image: sampleImage,
-        inputPath: samplePath,
-        name: `sample-map-selection-label-${labelRegion.slot}`,
-        rect,
-        resize: {
-          height: rect.height * 4,
-          width: rect.width * 4,
-        },
-        tempDir,
-      });
-      const result = await worker.recognize(cropPath);
-      const rawText = result.data.text.trim();
-      const option = findVisionTextOption(rawText, textOptions);
+    mergeMapSelectionTextBandEvidence({
+      confidence: Math.max(0.88, nameBandResult.data.confidence / 100),
+      evidence,
+      matches: nameBandMatches,
+      modeIdForMap: (mapId) => mapModes.get(mapId),
+      rawText: nameBandRawText,
+      slots,
+    });
 
-      evidence.push({
-        confidence: option ? Math.max(0.9, result.data.confidence / 100) : result.data.confidence / 100,
-        mapId: option?.value,
-        modeId: option ? mapModes.get(option.value) : undefined,
-        rawText,
-        slot: labelRegion.slot,
+    for (const labelRegion of mapSelectionLabelRegionCandidates) {
+      if (evidence.some((item) => item.slot === labelRegion.slot && item.mapId)) {
+        continue;
+      }
+
+      const attempts = [];
+
+      for (const [regionIndex, region] of labelRegion.regions.entries()) {
+        const rect = getRelativeRect(sampleImage, region);
+        const cropPath = cropResizeToPng({
+          image: sampleImage,
+          inputPath,
+          name: `sample-map-selection-label-${labelRegion.slot}-${regionIndex}`,
+          rect,
+          resize: {
+            height: rect.height * 5,
+            width: rect.width * 5,
+          },
+          tempDir,
+        });
+        const result = await worker.recognize(cropPath);
+        const rawText = result.data.text.trim();
+        const option = findVisionTextOption(rawText, textOptions);
+
+        attempts.push({
+          confidence: option
+            ? Math.max(0.9, result.data.confidence / 100)
+            : result.data.confidence / 100,
+          mapId: option?.value,
+          modeId: option ? mapModes.get(option.value) : undefined,
+          rawText,
+          slot: labelRegion.slot,
+        });
+      }
+
+      const selected =
+        attempts
+          .filter((attempt) => attempt.mapId)
+          .sort((left, right) => right.confidence - left.confidence)[0] ??
+        attempts.sort((left, right) => right.confidence - left.confidence)[0];
+
+      evidence.push(selected);
+    }
+
+    const matchedMapCount = evidence.filter((item) => item.mapId).length;
+
+    if (matchedMapCount < slots.length) {
+      mergeMapSelectionTextBandEvidence({
+        confidence: Math.max(0.88, nameBandResult.data.confidence / 100),
+        evidence,
+        matches: nameBandMatches,
+        modeIdForMap: (mapId) => mapModes.get(mapId),
+        rawText: nameBandRawText,
+        slots,
       });
     }
 
     await worker.terminate();
     end('screen:map-selection:label-ocr', {
-      evidence,
+      evidence: slots.map((slot) => evidence.find((item) => item.slot === slot)).filter(Boolean),
     });
 
-    return evidence;
+    return slots.map((slot) => evidence.find((item) => item.slot === slot)).filter(Boolean);
   } catch (error) {
     end('screen:map-selection:label-ocr', {
       error: error instanceof Error ? error.message : String(error),
@@ -1553,7 +1613,30 @@ const main = async () => {
     }
 
     const mapSelectionTemplates = loadMapSelectionTemplates({ tempDir });
-    let mapSelectionDetection = detectMapSelection(sampleImage, mapSelectionTemplates);
+    const shouldUseLiveMapSelectionFrame = sampleSpec?.purpose?.includes('live_map_recommendation');
+    const mapSelectionInputPath = shouldUseLiveMapSelectionFrame
+      ? resizeToPng({
+          inputPath: samplePath,
+          name: 'sample-live-map-selection-frame',
+          resize: {
+            height: Math.max(1, Math.round((sampleImage.height / sampleImage.width) * liveVisionFrameWidth)),
+            width: Math.min(liveVisionFrameWidth, sampleImage.width),
+          },
+          tempDir,
+        })
+      : samplePath;
+    const mapSelectionImage = shouldUseLiveMapSelectionFrame
+      ? readPng(mapSelectionInputPath)
+      : sampleImage;
+
+    if (shouldUseLiveMapSelectionFrame) {
+      logStep('image:live-map-selection-frame', {
+        height: mapSelectionImage.height,
+        width: mapSelectionImage.width,
+      });
+    }
+
+    let mapSelectionDetection = detectMapSelection(mapSelectionImage, mapSelectionTemplates);
     const uniqueVisualMapCount = new Set(
       mapSelectionDetection.candidates.map((candidate) => candidate.mapId),
     ).size;
@@ -1563,7 +1646,8 @@ const main = async () => {
       sampleSpec?.screenType === 'map_selection'
     ) {
       const textEvidence = await runMapSelectionLabelOcr({
-        sampleImage,
+        inputPath: mapSelectionInputPath,
+        sampleImage: mapSelectionImage,
         tempDir,
       });
 

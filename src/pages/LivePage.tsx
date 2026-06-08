@@ -58,6 +58,47 @@ const liveScenePhaseLabel = {
   'suspecting-map-selection': '후보',
 } satisfies Record<LiveSceneSnapshot['phase'], string>;
 
+type LiveMapSelectionCandidate = NonNullable<
+  LiveVisionAnalysis['mapSelection']
+>['candidates'][number];
+
+const isStrongVisualMapSelectionCandidate = (candidate: LiveMapSelectionCandidate) => {
+  const visualConfidence = candidate.visualConfidence ?? candidate.confidence;
+  const visualMargin = candidate.visualMargin ?? candidate.margin;
+
+  return visualConfidence >= 0.9 && visualMargin >= 0.018 && candidate.confidence >= 0.7;
+};
+
+const getReadyMapSelectionIds = (analysis: LiveVisionAnalysis | null | undefined) => {
+  if (analysis?.screen.screenType !== 'map_selection' || !analysis.mapSelection) {
+    return [];
+  }
+
+  const candidateIds = analysis.mapSelection.candidates.map((candidate) => candidate.mapId);
+  const uniqueCandidateCount = new Set(candidateIds).size;
+
+  if (candidateIds.length < 3 || uniqueCandidateCount < 3) {
+    return [];
+  }
+
+  const textMatchedCount = analysis.mapSelection.candidates.filter(
+    (candidate) => candidate.textMatched,
+  ).length;
+  const strongCandidateCount = analysis.mapSelection.candidates.filter(
+    isStrongVisualMapSelectionCandidate,
+  ).length;
+
+  if (textMatchedCount >= 2 || strongCandidateCount >= 3) {
+    return candidateIds;
+  }
+
+  if (analysis.mapSelection.confidence >= 0.94 && strongCandidateCount >= 2) {
+    return candidateIds;
+  }
+
+  return [];
+};
+
 const LivePage = () => {
   const {
     clearDebugEvents,
@@ -77,15 +118,24 @@ const LivePage = () => {
   const { data: matches = [], isLoading: isMatchesLoading } = useMatches();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mapSelectionIds = useMemo(() => {
-    const latestCandidateIds =
-      visionAnalysis?.mapSelection?.candidates.map((candidate) => candidate.mapId) ?? [];
+    const stableMapCandidateIds = sceneSnapshot.stableMapCandidateIds;
 
-    if (sceneSnapshot.stableMapCandidateIds.length >= 3) {
-      return sceneSnapshot.stableMapCandidateIds;
+    if (
+      sceneSnapshot.phase === 'stable-map-selection' &&
+      sceneSnapshot.stableScreenType === 'map_selection' &&
+      stableMapCandidateIds.length >= 3 &&
+      new Set(stableMapCandidateIds).size >= stableMapCandidateIds.length
+    ) {
+      return stableMapCandidateIds;
     }
 
-    return latestCandidateIds.length > 0 ? latestCandidateIds : sceneSnapshot.stableMapCandidateIds;
-  }, [sceneSnapshot.stableMapCandidateIds, visionAnalysis]);
+    return getReadyMapSelectionIds(visionAnalysis);
+  }, [
+    sceneSnapshot.phase,
+    sceneSnapshot.stableMapCandidateIds,
+    sceneSnapshot.stableScreenType,
+    visionAnalysis,
+  ]);
   const mapRecommendations = useMemo(
     () =>
       rankLiveMapChoices({
@@ -795,22 +845,30 @@ const DetectedCandidateRow = ({
   candidate,
 }: {
   candidate: NonNullable<LiveVisionAnalysis['mapSelection']>['candidates'][number];
-}) => (
-  <div className="grid grid-cols-[54px_minmax(0,1fr)_52px] items-center gap-3 rounded-md border border-border/70 bg-card p-2">
-    <img
-      src={getMapScreenshotPath(candidate.mapId)}
-      alt=""
-      className="h-10 w-14 rounded object-cover"
-    />
-    <div className="min-w-0">
-      <p className="truncate text-sm font-bold">{getMapLabel(candidate.mapId)}</p>
-      <p className="mt-0.5 truncate text-[11px] font-semibold text-muted-foreground">
-        {candidate.slot} · margin {Math.round(candidate.margin * 1000) / 10}
-      </p>
+}) => {
+  const sourceLabel = candidate.textMatched
+    ? 'OCR'
+    : candidate.temporalMatched
+      ? 'temporal'
+      : 'visual';
+
+  return (
+    <div className="grid grid-cols-[54px_minmax(0,1fr)_52px] items-center gap-3 rounded-md border border-border/70 bg-card p-2">
+      <img
+        src={getMapScreenshotPath(candidate.mapId)}
+        alt=""
+        className="h-10 w-14 rounded object-cover"
+      />
+      <div className="min-w-0">
+        <p className="truncate text-sm font-bold">{getMapLabel(candidate.mapId)}</p>
+        <p className="mt-0.5 truncate text-[11px] font-semibold text-muted-foreground">
+          {candidate.slot} · {sourceLabel} · margin {Math.round(candidate.margin * 1000) / 10}
+        </p>
+      </div>
+      <p className="text-right text-xs font-black">{Math.round(candidate.confidence * 100)}%</p>
     </div>
-    <p className="text-right text-xs font-black">{Math.round(candidate.confidence * 100)}%</p>
-  </div>
-);
+  );
+};
 
 const PrimaryRecommendation = ({
   recommendation,
