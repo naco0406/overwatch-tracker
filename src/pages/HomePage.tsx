@@ -39,7 +39,7 @@ import { toast } from '@/hooks/use-toast';
 import { useCreateMatch, useDeleteMatch, useMatches, useUpdateMatch } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useUserSettings } from '@/hooks/useUserSettings';
-import { getMapLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
+import { getMapLabel, getMatchRoleLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
 import { getMapScreenshotPath } from '@/data/masterAssets';
 import { calculateWinRate, compareMatchesByTimelineDesc, getCurrentStreak } from '@/lib/matchStats';
 import { createSessionId, groupMatchesBySession, shouldReuseSession } from '@/lib/session';
@@ -941,7 +941,7 @@ const RecentMatchRow = ({ accountLabel, match, onDelete, onEdit }: RecentMatchRo
         <span className="sm:hidden">
           {formatTime(match.playedAt)} · {getResultLabel(match.result)} ·{' '}
         </span>
-        {accountLabel}
+        {accountLabel} · {getMatchRoleLabel(match.matchRole)}
       </p>
     </div>
     <div
@@ -996,7 +996,8 @@ const SessionTimelineItem = ({ index, match }: { index: number; match: Match }) 
     <div className="min-w-0">
       <p className="truncate text-xs font-bold">{getMapLabel(match.mapId)}</p>
       <p className="mt-0.5 truncate text-[10px] font-semibold opacity-75">
-        {match.teamScore}:{match.enemyScore} · {getResultLabel(match.result)}
+        {match.teamScore}:{match.enemyScore} · {getResultLabel(match.result)} ·{' '}
+        {getMatchRoleLabel(match.matchRole)}
       </p>
     </div>
   </div>

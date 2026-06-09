@@ -102,6 +102,7 @@ export interface Database {
           enemy_score: number;
           id: string;
           map_id: string;
+          match_role: Database['public']['Enums']['match_role'];
           memo: string;
           mode_id: Database['public']['Enums']['mode_id'];
           ocr_confidence: Json | null;
@@ -123,6 +124,7 @@ export interface Database {
           enemy_score: number;
           id?: string;
           map_id: string;
+          match_role?: Database['public']['Enums']['match_role'];
           memo?: string;
           mode_id: Database['public']['Enums']['mode_id'];
           ocr_confidence?: Json | null;
@@ -144,6 +146,7 @@ export interface Database {
           enemy_score?: number;
           id?: string;
           map_id?: string;
+          match_role?: Database['public']['Enums']['match_role'];
           memo?: string;
           mode_id?: Database['public']['Enums']['mode_id'];
           ocr_confidence?: Json | null;
@@ -203,6 +206,8 @@ export interface Database {
         Row: {
           created_at: string;
           default_account: Database['public']['Enums']['account_type'];
+          default_match_role: Database['public']['Enums']['match_role'];
+          default_player_account_id: string | null;
           default_queue_type: Database['public']['Enums']['queue_type'];
           roi_config: Json | null;
           updated_at: string;
@@ -211,6 +216,8 @@ export interface Database {
         Insert: {
           created_at?: string;
           default_account?: Database['public']['Enums']['account_type'];
+          default_match_role?: Database['public']['Enums']['match_role'];
+          default_player_account_id?: string | null;
           default_queue_type?: Database['public']['Enums']['queue_type'];
           roi_config?: Json | null;
           updated_at?: string;
@@ -219,6 +226,8 @@ export interface Database {
         Update: {
           created_at?: string;
           default_account?: Database['public']['Enums']['account_type'];
+          default_match_role?: Database['public']['Enums']['match_role'];
+          default_player_account_id?: string | null;
           default_queue_type?: Database['public']['Enums']['queue_type'];
           roi_config?: Json | null;
           updated_at?: string;
@@ -346,6 +355,7 @@ export interface Database {
       account_type: 'main' | 'sub';
       friend_request_status: 'pending' | 'accepted' | 'declined' | 'canceled';
       match_result: 'win' | 'loss' | 'draw';
+      match_role: 'tank' | 'damage' | 'support';
       match_source: 'ocr' | 'manual' | 'mixed';
       mode_id: 'control' | 'hybrid' | 'push' | 'escort' | 'flashpoint' | 'clash';
       queue_type: 'solo' | 'duo' | 'trio' | 'quad' | 'five';

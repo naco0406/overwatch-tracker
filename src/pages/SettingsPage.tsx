@@ -55,6 +55,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useOwnProfile, useSaveOwnProfile } from '@/hooks/useCommunity';
 import { prepareAvatarImage, uploadAvatarImage } from '@/lib/avatarUpload';
 import { cn } from '@/lib/utils';
+import { matchRoleOptions, queueOptions } from '@/data/matchOptions';
 import { useCreateMatch, useMatches } from '@/hooks/useMatches';
 import {
   useCreatePlayerAccount,
@@ -63,7 +64,9 @@ import {
   useRestorePlayerAccount,
   useUpdatePlayerAccount,
 } from '@/hooks/usePlayerAccounts';
+import { useUpdateUserSettings, useUserSettings } from '@/hooks/useUserSettings';
 import { buildMatchesCsv, createCsvFileName, parseMatchesCsv } from '@/lib/matchCsv';
+import type { MatchRole, QueueType } from '@/types/match';
 import type { PlayerAccount } from '@/types/playerAccount';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
 
@@ -78,7 +81,7 @@ const settingsSectionMeta: Record<
   }
 > = {
   account: {
-    description: '로그인 정보, 커뮤니티 닉네임, 비밀번호와 탈퇴를 관리합니다.',
+    description: '로그인 정보, 커뮤니티 닉네임, 빠른 입력 기본값과 보안을 관리합니다.',
     eyebrow: '설정',
     title: '내 계정 설정',
   },
@@ -106,14 +109,21 @@ const SettingsPage = () => {
   const saveOwnProfile = useSaveOwnProfile();
   const { data: playerAccounts = [], isLoading: isAccountsLoading } = usePlayerAccounts();
   const { data: matches = [], isLoading: isMatchesLoading } = useMatches();
+  const { data: userSettings, isLoading: isUserSettingsLoading } = useUserSettings();
   const createPlayerAccount = useCreatePlayerAccount();
   const createMatch = useCreateMatch();
   const updatePlayerAccount = useUpdatePlayerAccount();
   const deletePlayerAccount = useDeletePlayerAccount();
   const restorePlayerAccount = useRestorePlayerAccount();
+  const updateUserSettings = useUpdateUserSettings();
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const [battleTag, setBattleTag] = useState('');
+  const [defaultPlayerAccountIdDraft, setDefaultPlayerAccountIdDraft] = useState<string | null>(
+    null,
+  );
+  const [defaultQueueTypeDraft, setDefaultQueueTypeDraft] = useState<QueueType | null>(null);
+  const [defaultMatchRoleDraft, setDefaultMatchRoleDraft] = useState<MatchRole | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [editingBattleTag, setEditingBattleTag] = useState('');
@@ -143,6 +153,25 @@ const SettingsPage = () => {
   const canDeleteUser = deleteUserConfirmText.trim() === '회원탈퇴';
   const avatarUrlInput = avatarPreviewUrl ?? ownProfile?.avatarUrl ?? '';
   const nicknameInput = isNicknameDirty ? nicknameDraft : (ownProfile?.nickname ?? '');
+  const savedDefaultPlayerAccountId = activeAccounts.some(
+    (account) => account.id === userSettings?.defaultPlayerAccountId,
+  )
+    ? userSettings?.defaultPlayerAccountId
+    : null;
+  const savedDefaultPlayerAccountValue = savedDefaultPlayerAccountId ?? 'auto';
+  const effectiveDefaultPlayerAccountId =
+    defaultPlayerAccountIdDraft ?? savedDefaultPlayerAccountValue;
+  const effectiveDefaultQueueType =
+    defaultQueueTypeDraft ?? userSettings?.defaultQueueType ?? 'solo';
+  const effectiveDefaultMatchRole =
+    defaultMatchRoleDraft ?? userSettings?.defaultMatchRole ?? 'damage';
+  const defaultSettingsDirty = Boolean(
+    userSettings &&
+    (!userSettings.createdAt ||
+      effectiveDefaultPlayerAccountId !== savedDefaultPlayerAccountValue ||
+      effectiveDefaultQueueType !== userSettings.defaultQueueType ||
+      effectiveDefaultMatchRole !== userSettings.defaultMatchRole),
+  );
 
   useEffect(
     () => () => {
@@ -333,6 +362,27 @@ const SettingsPage = () => {
       toast({
         title: '비밀번호 변경 실패',
         description: getPasswordErrorDescription(error),
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleSaveDefaultSettings = async () => {
+    try {
+      await updateUserSettings.mutateAsync({
+        defaultMatchRole: effectiveDefaultMatchRole,
+        defaultPlayerAccountId:
+          effectiveDefaultPlayerAccountId === 'auto' ? null : effectiveDefaultPlayerAccountId,
+        defaultQueueType: effectiveDefaultQueueType,
+      });
+      toast({
+        title: '기본 입력값 저장 완료',
+        description: '빠른 기록과 상세 입력의 기본값으로 사용합니다.',
+      });
+    } catch (error) {
+      toast({
+        title: '기본 입력값 저장 실패',
+        description: error instanceof Error ? error.message : '잠시 후 다시 시도하세요.',
         variant: 'destructive',
       });
     }
@@ -637,12 +687,19 @@ const SettingsPage = () => {
 
       {activeSection === 'account' ? (
         <AccountSettingsSection
+          activeAccounts={activeAccounts}
           avatarInputRef={avatarInputRef}
           avatarUrlInput={avatarUrlInput}
+          defaultMatchRole={effectiveDefaultMatchRole}
+          defaultPlayerAccountId={effectiveDefaultPlayerAccountId}
+          defaultQueueType={effectiveDefaultQueueType}
+          defaultSettingsDirty={defaultSettingsDirty}
           hasAvatar={Boolean(avatarUrlInput)}
           isAvatarDragging={isAvatarDragging}
           isAvatarUploading={isAvatarUploading}
+          isDefaultSettingsLoading={isUserSettingsLoading || isAccountsLoading}
           isOwnProfileLoading={isOwnProfileLoading}
+          isSavingDefaultSettings={updateUserSettings.isPending}
           isSavingNickname={saveOwnProfile.isPending}
           nickname={ownProfile?.nickname ?? null}
           nicknameInput={nicknameInput}
@@ -663,6 +720,9 @@ const SettingsPage = () => {
           onAvatarDrop={handleAvatarDrop}
           onAvatarPickerOpen={() => avatarInputRef.current?.click()}
           onAvatarRemove={handleRemoveAvatar}
+          onDefaultMatchRoleChange={(value) => setDefaultMatchRoleDraft(value)}
+          onDefaultPlayerAccountIdChange={(value) => setDefaultPlayerAccountIdDraft(value)}
+          onDefaultQueueTypeChange={(value) => setDefaultQueueTypeDraft(value)}
           onDeleteUserDialogOpenChange={setDeleteUserDialogOpen}
           onNicknameInputChange={(value) => {
             setIsNicknameDirty(true);
@@ -671,6 +731,7 @@ const SettingsPage = () => {
           onPasswordConfirmChange={setPasswordConfirm}
           onPasswordCurrentChange={setPasswordCurrent}
           onPasswordNextChange={setPasswordNext}
+          onSaveDefaultSettings={handleSaveDefaultSettings}
           onSaveNickname={handleSaveNickname}
           onSignOut={handleSignOut}
           onUpdatePassword={handleUpdatePassword}
@@ -744,12 +805,19 @@ const SettingsPage = () => {
 };
 
 interface AccountSettingsSectionProps {
+  activeAccounts: PlayerAccount[];
   avatarInputRef: RefObject<HTMLInputElement>;
   avatarUrlInput: string;
+  defaultMatchRole: MatchRole;
+  defaultPlayerAccountId: string;
+  defaultQueueType: QueueType;
+  defaultSettingsDirty: boolean;
   hasAvatar: boolean;
   isAvatarDragging: boolean;
   isAvatarUploading: boolean;
+  isDefaultSettingsLoading: boolean;
   isOwnProfileLoading: boolean;
+  isSavingDefaultSettings: boolean;
   isSavingNickname: boolean;
   nickname: string | null;
   nicknameInput: string;
@@ -763,23 +831,34 @@ interface AccountSettingsSectionProps {
   onAvatarFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onAvatarPickerOpen: () => void;
   onAvatarRemove: () => void;
+  onDefaultMatchRoleChange: (value: MatchRole) => void;
+  onDefaultPlayerAccountIdChange: (value: string) => void;
+  onDefaultQueueTypeChange: (value: QueueType) => void;
   onDeleteUserDialogOpenChange: (open: boolean) => void;
   onNicknameInputChange: (value: string) => void;
   onPasswordConfirmChange: (value: string) => void;
   onPasswordCurrentChange: (value: string) => void;
   onPasswordNextChange: (value: string) => void;
+  onSaveDefaultSettings: () => void;
   onSaveNickname: () => void;
   onSignOut: () => void;
   onUpdatePassword: () => void;
 }
 
 const AccountSettingsSection = ({
+  activeAccounts,
   avatarInputRef,
   avatarUrlInput,
+  defaultMatchRole,
+  defaultPlayerAccountId,
+  defaultQueueType,
+  defaultSettingsDirty,
   hasAvatar,
   isAvatarDragging,
   isAvatarUploading,
+  isDefaultSettingsLoading,
   isOwnProfileLoading,
+  isSavingDefaultSettings,
   isSavingNickname,
   nickname,
   nicknameInput,
@@ -793,11 +872,15 @@ const AccountSettingsSection = ({
   onAvatarFileChange,
   onAvatarPickerOpen,
   onAvatarRemove,
+  onDefaultMatchRoleChange,
+  onDefaultPlayerAccountIdChange,
+  onDefaultQueueTypeChange,
   onDeleteUserDialogOpenChange,
   onNicknameInputChange,
   onPasswordConfirmChange,
   onPasswordCurrentChange,
   onPasswordNextChange,
+  onSaveDefaultSettings,
   onSaveNickname,
   onSignOut,
   onUpdatePassword,
@@ -965,6 +1048,20 @@ const AccountSettingsSection = ({
         </div>
       </div>
 
+      <QuickInputDefaultsPanel
+        activeAccounts={activeAccounts}
+        defaultMatchRole={defaultMatchRole}
+        defaultPlayerAccountId={defaultPlayerAccountId}
+        defaultQueueType={defaultQueueType}
+        defaultSettingsDirty={defaultSettingsDirty}
+        isLoading={isDefaultSettingsLoading}
+        isSaving={isSavingDefaultSettings}
+        onDefaultMatchRoleChange={onDefaultMatchRoleChange}
+        onDefaultPlayerAccountIdChange={onDefaultPlayerAccountIdChange}
+        onDefaultQueueTypeChange={onDefaultQueueTypeChange}
+        onSave={onSaveDefaultSettings}
+      />
+
       <div className="grid gap-5 px-4 py-5 sm:px-5 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-6">
         <div className="lg:min-h-[104px]">
           <p className="metric-label">보안</p>
@@ -1041,6 +1138,134 @@ const AccountSettingsSection = ({
       </div>
     </div>
   </section>
+);
+
+interface QuickInputDefaultsPanelProps {
+  activeAccounts: PlayerAccount[];
+  defaultMatchRole: MatchRole;
+  defaultPlayerAccountId: string;
+  defaultQueueType: QueueType;
+  defaultSettingsDirty: boolean;
+  isLoading: boolean;
+  isSaving: boolean;
+  onDefaultMatchRoleChange: (value: MatchRole) => void;
+  onDefaultPlayerAccountIdChange: (value: string) => void;
+  onDefaultQueueTypeChange: (value: QueueType) => void;
+  onSave: () => void;
+}
+
+const QuickInputDefaultsPanel = ({
+  activeAccounts,
+  defaultMatchRole,
+  defaultPlayerAccountId,
+  defaultQueueType,
+  defaultSettingsDirty,
+  isLoading,
+  isSaving,
+  onDefaultMatchRoleChange,
+  onDefaultPlayerAccountIdChange,
+  onDefaultQueueTypeChange,
+  onSave,
+}: QuickInputDefaultsPanelProps) => (
+  <div className="grid gap-5 px-4 py-5 sm:px-5 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-6">
+    <div>
+      <p className="metric-label">빠른 입력</p>
+      <h2 className="mt-1 text-base font-bold">기본값</h2>
+      <p className="mt-2 text-xs font-semibold leading-relaxed text-muted-foreground">
+        새 경기 입력의 초기 계정, 큐, 포지션입니다.
+      </p>
+    </div>
+
+    {isLoading ? (
+      <div className="grid gap-3 sm:grid-cols-3">
+        <SkeletonBlock className="h-20" />
+        <SkeletonBlock className="h-20" />
+        <SkeletonBlock className="h-20" />
+      </div>
+    ) : (
+      <div className="grid gap-4">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div>
+            <p className="metric-label mb-2">기본 계정</p>
+            <Select
+              value={defaultPlayerAccountId}
+              disabled={isSaving}
+              onValueChange={onDefaultPlayerAccountIdChange}
+            >
+              <SelectTrigger className="h-10 bg-card">
+                <SelectValue placeholder="계정" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">본계 또는 첫 계정</SelectItem>
+                {activeAccounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {getPlayerAccountLabel(account)}
+                    {account.isMain ? ' · 본계' : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <p className="metric-label mb-2">기본 큐</p>
+            <div className="grid grid-cols-3 gap-1.5 min-[460px]:grid-cols-5 xl:grid-cols-5">
+              {queueOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={cn(
+                    'h-9 rounded-md border px-2 text-xs font-bold transition-colors',
+                    defaultQueueType === option.value
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-border bg-card text-muted-foreground hover:bg-secondary',
+                  )}
+                  disabled={isSaving}
+                  onClick={() => onDefaultQueueTypeChange(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_112px] xl:items-end">
+          <div>
+            <p className="metric-label mb-2">기본 포지션</p>
+            <div className="grid grid-cols-3 gap-1.5 sm:max-w-md">
+              {matchRoleOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={cn(
+                    'h-9 rounded-md border px-2 text-xs font-bold transition-colors',
+                    defaultMatchRole === option.value
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-border bg-card text-muted-foreground hover:bg-secondary',
+                  )}
+                  disabled={isSaving}
+                  onClick={() => onDefaultMatchRoleChange(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <Button
+            className="w-full min-w-0 xl:w-auto"
+            disabled={isSaving || !defaultSettingsDirty}
+            type="button"
+            onClick={onSave}
+          >
+            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            저장
+          </Button>
+        </div>
+      </div>
+    )}
+  </div>
 );
 
 interface BattleNetSettingsSectionProps {
@@ -1427,8 +1652,8 @@ const PasteImportDialog = ({
           <div className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3">
             <p className="text-xs font-bold text-foreground">권장 헤더</p>
             <p className="mt-1 text-xs font-semibold leading-5 text-muted-foreground">
-              시간, 맵, 우리, 상대, 결과, 큐, 계정 순서로 붙여넣으면 됩니다. 결과와 큐는 비워도
-              점수와 기본값으로 보정됩니다.
+              시간, 맵, 우리, 상대, 결과, 큐, 포지션, 계정 순서로 붙여넣으면 됩니다. 결과, 큐,
+              포지션은 비워도 점수와 기본값으로 보정됩니다.
             </p>
           </div>
         </div>
@@ -1436,7 +1661,7 @@ const PasteImportDialog = ({
         <textarea
           className="min-h-[280px] w-full resize-none rounded-md border border-input bg-card p-3 font-mono text-sm leading-6 outline-none ring-offset-background placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
           placeholder={
-            '시간\t맵\t우리\t상대\t결과\t큐\t계정\n2026-06-02 22:10\t네팔\t2\t1\t승리\t솔로\tLUXY\n2026-06-02 22:35\t오아시스\t0\t2\t패배\t솔로\tLUXY'
+            '시간\t맵\t우리\t상대\t결과\t큐\t포지션\t계정\n2026-06-02 22:10\t네팔\t2\t1\t승리\t솔로\t딜러\tLUXY\n2026-06-02 22:35\t오아시스\t0\t2\t패배\t솔로\t지원\tLUXY'
           }
           spellCheck={false}
           value={pasteImportText}

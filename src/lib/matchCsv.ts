@@ -1,15 +1,24 @@
 import {
   getHeroLabel,
   getMapLabel,
+  getMatchRoleLabel,
   getModeLabel,
   getOptionLabel,
   heroOptions,
+  matchRoleOptions,
   mapOptions,
   modeOptions,
   queueOptions,
   resultOptions,
 } from '@/data/matchOptions';
-import type { Match, MatchCreateInput, MatchResult, MatchSource, QueueType } from '@/types/match';
+import type {
+  Match,
+  MatchCreateInput,
+  MatchResult,
+  MatchRole,
+  MatchSource,
+  QueueType,
+} from '@/types/match';
 import type { PlayerAccount } from '@/types/playerAccount';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
 
@@ -23,6 +32,7 @@ const csvColumns = [
   'enemy_score',
   'result',
   'queue_type',
+  'match_role',
   'account_id',
   'account_label',
   'heroes',
@@ -37,6 +47,7 @@ const headerAliases = {
   heroes: ['heroes', 'my_heroes', 'hero', '영웅'],
   map: ['map_id', 'map', 'mapid', '전장', '맵'],
   mode: ['mode_id', 'mode', 'modeid', '모드'],
+  matchRole: ['match_role', 'role', 'position', '포지션', '역할'],
   playedAt: ['played_at', 'playedat', 'date', 'datetime', 'time', '날짜', '시간'],
   queueType: ['queue_type', 'queue', 'queue_type_id', '큐'],
   result: ['result', '결과', '승패'],
@@ -79,9 +90,11 @@ const createOptionLookup = <TOption extends { label: string; value: string }>(
 
 const mapLookup = createOptionLookup(mapOptions);
 const modeLookup = createOptionLookup(modeOptions);
+const matchRoleLookup = createOptionLookup(matchRoleOptions);
 const queueLookup = createOptionLookup(queueOptions);
 const resultLookup = createOptionLookup(resultOptions);
 const heroLookup = createOptionLookup(heroOptions);
+const heroRoleById = new Map(heroOptions.map((hero) => [hero.value, hero.role]));
 
 const parseCsvRows = (text: string) => {
   const rows: string[][] = [];
@@ -235,6 +248,7 @@ export const parseMatchesCsv = (text: string, accounts: PlayerAccount[] = []): P
     const rawEnemyScore = getCell(row, indexByHeader, headerAliases.enemyScore);
     const rawResult = getCell(row, indexByHeader, headerAliases.result);
     const rawQueueType = getCell(row, indexByHeader, headerAliases.queueType);
+    const rawMatchRole = getCell(row, indexByHeader, headerAliases.matchRole);
     const rawPlayedAt = getCell(row, indexByHeader, headerAliases.playedAt);
     const rawAccount = getCell(row, indexByHeader, headerAliases.account);
     const rawHeroes = getCell(row, indexByHeader, headerAliases.heroes);
@@ -245,6 +259,13 @@ export const parseMatchesCsv = (text: string, accounts: PlayerAccount[] = []): P
     const enemyScore = parseScore(rawEnemyScore);
     const result = rawResult ? resultLookup.get(normalizeToken(rawResult))?.value : null;
     const queueType = rawQueueType ? queueLookup.get(normalizeToken(rawQueueType))?.value : 'solo';
+    const parsedHeroes = parseHeroes(rawHeroes);
+    const inferredMatchRole = parsedHeroes
+      .map((heroId) => heroRoleById.get(heroId))
+      .find((role): role is MatchRole => Boolean(role));
+    const matchRole = rawMatchRole
+      ? matchRoleLookup.get(normalizeToken(rawMatchRole))?.value
+      : (inferredMatchRole ?? 'damage');
     const playedAt = parsePlayedAt(rawPlayedAt);
     const source = sourceValues.has(rawSource as MatchSource)
       ? (rawSource as MatchSource)
@@ -258,9 +279,17 @@ export const parseMatchesCsv = (text: string, accounts: PlayerAccount[] = []): P
     if (enemyScore === null) rowIssues.push('상대 점수는 0~10 사이의 정수여야 합니다.');
     if (rawResult && !result) rowIssues.push('결과 값을 찾을 수 없습니다.');
     if (!queueType) rowIssues.push('큐 값을 찾을 수 없습니다.');
+    if (!matchRole) rowIssues.push('포지션 값을 찾을 수 없습니다.');
     if (!playedAt) rowIssues.push('플레이 시간을 해석할 수 없습니다.');
 
-    if (rowIssues.length > 0 || !map || teamScore === null || enemyScore === null || !playedAt) {
+    if (
+      rowIssues.length > 0 ||
+      !map ||
+      !matchRole ||
+      teamScore === null ||
+      enemyScore === null ||
+      !playedAt
+    ) {
       rowIssues.forEach((message) => issues.push({ message, row: rowNumber }));
       return;
     }
@@ -270,9 +299,10 @@ export const parseMatchesCsv = (text: string, accounts: PlayerAccount[] = []): P
       accountId: account?.id ?? null,
       enemyScore,
       mapId: map.value,
+      matchRole,
       memo: '',
       modeId: map.modeId,
-      myHeroes: parseHeroes(rawHeroes),
+      myHeroes: parsedHeroes,
       playedAt,
       queueType: (queueType ?? 'solo') as QueueType,
       result: (result ?? inferResult(teamScore, enemyScore)) as MatchResult,
@@ -312,6 +342,7 @@ export const buildMatchesCsv = (matches: Match[], accounts: PlayerAccount[] = []
         match.enemyScore,
         match.result,
         getOptionLabel(queueOptions, match.queueType),
+        getMatchRoleLabel(match.matchRole),
         match.accountId ?? '',
         account ? getPlayerAccountLabel(account) : '',
         match.myHeroes.map((heroId) => getHeroLabel(heroId)).join(';'),

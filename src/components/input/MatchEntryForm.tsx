@@ -21,6 +21,7 @@ import {
   getModeLabel,
   getResultOptionsForMode,
   heroOptions,
+  matchRoleOptions,
   mapOptions,
   modeAllowsDraw,
   modeOptions,
@@ -32,7 +33,7 @@ import {
 } from '@/data/matchOptions';
 import { getMapScreenshotPath } from '@/data/masterAssets';
 import { cn } from '@/lib/utils';
-import type { Match, MatchCreateInput, MatchResult } from '@/types/match';
+import type { Match, MatchCreateInput, MatchResult, MatchRole } from '@/types/match';
 import type { PlayerAccount } from '@/types/playerAccount';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
 import type { UserSettings } from '@/types/userSettings';
@@ -102,6 +103,7 @@ const matchEntrySchema = z.object({
   enemyScore: scoreSchema,
   mapId: z.string().min(1, '맵을 선택하세요.'),
   modeId: z.string().refine(isValidModeValue, '모드를 선택하세요.'),
+  matchRole: z.enum(['tank', 'damage', 'support']),
   playedAt: z.string().min(1, '플레이 시간을 입력하세요.'),
   queueType: z.enum(['solo', 'duo', 'trio', 'quad', 'five']),
   result: z.string().refine(isValidResultValue, '결과를 선택하세요.'),
@@ -146,29 +148,42 @@ const getDefaultFormValues = (
   defaultSettings?: UserSettings,
   initialMatch?: Match,
   initialDraft?: Partial<MatchCreateInput>,
-) => ({
-  enemyScore:
-    initialMatch?.enemyScore !== undefined
-      ? String(initialMatch.enemyScore)
-      : initialDraft?.enemyScore !== undefined
-        ? String(initialDraft.enemyScore)
-        : '',
-  mapId: initialMatch?.mapId ?? initialDraft?.mapId ?? '',
-  modeId: initialMatch?.modeId ?? initialDraft?.modeId ?? '',
-  playedAt: toDatetimeLocalValue(getDraftDate(initialMatch, initialDraft)),
-  queueType:
-    initialMatch?.queueType ??
-    initialDraft?.queueType ??
-    defaultSettings?.defaultQueueType ??
-    'solo',
-  result: initialMatch?.result ?? initialDraft?.result ?? '',
-  teamScore:
-    initialMatch?.teamScore !== undefined
-      ? String(initialMatch.teamScore)
-      : initialDraft?.teamScore !== undefined
-        ? String(initialDraft.teamScore)
-        : '',
-});
+) => {
+  const heroRoleById = new Map(heroOptions.map((hero) => [hero.value, hero.role]));
+  const inferredRole = (initialDraft?.myHeroes ?? [])
+    .map((heroId) => heroRoleById.get(heroId))
+    .find((role): role is MatchRole => Boolean(role));
+
+  return {
+    enemyScore:
+      initialMatch?.enemyScore !== undefined
+        ? String(initialMatch.enemyScore)
+        : initialDraft?.enemyScore !== undefined
+          ? String(initialDraft.enemyScore)
+          : '',
+    mapId: initialMatch?.mapId ?? initialDraft?.mapId ?? '',
+    modeId: initialMatch?.modeId ?? initialDraft?.modeId ?? '',
+    matchRole:
+      initialMatch?.matchRole ??
+      initialDraft?.matchRole ??
+      inferredRole ??
+      defaultSettings?.defaultMatchRole ??
+      'damage',
+    playedAt: toDatetimeLocalValue(getDraftDate(initialMatch, initialDraft)),
+    queueType:
+      initialMatch?.queueType ??
+      initialDraft?.queueType ??
+      defaultSettings?.defaultQueueType ??
+      'solo',
+    result: initialMatch?.result ?? initialDraft?.result ?? '',
+    teamScore:
+      initialMatch?.teamScore !== undefined
+        ? String(initialMatch.teamScore)
+        : initialDraft?.teamScore !== undefined
+          ? String(initialDraft.teamScore)
+          : '',
+  };
+};
 
 const MatchEntryForm = ({
   accounts = [],
@@ -185,7 +200,10 @@ const MatchEntryForm = ({
 }: MatchEntryFormProps) => {
   const isDialogLayout = layout === 'dialog';
   const mainAccount = accounts.find((account) => account.isMain);
-  const fallbackAccountId = mainAccount?.id ?? accounts[0]?.id ?? '';
+  const defaultPlayerAccount = accounts.find(
+    (account) => account.id === defaultSettings?.defaultPlayerAccountId,
+  );
+  const fallbackAccountId = defaultPlayerAccount?.id ?? mainAccount?.id ?? accounts[0]?.id ?? '';
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
     initialMatch ? (initialMatch.accountId ?? '') : (initialDraft?.accountId ?? null),
   );
@@ -292,6 +310,23 @@ const MatchEntryForm = ({
     }
   }, [defaultSettings, form, initialDraft?.queueType, initialMatch]);
 
+  useEffect(() => {
+    if (
+      !initialMatch &&
+      !initialDraft?.matchRole &&
+      !initialDraft?.myHeroes?.length &&
+      defaultSettings?.defaultMatchRole
+    ) {
+      form.setValue('matchRole', defaultSettings.defaultMatchRole);
+    }
+  }, [
+    defaultSettings,
+    form,
+    initialDraft?.matchRole,
+    initialDraft?.myHeroes?.length,
+    initialMatch,
+  ]);
+
   const toggleHero = (heroId: string) => {
     setSelectedHeroes((current) =>
       current.includes(heroId)
@@ -331,6 +366,7 @@ const MatchEntryForm = ({
       mapId: values.mapId,
       memo: '',
       modeId: values.modeId as MatchCreateInput['modeId'],
+      matchRole: values.matchRole,
       myHeroes: selectedHeroes,
       playedAt: new Date(values.playedAt).toISOString(),
       queueType: values.queueType,
@@ -540,7 +576,7 @@ const MatchEntryForm = ({
           </section>
 
           <section className="rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] p-3 sm:p-4">
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px_220px]">
               <FormField
                 control={form.control}
                 name="playedAt"
@@ -563,6 +599,33 @@ const MatchEntryForm = ({
                     <FormLabel>큐</FormLabel>
                     <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5 lg:grid-cols-1">
                       {queueOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={cn(
+                            'h-9 rounded-md border px-2 text-xs font-bold transition-colors',
+                            field.value === option.value
+                              ? 'border-primary bg-primary text-primary-foreground'
+                              : 'border-border bg-card text-muted-foreground hover:bg-secondary',
+                          )}
+                          onClick={() => field.onChange(option.value)}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="matchRole"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>포지션</FormLabel>
+                    <div className="grid grid-cols-3 gap-1.5 lg:grid-cols-1">
+                      {matchRoleOptions.map((option) => (
                         <button
                           key={option.value}
                           type="button"

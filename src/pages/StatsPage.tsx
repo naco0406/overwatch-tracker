@@ -1,5 +1,14 @@
 import type { LucideIcon } from 'lucide-react';
-import { BarChart3, Clock3, ListOrdered, MapIcon, RotateCcw, Swords, Target } from 'lucide-react';
+import {
+  BarChart3,
+  Clock3,
+  ListOrdered,
+  MapIcon,
+  RotateCcw,
+  Shield,
+  Swords,
+  Target,
+} from 'lucide-react';
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import {
@@ -31,8 +40,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  getMatchRoleLabel,
   getModeLabel,
   heroOptions,
+  matchRoleOptions,
   mapOptions,
   modeOptions,
   queueOptions,
@@ -49,7 +60,7 @@ import {
 } from '@/lib/matchStats';
 import { groupMatchesBySession } from '@/lib/session';
 import { cn } from '@/lib/utils';
-import type { Match, ModeId, QueueType } from '@/types/match';
+import type { Match, MatchRole, ModeId, QueueType } from '@/types/match';
 import { getPlayerAccountLabel, type PlayerAccount } from '@/types/playerAccount';
 
 const periodOptions = [
@@ -258,6 +269,7 @@ const StatsPage = () => {
   const activeSection = isStatsSection(section) ? section : 'maps';
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('30d');
   const [modeFilter, setModeFilter] = useState<ModeId | 'all'>('all');
+  const [matchRoleFilter, setMatchRoleFilter] = useState<MatchRole | 'all'>('all');
   const [queueFilter, setQueueFilter] = useState<QueueType | 'all'>('all');
   const [accountFilter, setAccountFilter] = useState('all');
   const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
@@ -270,7 +282,7 @@ const StatsPage = () => {
     [],
   );
 
-  const filteredMatches = useMemo(() => {
+  const roleBaseMatches = useMemo(() => {
     const periodStart = getPeriodStart(periodFilter);
 
     return matches.filter((match) => {
@@ -304,8 +316,31 @@ const StatsPage = () => {
     });
   }, [accountFilter, matches, modeFilter, periodFilter, queueFilter, shouldApplyModeFilter]);
 
+  const filteredMatches = useMemo(
+    () =>
+      roleBaseMatches.filter(
+        (match) => matchRoleFilter === 'all' || match.matchRole === matchRoleFilter,
+      ),
+    [matchRoleFilter, roleBaseMatches],
+  );
+
   const summary = useMemo(() => summarizeResults(filteredMatches), [filteredMatches]);
   const sessions = useMemo(() => groupMatchesBySession(filteredMatches), [filteredMatches]);
+
+  const matchRoleStats = useMemo(
+    () =>
+      matchRoleOptions.map((role) => {
+        const roleMatches = roleBaseMatches.filter((match) => match.matchRole === role.value);
+
+        return {
+          ...summarizeResults(roleMatches),
+          label: role.label,
+          pickRate: getShare(roleMatches.length, roleBaseMatches.length),
+          value: role.value,
+        };
+      }),
+    [roleBaseMatches],
+  );
 
   const modeStats = useMemo(
     () =>
@@ -567,6 +602,7 @@ const StatsPage = () => {
   const activeFilterCount = [
     periodFilter !== '30d',
     shouldApplyModeFilter,
+    matchRoleFilter !== 'all',
     queueFilter !== 'all',
     accountFilter !== 'all',
   ].filter(Boolean).length;
@@ -574,6 +610,7 @@ const StatsPage = () => {
   const resetFilters = () => {
     setPeriodFilter('30d');
     setModeFilter('all');
+    setMatchRoleFilter('all');
     setQueueFilter('all');
     setAccountFilter('all');
   };
@@ -763,8 +800,10 @@ const StatsPage = () => {
               activeFilterCount={activeFilterCount}
               accountFilter={accountFilter}
               label="전장 조건"
+              matchRoleFilter={matchRoleFilter}
               modeFilter={modeFilter}
               onAccountFilterChange={setAccountFilter}
+              onMatchRoleFilterChange={setMatchRoleFilter}
               onModeFilterChange={setModeFilter}
               onPeriodFilterChange={setPeriodFilter}
               onQueueFilterChange={setQueueFilter}
@@ -772,6 +811,11 @@ const StatsPage = () => {
               playerAccounts={playerAccounts}
               queueFilter={queueFilter}
               title="맵별 승률 기준"
+            />
+            <PositionSummaryStrip
+              activeRole={matchRoleFilter}
+              stats={matchRoleStats}
+              onRoleChange={setMatchRoleFilter}
             />
             <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_340px]">
               <div className="space-y-4">
@@ -872,8 +916,10 @@ const StatsPage = () => {
               accountFilter={accountFilter}
               includeMode={false}
               label="모드 조건"
+              matchRoleFilter={matchRoleFilter}
               modeFilter={modeFilter}
               onAccountFilterChange={setAccountFilter}
+              onMatchRoleFilterChange={setMatchRoleFilter}
               onModeFilterChange={setModeFilter}
               onPeriodFilterChange={setPeriodFilter}
               onQueueFilterChange={setQueueFilter}
@@ -881,6 +927,11 @@ const StatsPage = () => {
               playerAccounts={playerAccounts}
               queueFilter={queueFilter}
               title="모드별 비교 기준"
+            />
+            <PositionSummaryStrip
+              activeRole={matchRoleFilter}
+              stats={matchRoleStats}
+              onRoleChange={setMatchRoleFilter}
             />
             <div className="space-y-4">
               <MetricGrid metrics={sectionMetrics.modes} />
@@ -973,8 +1024,10 @@ const StatsPage = () => {
               activeFilterCount={activeFilterCount}
               accountFilter={accountFilter}
               label="영웅 조건"
+              matchRoleFilter={matchRoleFilter}
               modeFilter={modeFilter}
               onAccountFilterChange={setAccountFilter}
+              onMatchRoleFilterChange={setMatchRoleFilter}
               onModeFilterChange={setModeFilter}
               onPeriodFilterChange={setPeriodFilter}
               onQueueFilterChange={setQueueFilter}
@@ -982,6 +1035,11 @@ const StatsPage = () => {
               playerAccounts={playerAccounts}
               queueFilter={queueFilter}
               title="영웅 사용 분석 기준"
+            />
+            <PositionSummaryStrip
+              activeRole={matchRoleFilter}
+              stats={matchRoleStats}
+              onRoleChange={setMatchRoleFilter}
             />
             {heroStats.length > 0 ? (
               <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -1082,8 +1140,10 @@ const StatsPage = () => {
               activeFilterCount={activeFilterCount}
               accountFilter={accountFilter}
               label="시간 조건"
+              matchRoleFilter={matchRoleFilter}
               modeFilter={modeFilter}
               onAccountFilterChange={setAccountFilter}
+              onMatchRoleFilterChange={setMatchRoleFilter}
               onModeFilterChange={setModeFilter}
               onPeriodFilterChange={setPeriodFilter}
               onQueueFilterChange={setQueueFilter}
@@ -1091,6 +1151,11 @@ const StatsPage = () => {
               playerAccounts={playerAccounts}
               queueFilter={queueFilter}
               title="시간대 분석 기준"
+            />
+            <PositionSummaryStrip
+              activeRole={matchRoleFilter}
+              stats={matchRoleStats}
+              onRoleChange={setMatchRoleFilter}
             />
             {hourlyStats.length > 0 ? (
               <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_340px]">
@@ -1184,8 +1249,10 @@ const StatsPage = () => {
               activeFilterCount={activeFilterCount}
               accountFilter={accountFilter}
               label="순서 조건"
+              matchRoleFilter={matchRoleFilter}
               modeFilter={modeFilter}
               onAccountFilterChange={setAccountFilter}
+              onMatchRoleFilterChange={setMatchRoleFilter}
               onModeFilterChange={setModeFilter}
               onPeriodFilterChange={setPeriodFilter}
               onQueueFilterChange={setQueueFilter}
@@ -1193,6 +1260,11 @@ const StatsPage = () => {
               playerAccounts={playerAccounts}
               queueFilter={queueFilter}
               title="세션 순서 분석 기준"
+            />
+            <PositionSummaryStrip
+              activeRole={matchRoleFilter}
+              stats={matchRoleStats}
+              onRoleChange={setMatchRoleFilter}
             />
             {orderStats.length > 0 ? (
               <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -1354,14 +1426,92 @@ const SectionMetricStack = ({ metrics }: { metrics: MetricCellProps[] }) => (
   </div>
 );
 
+interface PositionSummaryStripProps {
+  activeRole: MatchRole | 'all';
+  onRoleChange: (value: MatchRole | 'all') => void;
+  stats: Array<{
+    draws: number;
+    label: string;
+    losses: number;
+    pickRate: number;
+    total: number;
+    value: MatchRole;
+    winRate: number | null;
+    wins: number;
+  }>;
+}
+
+const PositionSummaryStrip = ({ activeRole, onRoleChange, stats }: PositionSummaryStripProps) => {
+  const total = stats.reduce((sum, stat) => sum + stat.total, 0);
+  const wins = stats.reduce((sum, stat) => sum + stat.wins, 0);
+  const losses = stats.reduce((sum, stat) => sum + stat.losses, 0);
+  const draws = stats.reduce((sum, stat) => sum + stat.draws, 0);
+  const decisive = wins + losses;
+  const allWinRate = decisive === 0 ? null : Math.round((wins / decisive) * 100);
+
+  const items = [
+    {
+      detail: `${wins}승 ${losses}패 ${draws}무`,
+      label: '전체',
+      pickRate: total === 0 ? 0 : 100,
+      total,
+      value: 'all' as const,
+      winRate: allWinRate,
+    },
+    ...stats.map((stat) => ({
+      detail: `${stat.wins}승 ${stat.losses}패 ${stat.draws}무`,
+      label: getMatchRoleLabel(stat.value),
+      pickRate: stat.pickRate,
+      total: stat.total,
+      value: stat.value,
+      winRate: stat.winRate,
+    })),
+  ];
+
+  return (
+    <div className="grid overflow-hidden rounded-lg border border-border/70 bg-card/55 sm:grid-cols-2 xl:grid-cols-4">
+      {items.map((item) => (
+        <button
+          key={item.value}
+          type="button"
+          className={cn(
+            'min-w-0 border-b border-border/60 px-3.5 py-3 text-left transition-colors last:border-b-0 sm:odd:border-r xl:border-b-0 xl:border-r xl:last:border-r-0',
+            activeRole === item.value
+              ? 'bg-primary/[0.08] text-foreground'
+              : 'hover:bg-secondary/60',
+          )}
+          onClick={() => onRoleChange(item.value)}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="metric-label">{item.label}</p>
+              <p className="mt-1 truncate text-base font-bold">
+                {item.total.toLocaleString('ko-KR')}경기 · {formatWinRate(item.winRate)}
+              </p>
+            </div>
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-primary">
+              <Shield className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="mt-2 truncate text-xs font-semibold text-muted-foreground">
+            {item.detail} · 비중 {formatShare(item.pickRate)}
+          </p>
+        </button>
+      ))}
+    </div>
+  );
+};
+
 interface StatsFilterPanelProps {
   activeFilterCount: number;
   accountFilter: string;
   className?: string;
   includeMode?: boolean;
   label: string;
+  matchRoleFilter: MatchRole | 'all';
   modeFilter: ModeId | 'all';
   onAccountFilterChange: (value: string) => void;
+  onMatchRoleFilterChange: (value: MatchRole | 'all') => void;
   onModeFilterChange: (value: ModeId | 'all') => void;
   onPeriodFilterChange: (value: PeriodFilter) => void;
   onQueueFilterChange: (value: QueueType | 'all') => void;
@@ -1377,8 +1527,10 @@ const StatsFilterPanel = ({
   className,
   includeMode = true,
   label,
+  matchRoleFilter,
   modeFilter,
   onAccountFilterChange,
+  onMatchRoleFilterChange,
   onModeFilterChange,
   onPeriodFilterChange,
   onQueueFilterChange,
@@ -1405,7 +1557,7 @@ const StatsFilterPanel = ({
       <div
         className={cn(
           'grid gap-3',
-          includeMode ? 'lg:grid-cols-2 2xl:grid-cols-4' : 'lg:grid-cols-3',
+          includeMode ? 'lg:grid-cols-2 2xl:grid-cols-5' : 'lg:grid-cols-2 2xl:grid-cols-4',
         )}
       >
         <FilterGroup label="기간">
@@ -1438,6 +1590,24 @@ const StatsFilterPanel = ({
             </SelectContent>
           </Select>
         </FilterSelect>
+
+        <FilterGroup label="포지션">
+          <FilterButton
+            active={matchRoleFilter === 'all'}
+            onClick={() => onMatchRoleFilterChange('all')}
+          >
+            전체
+          </FilterButton>
+          {matchRoleOptions.map((role) => (
+            <FilterButton
+              key={role.value}
+              active={matchRoleFilter === role.value}
+              onClick={() => onMatchRoleFilterChange(role.value)}
+            >
+              {role.label}
+            </FilterButton>
+          ))}
+        </FilterGroup>
 
         {includeMode ? (
           <FilterGroup label="모드">

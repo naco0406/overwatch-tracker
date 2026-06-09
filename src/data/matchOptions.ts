@@ -1,4 +1,4 @@
-import type { AccountType, MatchResult, ModeId, QueueType } from '@/types/match';
+import type { AccountType, MatchResult, MatchRole, ModeId, QueueType } from '@/types/match';
 
 export interface MatchOption<TValue extends string = string> {
   label: string;
@@ -43,6 +43,19 @@ export const roleLabels = {
   support: '지원',
   tank: '탱커',
 } as const;
+
+export const matchRoleOptions = [
+  { label: roleLabels.tank, value: 'tank' },
+  { label: roleLabels.damage, value: 'damage' },
+  { label: roleLabels.support, value: 'support' },
+] satisfies MatchOption<MatchRole>[];
+
+export const matchRoleFilterOptions = [
+  { label: '전체', value: 'all' },
+  ...matchRoleOptions,
+] as const;
+
+export type MatchRoleFilter = (typeof matchRoleFilterOptions)[number]['value'];
 
 const drawEnabledModes = new Set<ModeId>(['escort', 'hybrid']);
 
@@ -164,6 +177,9 @@ export const getModeLabel = (modeId: ModeId | undefined) =>
   getOptionLabel(modeLabelOptions, modeId);
 
 export const getHeroLabel = (heroId: string | undefined) => getOptionLabel(heroOptions, heroId);
+
+export const getMatchRoleLabel = (role: MatchRole | undefined) =>
+  getOptionLabel(matchRoleOptions, role);
 
 export const getResultLabel = (result: MatchResult | undefined) =>
   getOptionLabel(resultOptions, result);

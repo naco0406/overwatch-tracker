@@ -8,7 +8,13 @@ import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { getHeroLabel, getMapLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
+import {
+  getHeroLabel,
+  getMapLabel,
+  getMatchRoleLabel,
+  getModeLabel,
+  getResultLabel,
+} from '@/data/matchOptions';
 import { getMapScreenshotPath } from '@/data/masterAssets';
 import { toast } from '@/hooks/use-toast';
 import { useDeleteMatch, useMatches, useUpdateMatch } from '@/hooks/useMatches';
@@ -145,6 +151,7 @@ const getSessionSearchText = (session: MatchSession, accountById: Map<string, Pl
     .map((match) =>
       [
         getMapLabel(match.mapId),
+        getMatchRoleLabel(match.matchRole),
         getModeLabel(match.modeId),
         getResultLabel(match.result),
         `${match.teamScore}:${match.enemyScore}`,
@@ -664,12 +671,13 @@ const SelectedSessionDetail = ({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[760px] table-fixed border-collapse text-left text-sm">
+          <table className="w-full min-w-[860px] table-fixed border-collapse text-left text-sm">
             <thead className="sticky top-0 z-10 bg-[hsl(var(--surface-2))]">
               <tr className="border-b border-border/70">
                 <th className="w-14 px-3 py-3 font-semibold text-muted-foreground">#</th>
                 <th className="w-20 px-3 py-3 font-semibold text-muted-foreground">시간</th>
                 <th className="px-3 py-3 font-semibold text-muted-foreground">전장</th>
+                <th className="w-24 px-3 py-3 font-semibold text-muted-foreground">포지션</th>
                 <th className="w-24 px-3 py-3 font-semibold text-muted-foreground">스코어</th>
                 <th className="w-36 px-3 py-3 font-semibold text-muted-foreground">계정</th>
                 <th className="w-24 px-3 py-3 text-right font-semibold text-muted-foreground">
@@ -812,6 +820,11 @@ const SessionMatchTableRow = ({
         </div>
       </td>
       <td className="px-3 py-3 align-middle">
+        <Badge variant="outline" className="bg-transparent">
+          {getMatchRoleLabel(match.matchRole)}
+        </Badge>
+      </td>
+      <td className="px-3 py-3 align-middle">
         <p className="text-sm font-bold tabular-nums">
           {match.teamScore}:{match.enemyScore}
         </p>
@@ -872,7 +885,8 @@ const SessionMatchMobileRow = ({
               {index + 1}. {getMapLabel(match.mapId)}
             </p>
             <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-              {formatTime(match.playedAt)} · {getModeLabel(match.modeId)}
+              {formatTime(match.playedAt)} · {getModeLabel(match.modeId)} ·{' '}
+              {getMatchRoleLabel(match.matchRole)}
             </p>
             <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
               {heroSummary ? `${accountLabel} · ${heroSummary}` : accountLabel}
@@ -885,7 +899,7 @@ const SessionMatchMobileRow = ({
 
         <div className="mt-2 flex items-center justify-between gap-2">
           <p className={cn('truncate text-xs font-bold', getResultTextTone(match.result))}>
-            {getResultLabel(match.result)}
+            {getResultLabel(match.result)} · {getMatchRoleLabel(match.matchRole)}
           </p>
           <div className="flex shrink-0 justify-end gap-1">
             <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={onEdit}>

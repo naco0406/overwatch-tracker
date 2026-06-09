@@ -17,6 +17,8 @@ const jsonToRoiConfig = (value: Json | null) => {
 const rowToUserSettings = (row: UserSettingsRow): UserSettings => ({
   createdAt: row.created_at,
   defaultAccount: row.default_account,
+  defaultMatchRole: row.default_match_role ?? 'damage',
+  defaultPlayerAccountId: row.default_player_account_id,
   defaultQueueType: row.default_queue_type,
   roiConfig: jsonToRoiConfig(row.roi_config),
   updatedAt: row.updated_at,
@@ -42,6 +44,8 @@ export const getUserSettings = async () => {
   return {
     createdAt: '',
     defaultAccount: 'main',
+    defaultMatchRole: 'damage',
+    defaultPlayerAccountId: null,
     defaultQueueType: 'solo',
     updatedAt: '',
     userId: user.id,
@@ -55,6 +59,10 @@ export const upsertUserSettings = async (input: UserSettingsUpdateInput) => {
   };
 
   if (input.defaultAccount !== undefined) row.default_account = input.defaultAccount;
+  if (input.defaultMatchRole !== undefined) row.default_match_role = input.defaultMatchRole;
+  if (input.defaultPlayerAccountId !== undefined) {
+    row.default_player_account_id = input.defaultPlayerAccountId;
+  }
   if (input.defaultQueueType !== undefined) row.default_queue_type = input.defaultQueueType;
   if (input.roiConfig !== undefined) row.roi_config = input.roiConfig as Json | null;
 

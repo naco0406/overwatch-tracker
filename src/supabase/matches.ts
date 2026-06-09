@@ -47,6 +47,7 @@ const rowToMatch = (row: MatchRow, heroRows: HeroRow[] = []): Match => ({
   mapId: row.map_id,
   memo: row.memo,
   modeId: row.mode_id,
+  matchRole: row.match_role,
   myHeroes: [...heroRows].sort((a, b) => a.order_index - b.order_index).map((hero) => hero.hero_id),
   ocrConfidence: jsonToObject<OcrConfidence>(row.ocr_confidence),
   playedAt: row.played_at,
@@ -180,6 +181,7 @@ const buildMatchUpdate = (input: MatchUpdateInput) => {
   if (input.mapId !== undefined) update.map_id = input.mapId;
   if (input.memo !== undefined) update.memo = input.memo;
   if (input.modeId !== undefined) update.mode_id = input.modeId;
+  if (input.matchRole !== undefined) update.match_role = input.matchRole;
   if (input.ocrConfidence !== undefined) update.ocr_confidence = input.ocrConfidence as Json | null;
   if (playedAt !== undefined) update.played_at = playedAt;
   if (input.queueType !== undefined) update.queue_type = input.queueType;
@@ -207,6 +209,7 @@ export const listMatches = async (filters: MatchFilters = {}) => {
   if (filters.account) query = query.eq('account', filters.account);
   if (filters.accountId) query = query.eq('account_id', filters.accountId);
   if (filters.mapId) query = query.eq('map_id', filters.mapId);
+  if (filters.matchRole) query = query.eq('match_role', filters.matchRole);
   if (filters.modeId) query = query.eq('mode_id', filters.modeId);
   if (filters.playedFrom) query = query.gte('played_at', toIsoString(filters.playedFrom) ?? '');
   if (filters.playedTo) query = query.lte('played_at', toIsoString(filters.playedTo) ?? '');
@@ -255,6 +258,7 @@ export const createMatch = async (input: MatchCreateInput) => {
     map_id: input.mapId,
     memo: input.memo ?? '',
     mode_id: input.modeId,
+    match_role: input.matchRole ?? 'damage',
     ocr_confidence: input.ocrConfidence as Json | null | undefined,
     played_at: playedAt,
     queue_type: input.queueType ?? 'solo',

@@ -35,7 +35,7 @@ import {
   type VisionLayout,
   type VisionScreenDetection,
 } from '@/lib/visionPipelineCore';
-import type { MatchCreateInput, MatchResult, ModeId } from '@/types/match';
+import type { MatchCreateInput, MatchResult, MatchRole, ModeId } from '@/types/match';
 import type { PlayerAccount } from '@/types/playerAccount';
 
 export interface VisionExtractionConfig {
@@ -124,6 +124,7 @@ const loadedMapVectors = new Map<MapOption['value'], Promise<PixelImage>>();
 const loadedMapSelectionVectors = new Map<MapOption['value'], Promise<PixelImage>>();
 
 const mapById = new Map(mapOptions.map((map) => [map.value, map] as const));
+const heroRoleById = new Map(heroOptions.map((hero) => [hero.value, hero.role]));
 const visionLogPrefix = '[Overwatch Vision]';
 const ocrLanguages = ['kor', 'eng'];
 const ocrCachePath = 'overwatch-tracker-ocr-v1';
@@ -982,6 +983,16 @@ const normalizeExtractionResult = ({
     draft.myHeroes = [textEvidence.heroId];
   } else if (featuredHeroCandidate) {
     draft.myHeroes = [featuredHeroCandidate.heroId];
+  }
+
+  const inferredMatchRole =
+    selfHeroCandidate?.role ??
+    draft.myHeroes
+      ?.map((heroId) => heroRoleById.get(heroId))
+      .find((role): role is MatchRole => Boolean(role));
+
+  if (inferredMatchRole && !draft.matchRole) {
+    draft.matchRole = inferredMatchRole;
   }
 
   const bestMapCandidate = mapCandidates[0];

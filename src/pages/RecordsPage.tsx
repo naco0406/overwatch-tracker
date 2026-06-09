@@ -33,9 +33,11 @@ import {
 } from '@/components/ui/select';
 import {
   getMapLabel,
+  getMatchRoleLabel,
   getModeLabel,
   getOptionLabel,
   getResultLabel,
+  matchRoleOptions,
   mapOptions,
   modeOptions,
   queueOptions,
@@ -47,7 +49,7 @@ import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { formatWinRate, summarizeResults } from '@/lib/matchStats';
 import { cn } from '@/lib/utils';
-import type { Match, MatchCreateInput, MatchResult, ModeId } from '@/types/match';
+import type { Match, MatchCreateInput, MatchResult, MatchRole, ModeId } from '@/types/match';
 import type { PlayerAccount } from '@/types/playerAccount';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
 
@@ -97,12 +99,14 @@ const RecordsPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
   const [modeFilter, setModeFilter] = useState<ModeId | 'all'>('all');
+  const [matchRoleFilter, setMatchRoleFilter] = useState<MatchRole | 'all'>('all');
   const [resultFilter, setResultFilter] = useState<MatchResult | 'all'>('all');
   const [accountFilter, setAccountFilter] = useState('all');
   const [recordPage, setRecordPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkResult, setBulkResult] = useState<MatchResult | 'keep'>('keep');
   const [bulkMapId, setBulkMapId] = useState('keep');
+  const [bulkMatchRole, setBulkMatchRole] = useState<MatchRole | 'keep'>('keep');
   const [bulkAccountId, setBulkAccountId] = useState('keep');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [bulkActionsOpen, setBulkActionsOpen] = useState(false);
@@ -133,6 +137,7 @@ const RecordsPage = () => {
       const searchableText = [
         accountLabel,
         getMapLabel(match.mapId),
+        getMatchRoleLabel(match.matchRole),
         getModeLabel(match.modeId),
         getOptionLabel(queueOptions, match.queueType),
         getResultLabel(match.result),
@@ -143,6 +148,7 @@ const RecordsPage = () => {
 
       if (periodStart !== null && playedAtTime < periodStart) return false;
       if (modeFilter !== 'all' && match.modeId !== modeFilter) return false;
+      if (matchRoleFilter !== 'all' && match.matchRole !== matchRoleFilter) return false;
       if (resultFilter !== 'all' && match.result !== resultFilter) return false;
       if (accountFilter === 'unassigned' && match.accountId) return false;
       if (
@@ -156,7 +162,16 @@ const RecordsPage = () => {
 
       return true;
     });
-  }, [accountById, accountFilter, matches, modeFilter, periodFilter, resultFilter, searchQuery]);
+  }, [
+    accountById,
+    accountFilter,
+    matches,
+    matchRoleFilter,
+    modeFilter,
+    periodFilter,
+    resultFilter,
+    searchQuery,
+  ]);
 
   const selectedMatches = useMemo(
     () => matches.filter((match) => selectedIdSet.has(match.id)),
@@ -175,15 +190,21 @@ const RecordsPage = () => {
     searchQuery.trim().length > 0,
     periodFilter !== 'all',
     modeFilter !== 'all',
+    matchRoleFilter !== 'all',
     resultFilter !== 'all',
     accountFilter !== 'all',
   ].filter(Boolean).length;
-  const hasBulkUpdates = bulkResult !== 'keep' || bulkMapId !== 'keep' || bulkAccountId !== 'keep';
+  const hasBulkUpdates =
+    bulkResult !== 'keep' ||
+    bulkMapId !== 'keep' ||
+    bulkMatchRole !== 'keep' ||
+    bulkAccountId !== 'keep';
   const activeFilterLabels = [
     periodFilter !== 'all'
       ? periodOptions.find((period) => period.value === periodFilter)?.label
       : null,
     modeFilter !== 'all' ? getModeLabel(modeFilter) : null,
+    matchRoleFilter !== 'all' ? getMatchRoleLabel(matchRoleFilter) : null,
     resultFilter !== 'all' ? getResultLabel(resultFilter) : null,
     accountFilter === 'unassigned'
       ? '미지정 계정'
@@ -197,6 +218,7 @@ const RecordsPage = () => {
     setSearchQuery('');
     setPeriodFilter('all');
     setModeFilter('all');
+    setMatchRoleFilter('all');
     setResultFilter('all');
     setAccountFilter('all');
     setRecordPage(1);
@@ -278,7 +300,11 @@ const RecordsPage = () => {
       bulkAccountId === 'keep' || bulkAccountId === 'unassigned'
         ? null
         : playerAccounts.find((account) => account.id === bulkAccountId);
-    const hasUpdates = bulkResult !== 'keep' || Boolean(selectedMap) || bulkAccountId !== 'keep';
+    const hasUpdates =
+      bulkResult !== 'keep' ||
+      Boolean(selectedMap) ||
+      bulkMatchRole !== 'keep' ||
+      bulkAccountId !== 'keep';
 
     if (!hasUpdates) {
       toast({
@@ -295,6 +321,7 @@ const RecordsPage = () => {
           id: match.id,
           ...(bulkResult !== 'keep' ? { result: bulkResult } : {}),
           ...(selectedMap ? { mapId: selectedMap.value, modeId: selectedMap.modeId } : {}),
+          ...(bulkMatchRole !== 'keep' ? { matchRole: bulkMatchRole } : {}),
           ...(bulkAccountId !== 'keep'
             ? {
                 account: selectedAccount?.isMain === false ? 'sub' : 'main',
@@ -306,6 +333,7 @@ const RecordsPage = () => {
 
       setBulkResult('keep');
       setBulkMapId('keep');
+      setBulkMatchRole('keep');
       setBulkAccountId('keep');
       setBulkActionsOpen(false);
       toast({
@@ -464,7 +492,7 @@ const RecordsPage = () => {
           ) : filteredMatches.length > 0 ? (
             <>
               <div className="hidden overflow-x-auto md:block">
-                <table className="w-full min-w-[760px] table-fixed border-collapse text-left text-sm">
+                <table className="w-full min-w-[860px] table-fixed border-collapse text-left text-sm">
                   <thead className="sticky top-0 z-10 bg-[hsl(var(--surface-2))]">
                     <tr className="border-b border-border/70">
                       <th className="w-12 px-3 py-3">
@@ -478,6 +506,7 @@ const RecordsPage = () => {
                       </th>
                       <th className="w-32 px-3 py-3 font-semibold text-muted-foreground">시간</th>
                       <th className="px-3 py-3 font-semibold text-muted-foreground">맵</th>
+                      <th className="w-24 px-3 py-3 font-semibold text-muted-foreground">포지션</th>
                       <th className="w-28 px-3 py-3 font-semibold text-muted-foreground">스코어</th>
                       <th className="w-32 px-3 py-3 font-semibold text-muted-foreground">계정</th>
                       <th className="w-24 px-3 py-3 text-right font-semibold text-muted-foreground">
@@ -584,7 +613,7 @@ const RecordsPage = () => {
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Select
                 value={modeFilter}
                 onValueChange={(value) => {
@@ -600,6 +629,26 @@ const RecordsPage = () => {
                   {modeOptions.map((mode) => (
                     <SelectItem key={mode.value} value={mode.value}>
                       {mode.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={matchRoleFilter}
+                onValueChange={(value) => {
+                  setMatchRoleFilter(value as MatchRole | 'all');
+                  setRecordPage(1);
+                }}
+              >
+                <SelectTrigger className="h-11 bg-card">
+                  <SelectValue placeholder="포지션" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">전체 포지션</SelectItem>
+                  {matchRoleOptions.map((role) => (
+                    <SelectItem key={role.value} value={role.value}>
+                      {role.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -679,6 +728,7 @@ const RecordsPage = () => {
             accounts={playerAccounts}
             bulkAccountId={bulkAccountId}
             bulkMapId={bulkMapId}
+            bulkMatchRole={bulkMatchRole}
             bulkResult={bulkResult}
             disabled={selectedMatches.length === 0 || isBulkSaving}
             hasUpdates={hasBulkUpdates}
@@ -688,6 +738,7 @@ const RecordsPage = () => {
             onBulkAccountChange={setBulkAccountId}
             onBulkDelete={() => setBulkDeleteOpen(true)}
             onBulkMapChange={setBulkMapId}
+            onBulkMatchRoleChange={(value) => setBulkMatchRole(value as MatchRole | 'keep')}
             onBulkResultChange={(value) => setBulkResult(value as MatchResult | 'keep')}
             onClearSelection={() => setSelectedIds([])}
           />
@@ -798,6 +849,7 @@ interface BulkActionBarProps {
   accounts: PlayerAccount[];
   bulkAccountId: string;
   bulkMapId: string;
+  bulkMatchRole: MatchRole | 'keep';
   bulkResult: MatchResult | 'keep';
   disabled: boolean;
   hasUpdates: boolean;
@@ -806,6 +858,7 @@ interface BulkActionBarProps {
   onBulkAccountChange: (value: string) => void;
   onBulkDelete: () => void;
   onBulkMapChange: (value: string) => void;
+  onBulkMatchRoleChange: (value: string) => void;
   onBulkResultChange: (value: string) => void;
   onClearSelection: () => void;
   selectedCount: number;
@@ -815,6 +868,7 @@ const BulkActionBar = ({
   accounts,
   bulkAccountId,
   bulkMapId,
+  bulkMatchRole,
   bulkResult,
   disabled,
   hasUpdates,
@@ -823,6 +877,7 @@ const BulkActionBar = ({
   onBulkAccountChange,
   onBulkDelete,
   onBulkMapChange,
+  onBulkMatchRoleChange,
   onBulkResultChange,
   onClearSelection,
   selectedCount,
@@ -843,6 +898,11 @@ const BulkActionBar = ({
       changed: bulkMapId !== 'keep',
       label: '맵',
       value: selectedMap ? `${selectedMap.label} · ${getModeLabel(selectedMap.modeId)}` : '유지',
+    },
+    {
+      changed: bulkMatchRole !== 'keep',
+      label: '포지션',
+      value: bulkMatchRole === 'keep' ? '유지' : getMatchRoleLabel(bulkMatchRole),
     },
     {
       changed: bulkAccountId !== 'keep',
@@ -877,7 +937,7 @@ const BulkActionBar = ({
 
       <div className="mb-4 border-y border-border/70 bg-card py-3">
         <p className="px-3 metric-label">적용 예정</p>
-        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+        <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {summaryItems.map((item) => (
             <div
               key={item.label}
@@ -902,7 +962,7 @@ const BulkActionBar = ({
         </div>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[180px_minmax(0,1fr)_220px]">
+      <div className="grid gap-3 lg:grid-cols-[160px_minmax(0,1fr)_180px_220px]">
         <div>
           <p className="metric-label mb-2">결과</p>
           <Select value={bulkResult} onValueChange={onBulkResultChange}>
@@ -931,6 +991,23 @@ const BulkActionBar = ({
               {mapOptions.map((map) => (
                 <SelectItem key={map.value} value={map.value}>
                   {map.label} · {getModeLabel(map.modeId)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <p className="metric-label mb-2">포지션</p>
+          <Select value={bulkMatchRole} onValueChange={onBulkMatchRoleChange}>
+            <SelectTrigger className="h-10 bg-card">
+              <SelectValue placeholder="포지션" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="keep">포지션 유지</SelectItem>
+              {matchRoleOptions.map((role) => (
+                <SelectItem key={role.value} value={role.value}>
+                  {role.label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -1023,6 +1100,11 @@ const RecordTableRow = ({
       </p>
     </td>
     <td className="px-3 py-3 align-middle">
+      <Badge variant="outline" className="bg-transparent">
+        {getMatchRoleLabel(match.matchRole)}
+      </Badge>
+    </td>
+    <td className="px-3 py-3 align-middle">
       <p className="text-sm font-bold">
         {match.teamScore}:{match.enemyScore}
       </p>
@@ -1081,7 +1163,7 @@ const RecordCard = ({ account, match, onDelete, onEdit, onSelect, selected }: Re
         </p>
         <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
           {formatDate(match.playedAt)} · {formatTime(match.playedAt)} ·{' '}
-          {getPlayerAccountLabel(account)}
+          {getPlayerAccountLabel(account)} · {getMatchRoleLabel(match.matchRole)}
         </p>
       </div>
 
@@ -1100,7 +1182,7 @@ const RecordCard = ({ account, match, onDelete, onEdit, onSelect, selected }: Re
         >
           {getResultLabel(match.result)}
         </span>{' '}
-        · {getOptionLabel(queueOptions, match.queueType)}
+        · {getOptionLabel(queueOptions, match.queueType)} · {getMatchRoleLabel(match.matchRole)}
       </p>
       <div className="flex shrink-0 justify-end gap-1">
         <Button type="button" size="icon" variant="ghost" className="h-9 w-9" onClick={onEdit}>

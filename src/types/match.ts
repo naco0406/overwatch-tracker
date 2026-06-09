@@ -3,6 +3,7 @@ import type { Database } from '@/supabase/database.types';
 type PublicEnums = Database['public']['Enums'];
 
 export type AccountType = PublicEnums['account_type'];
+export type MatchRole = PublicEnums['match_role'];
 export type MatchResult = PublicEnums['match_result'];
 export type MatchSource = PublicEnums['match_source'];
 export type ModeId = PublicEnums['mode_id'];
@@ -25,6 +26,7 @@ export interface Match {
   mapId: string;
   memo: string;
   modeId: ModeId;
+  matchRole: MatchRole;
   myHeroes: string[];
   ocrConfidence?: OcrConfidence;
   playedAt: string;
@@ -48,6 +50,7 @@ export interface MatchCreateInput {
   mapId: string;
   memo?: string;
   modeId: ModeId;
+  matchRole?: MatchRole;
   myHeroes?: string[];
   ocrConfidence?: OcrConfidence | null;
   playedAt?: MatchDateInput;
@@ -68,6 +71,7 @@ export interface MatchUpdateInput {
   mapId?: string;
   memo?: string;
   modeId?: ModeId;
+  matchRole?: MatchRole;
   myHeroes?: string[];
   ocrConfidence?: OcrConfidence | null;
   playedAt?: MatchDateInput;
@@ -85,6 +89,7 @@ export interface MatchFilters {
   accountId?: string;
   heroId?: string;
   mapId?: string;
+  matchRole?: MatchRole;
   modeId?: ModeId;
   playedFrom?: MatchDateInput;
   playedTo?: MatchDateInput;

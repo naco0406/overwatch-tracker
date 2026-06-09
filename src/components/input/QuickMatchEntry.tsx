@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select';
 import {
   getModeLabel,
+  matchRoleOptions,
   mapOptions,
   modeOptions,
   queueOptions,
@@ -21,7 +22,14 @@ import {
 } from '@/data/matchOptions';
 import { getMapScreenshotPath } from '@/data/masterAssets';
 import { cn } from '@/lib/utils';
-import type { Match, MatchCreateInput, MatchResult, ModeId, QueueType } from '@/types/match';
+import type {
+  Match,
+  MatchCreateInput,
+  MatchResult,
+  MatchRole,
+  ModeId,
+  QueueType,
+} from '@/types/match';
 import type { PlayerAccount } from '@/types/playerAccount';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
 import type { UserSettings } from '@/types/userSettings';
@@ -83,16 +91,23 @@ const getResultTone = (result: MatchResult, selected: boolean) => {
   return 'border-border bg-card text-primary hover:border-primary/40 hover:bg-primary/10';
 };
 
-const getDefaultAccountId = (accounts: PlayerAccount[]) =>
-  accounts.find((account) => account.isMain)?.id ?? accounts[0]?.id ?? '';
+const getDefaultAccountId = (accounts: PlayerAccount[], preferredAccountId?: string | null) =>
+  accounts.find((account) => account.id === preferredAccountId)?.id ??
+  accounts.find((account) => account.isMain)?.id ??
+  accounts[0]?.id ??
+  '';
 
 interface QuickMatchEntryPreferences {
   accountId?: string;
+  matchRole?: MatchRole;
   queueType?: QueueType;
 }
 
 const isQueueType = (value: unknown): value is QueueType =>
   typeof value === 'string' && queueOptions.some((queue) => queue.value === value);
+
+const isMatchRole = (value: unknown): value is MatchRole =>
+  typeof value === 'string' && matchRoleOptions.some((role) => role.value === value);
 
 const readQuickMatchEntryPreferences = (): QuickMatchEntryPreferences => {
   if (typeof window === 'undefined') {
@@ -107,6 +122,7 @@ const readQuickMatchEntryPreferences = (): QuickMatchEntryPreferences => {
 
     return {
       accountId: typeof parsed.accountId === 'string' ? parsed.accountId : undefined,
+      matchRole: isMatchRole(parsed.matchRole) ? parsed.matchRole : undefined,
       queueType: isQueueType(parsed.queueType) ? parsed.queueType : undefined,
     };
   } catch {
@@ -149,17 +165,23 @@ const QuickMatchEntry = ({
   const [result, setResult] = useState<ResultValue>('');
   const [error, setError] = useState('');
   const initialPreferences = useMemo(() => readQuickMatchEntryPreferences(), []);
+  const defaultAccountId = getDefaultAccountId(accounts, defaultSettings?.defaultPlayerAccountId);
   const [selectedAccountId, setSelectedAccountId] = useState(
-    () => initialPreferences.accountId ?? getDefaultAccountId(accounts),
+    () => initialPreferences.accountId ?? defaultAccountId,
   );
   const defaultQueueType = defaultSettings?.defaultQueueType ?? 'solo';
+  const defaultMatchRole = defaultSettings?.defaultMatchRole ?? 'damage';
   const [selectedQueueType, setSelectedQueueType] = useState<QueueType>(
     initialPreferences.queueType ?? defaultQueueType,
   );
+  const [selectedMatchRole, setSelectedMatchRole] = useState<MatchRole>(
+    initialPreferences.matchRole ?? defaultMatchRole,
+  );
   const enemyScoreInputRef = useRef<HTMLInputElement>(null);
+  const accountTouchedRef = useRef(Boolean(initialPreferences.accountId));
   const queueTouchedRef = useRef(Boolean(initialPreferences.queueType));
+  const roleTouchedRef = useRef(Boolean(initialPreferences.matchRole));
   const teamScoreInputRef = useRef<HTMLInputElement>(null);
-  const defaultAccountId = getDefaultAccountId(accounts);
   const effectiveSelectedAccountId = accounts.some((account) => account.id === selectedAccountId)
     ? selectedAccountId
     : defaultAccountId;
@@ -168,15 +190,34 @@ const QuickMatchEntry = ({
   const selectedMap = mapOptions.find((map) => map.value === mapId);
 
   useEffect(() => {
+    if (!accountTouchedRef.current) {
+      setSelectedAccountId(defaultAccountId);
+    }
+  }, [defaultAccountId]);
+
+  useEffect(() => {
     if (!queueTouchedRef.current) {
       setSelectedQueueType(defaultQueueType);
     }
   }, [defaultQueueType]);
 
+  useEffect(() => {
+    if (!roleTouchedRef.current) {
+      setSelectedMatchRole(defaultMatchRole);
+    }
+  }, [defaultMatchRole]);
+
   const selectQueueType = (queueType: QueueType) => {
     queueTouchedRef.current = true;
     setSelectedQueueType(queueType);
     writeQuickMatchEntryPreferences({ queueType });
+    setError('');
+  };
+
+  const selectMatchRole = (matchRole: MatchRole) => {
+    roleTouchedRef.current = true;
+    setSelectedMatchRole(matchRole);
+    writeQuickMatchEntryPreferences({ matchRole });
     setError('');
   };
 
@@ -290,6 +331,7 @@ const QuickMatchEntry = ({
       mapId: selectedMap.value,
       memo: '',
       modeId: selectedMap.modeId,
+      matchRole: selectedMatchRole,
       myHeroes: [],
       playedAt: new Date().toISOString(),
       queueType: selectedQueueType,
@@ -334,11 +376,12 @@ const QuickMatchEntry = ({
             새 경기
           </h2>
         </div>
-        <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:min-w-[300px] sm:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)]">
+        <div className="grid w-full grid-cols-3 gap-2 sm:w-auto sm:min-w-[420px] sm:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_minmax(0,0.9fr)]">
           {accounts.length > 0 ? (
             <Select
               value={effectiveSelectedAccountId}
               onValueChange={(value) => {
+                accountTouchedRef.current = true;
                 setSelectedAccountId(value);
                 writeQuickMatchEntryPreferences({ accountId: value });
                 setError('');
@@ -389,6 +432,26 @@ const QuickMatchEntry = ({
                     className="text-xs font-semibold"
                   >
                     {queue.label}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+          <Select
+            value={selectedMatchRole}
+            onValueChange={(value) => selectMatchRole(value as MatchRole)}
+          >
+            <SelectTrigger
+              aria-label="포지션 선택"
+              className="h-9 min-w-0 bg-card text-xs font-bold"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              {matchRoleOptions.map((role) => {
+                return (
+                  <SelectItem key={role.value} value={role.value} className="text-xs font-semibold">
+                    {role.label}
                   </SelectItem>
                 );
               })}
@@ -615,7 +678,8 @@ const QuickMatchEntrySkeleton = () => (
         <SkeletonBlock className="h-3 w-16" />
         <SkeletonBlock className="mt-2 h-5 w-24" />
       </div>
-      <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:min-w-[300px] sm:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)]">
+      <div className="grid w-full grid-cols-3 gap-2 sm:w-auto sm:min-w-[420px] sm:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_minmax(0,0.9fr)]">
+        <SkeletonBlock className="h-9" />
         <SkeletonBlock className="h-9" />
         <SkeletonBlock className="h-9" />
       </div>
