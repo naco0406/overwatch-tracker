@@ -42,9 +42,14 @@ const seasonDateFormatter = new Intl.DateTimeFormat('ko-KR', {
   year: 'numeric',
 });
 
-const formatSeasonDate = (value: string) => seasonDateFormatter.format(new Date(value));
+const formatSeasonDate = (value: string | null) =>
+  value ? seasonDateFormatter.format(new Date(value)) : '미정';
 
 const getSeasonDurationDays = (season: CompetitiveSeason) => {
+  if (!season.endsAt) {
+    return null;
+  }
+
   const startsAt = new Date(season.startsAt).getTime();
   const endsAt = new Date(season.endsAt).getTime();
 
@@ -54,15 +59,23 @@ const getSeasonDurationDays = (season: CompetitiveSeason) => {
 const getSeasonStatus = (season: CompetitiveSeason, now = new Date()) => {
   const timestamp = now.getTime();
   const startsAt = new Date(season.startsAt).getTime();
-  const endsAt = new Date(season.endsAt).getTime();
 
   if (timestamp < startsAt) return 'upcoming';
+
+  if (!season.endsAt) return 'current';
+
+  const endsAt = new Date(season.endsAt).getTime();
+
   if (timestamp >= endsAt) return 'ended';
 
   return 'current';
 };
 
 const getSeasonProgress = (season: CompetitiveSeason, now = new Date()) => {
+  if (!season.endsAt) {
+    return null;
+  }
+
   const timestamp = now.getTime();
   const startsAt = new Date(season.startsAt).getTime();
   const endsAt = new Date(season.endsAt).getTime();
@@ -388,7 +401,12 @@ interface SeasonCardProps {
 const SeasonCard = ({ current, season }: SeasonCardProps) => {
   const status = getSeasonStatus(season);
   const progress = getSeasonProgress(season);
+  const durationDays = getSeasonDurationDays(season);
   const statusLabel = status === 'current' ? '진행 중' : status === 'upcoming' ? '예정' : '종료';
+  const progressLabel =
+    progress === null || durationDays === null
+      ? '종료일 미정'
+      : `${progress}% · ${durationDays.toLocaleString('ko-KR')}일`;
 
   return (
     <article
@@ -427,9 +445,7 @@ const SeasonCard = ({ current, season }: SeasonCardProps) => {
         <div>
           <div className="mb-2 flex items-center justify-between gap-3">
             <span className="metric-label">진행률</span>
-            <span className="text-xs font-bold text-muted-foreground">
-              {progress}% · {getSeasonDurationDays(season).toLocaleString('ko-KR')}일
-            </span>
+            <span className="text-xs font-bold text-muted-foreground">{progressLabel}</span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-secondary">
             <div
@@ -437,7 +453,7 @@ const SeasonCard = ({ current, season }: SeasonCardProps) => {
                 'h-full rounded-full',
                 current ? 'bg-primary' : 'bg-muted-foreground/35',
               )}
-              style={{ width: `${progress}%` }}
+              style={{ width: `${progress ?? 0}%` }}
             />
           </div>
         </div>

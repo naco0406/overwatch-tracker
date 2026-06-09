@@ -1,6 +1,6 @@
 export interface CompetitiveSeason {
   displayName: string;
-  endsAt: string;
+  endsAt: string | null;
   id: string;
   seasonNumber: number;
   startsAt: string;
@@ -21,7 +21,7 @@ export const getCurrentCompetitiveSeason = (
   return (
     seasons.find((season) => {
       const startsAt = new Date(season.startsAt).getTime();
-      const endsAt = new Date(season.endsAt).getTime();
+      const endsAt = season.endsAt ? new Date(season.endsAt).getTime() : Number.POSITIVE_INFINITY;
 
       return timestamp >= startsAt && timestamp < endsAt;
     }) ?? null

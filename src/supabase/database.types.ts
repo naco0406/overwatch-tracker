@@ -7,7 +7,7 @@ export interface Database {
         Row: {
           created_at: string;
           display_name: string;
-          ends_at: string;
+          ends_at: string | null;
           id: string;
           season_number: number;
           starts_at: string;
@@ -17,7 +17,7 @@ export interface Database {
         Insert: {
           created_at?: string;
           display_name: string;
-          ends_at: string;
+          ends_at?: string | null;
           id: string;
           season_number: number;
           starts_at: string;
@@ -27,7 +27,7 @@ export interface Database {
         Update: {
           created_at?: string;
           display_name?: string;
-          ends_at?: string;
+          ends_at?: string | null;
           id?: string;
           season_number?: number;
           starts_at?: string;
