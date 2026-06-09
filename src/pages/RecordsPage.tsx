@@ -106,7 +106,7 @@ const formatTime = (value: string) =>
 const RecordsPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
-  const [seasonFilter, setSeasonFilter] = useState<SeasonFilterValue>('all');
+  const [seasonFilter, setSeasonFilter] = useState<SeasonFilterValue>('current');
   const [modeFilter, setModeFilter] = useState<ModeId | 'all'>('all');
   const [matchRoleFilter, setMatchRoleFilter] = useState<MatchRole | 'all'>('all');
   const [resultFilter, setResultFilter] = useState<MatchResult | 'all'>('all');
@@ -221,7 +221,7 @@ const RecordsPage = () => {
   const activeFilterCount = [
     searchQuery.trim().length > 0,
     periodFilter !== 'all',
-    seasonFilter !== 'all',
+    seasonFilter !== 'current',
     modeFilter !== 'all',
     matchRoleFilter !== 'all',
     resultFilter !== 'all',
@@ -236,7 +236,9 @@ const RecordsPage = () => {
     periodFilter !== 'all'
       ? periodOptions.find((period) => period.value === periodFilter)?.label
       : null,
-    seasonFilter !== 'all' ? getSeasonFilterLabel(seasons, seasonFilter, currentSeasonId) : null,
+    seasonFilter !== 'current'
+      ? getSeasonFilterLabel(seasons, seasonFilter, currentSeasonId)
+      : null,
     modeFilter !== 'all' ? getModeLabel(modeFilter) : null,
     matchRoleFilter !== 'all' ? getMatchRoleLabel(matchRoleFilter) : null,
     resultFilter !== 'all' ? getResultLabel(resultFilter) : null,
@@ -251,7 +253,7 @@ const RecordsPage = () => {
   const resetFilters = () => {
     setSearchQuery('');
     setPeriodFilter('all');
-    setSeasonFilter('all');
+    setSeasonFilter('current');
     setModeFilter('all');
     setMatchRoleFilter('all');
     setResultFilter('all');
@@ -453,10 +455,10 @@ const RecordsPage = () => {
                   <SelectValue placeholder="시즌" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">전체 시즌</SelectItem>
                   <SelectItem value="current">
                     {getSeasonFilterLabel(seasons, 'current', currentSeasonId)}
                   </SelectItem>
+                  <SelectItem value="all">전체 시즌</SelectItem>
                   <SelectItem value="unassigned">시즌 미지정</SelectItem>
                   {selectableSeasons.map((season) => (
                     <SelectItem key={season.id} value={season.id}>
@@ -683,10 +685,10 @@ const RecordsPage = () => {
                   <SelectValue placeholder="시즌" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">전체 시즌</SelectItem>
                   <SelectItem value="current">
                     {getSeasonFilterLabel(seasons, 'current', currentSeasonId)}
                   </SelectItem>
+                  <SelectItem value="all">전체 시즌</SelectItem>
                   <SelectItem value="unassigned">시즌 미지정</SelectItem>
                   {selectableSeasons.map((season) => (
                     <SelectItem key={season.id} value={season.id}>

@@ -378,7 +378,7 @@ const StatsPage = () => {
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
   const [customPeriodStartDate, setCustomPeriodStartDate] = useState('');
   const [customPeriodEndDate, setCustomPeriodEndDate] = useState('');
-  const [seasonFilter, setSeasonFilter] = useState<SeasonFilterValue>('all');
+  const [seasonFilter, setSeasonFilter] = useState<SeasonFilterValue>('current');
   const [modeFilter, setModeFilter] = useState<ModeId | 'all'>('all');
   const [matchRoleFilter, setMatchRoleFilter] = useState<MatchRole | 'all'>('all');
   const [queueFilter, setQueueFilter] = useState<QueueType | 'all'>('all');
@@ -750,7 +750,7 @@ const StatsPage = () => {
     statsSections.find((statsSection) => statsSection.value === activeSection) ?? statsSections[0];
   const activeFilterCount = [
     periodFilter !== 'all',
-    seasonFilter !== 'all',
+    seasonFilter !== 'current',
     shouldApplyModeFilter,
     matchRoleFilter !== 'all',
     queueFilter !== 'all',
@@ -761,7 +761,7 @@ const StatsPage = () => {
     setPeriodFilter('all');
     setCustomPeriodStartDate('');
     setCustomPeriodEndDate('');
-    setSeasonFilter('all');
+    setSeasonFilter('current');
     setModeFilter('all');
     setMatchRoleFilter('all');
     setQueueFilter('all');
@@ -1758,7 +1758,10 @@ const StatsFilterPanel = ({
   seasons,
   title,
 }: StatsFilterPanelProps) => {
-  const filterStatusLabel = activeFilterCount > 0 ? `${activeFilterCount}개 적용` : '전체 데이터';
+  const filterStatusLabel =
+    activeFilterCount > 0
+      ? `${activeFilterCount}개 적용`
+      : getSeasonFilterLabel(seasons, 'current', currentSeasonId);
 
   return (
     <div
@@ -1795,10 +1798,10 @@ const StatsFilterPanel = ({
                 <SelectValue placeholder="시즌 선택" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">전체 시즌</SelectItem>
                 <SelectItem value="current">
                   {getSeasonFilterLabel(seasons, 'current', currentSeasonId)}
                 </SelectItem>
+                <SelectItem value="all">전체 시즌</SelectItem>
                 <SelectItem value="unassigned">시즌 미지정</SelectItem>
                 {seasons
                   .filter((season) => season.id !== currentSeasonId)
