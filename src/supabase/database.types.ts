@@ -3,6 +3,39 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export interface Database {
   public: {
     Tables: {
+      competitive_seasons: {
+        Row: {
+          created_at: string;
+          display_name: string;
+          ends_at: string;
+          id: string;
+          season_number: number;
+          starts_at: string;
+          updated_at: string;
+          year: number;
+        };
+        Insert: {
+          created_at?: string;
+          display_name: string;
+          ends_at: string;
+          id: string;
+          season_number: number;
+          starts_at: string;
+          updated_at?: string;
+          year: number;
+        };
+        Update: {
+          created_at?: string;
+          display_name?: string;
+          ends_at?: string;
+          id?: string;
+          season_number?: number;
+          starts_at?: string;
+          updated_at?: string;
+          year?: number;
+        };
+        Relationships: [];
+      };
       friend_requests: {
         Row: {
           created_at: string;
@@ -98,6 +131,7 @@ export interface Database {
         Row: {
           account: Database['public']['Enums']['account_type'];
           account_id: string | null;
+          competitive_season_id: string | null;
           created_at: string;
           enemy_score: number;
           id: string;
@@ -120,6 +154,7 @@ export interface Database {
         Insert: {
           account?: Database['public']['Enums']['account_type'];
           account_id?: string | null;
+          competitive_season_id?: string | null;
           created_at?: string;
           enemy_score: number;
           id?: string;
@@ -142,6 +177,7 @@ export interface Database {
         Update: {
           account?: Database['public']['Enums']['account_type'];
           account_id?: string | null;
+          competitive_season_id?: string | null;
           created_at?: string;
           enemy_score?: number;
           id?: string;

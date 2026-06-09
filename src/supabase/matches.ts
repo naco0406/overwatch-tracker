@@ -41,6 +41,7 @@ const normalizeHeroIds = (heroIds: string[] = []) =>
 const rowToMatch = (row: MatchRow, heroRows: HeroRow[] = []): Match => ({
   account: row.account,
   accountId: row.account_id,
+  competitiveSeasonId: row.competitive_season_id,
   createdAt: row.created_at,
   enemyScore: row.enemy_score,
   id: row.id,
@@ -177,6 +178,9 @@ const buildMatchUpdate = (input: MatchUpdateInput) => {
 
   if (input.account !== undefined) update.account = input.account;
   if (input.accountId !== undefined) update.account_id = input.accountId;
+  if (input.competitiveSeasonId !== undefined) {
+    update.competitive_season_id = input.competitiveSeasonId;
+  }
   if (input.enemyScore !== undefined) update.enemy_score = input.enemyScore;
   if (input.mapId !== undefined) update.map_id = input.mapId;
   if (input.memo !== undefined) update.memo = input.memo;
@@ -208,6 +212,9 @@ export const listMatches = async (filters: MatchFilters = {}) => {
 
   if (filters.account) query = query.eq('account', filters.account);
   if (filters.accountId) query = query.eq('account_id', filters.accountId);
+  if (filters.competitiveSeasonId) {
+    query = query.eq('competitive_season_id', filters.competitiveSeasonId);
+  }
   if (filters.mapId) query = query.eq('map_id', filters.mapId);
   if (filters.matchRole) query = query.eq('match_role', filters.matchRole);
   if (filters.modeId) query = query.eq('mode_id', filters.modeId);
@@ -254,6 +261,7 @@ export const createMatch = async (input: MatchCreateInput) => {
   const row: MatchInsert = {
     account: input.account ?? 'main',
     account_id: input.accountId ?? null,
+    competitive_season_id: input.competitiveSeasonId ?? null,
     enemy_score: input.enemyScore,
     map_id: input.mapId,
     memo: input.memo ?? '',

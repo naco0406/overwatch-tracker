@@ -45,11 +45,18 @@ import {
   resultOptions,
 } from '@/data/matchOptions';
 import { toast } from '@/hooks/use-toast';
+import { useCompetitiveSeasons } from '@/hooks/useCompetitiveSeasons';
 import { useDeleteMatch, useMatches, useUpdateMatch } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { formatWinRate, summarizeResults } from '@/lib/matchStats';
 import { cn } from '@/lib/utils';
+import {
+  getCompetitiveSeasonLabel,
+  getCurrentCompetitiveSeason,
+  getSeasonFilterLabel,
+  type SeasonFilterValue,
+} from '@/types/competitiveSeason';
 import type { Match, MatchCreateInput, MatchResult, MatchRole, ModeId } from '@/types/match';
 import type { PlayerAccount } from '@/types/playerAccount';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
@@ -99,6 +106,7 @@ const formatTime = (value: string) =>
 const RecordsPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
+  const [seasonFilter, setSeasonFilter] = useState<SeasonFilterValue>('all');
   const [modeFilter, setModeFilter] = useState<ModeId | 'all'>('all');
   const [matchRoleFilter, setMatchRoleFilter] = useState<MatchRole | 'all'>('all');
   const [resultFilter, setResultFilter] = useState<MatchResult | 'all'>('all');
@@ -116,11 +124,18 @@ const RecordsPage = () => {
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Match | null>(null);
   const { data: matches = [], isLoading: isMatchesLoading } = useMatches();
+  const { data: seasons = [], isLoading: isSeasonsLoading } = useCompetitiveSeasons();
   const { data: playerAccounts = [], isLoading: isAccountsLoading } = usePlayerAccounts();
   const { data: userSettings } = useUserSettings();
   const updateMatchMutation = useUpdateMatch();
   const deleteMatchMutation = useDeleteMatch();
-  const isRecordsLoading = isMatchesLoading || isAccountsLoading;
+  const currentSeason = useMemo(() => getCurrentCompetitiveSeason(seasons), [seasons]);
+  const currentSeasonId = currentSeason?.id ?? null;
+  const selectableSeasons = useMemo(
+    () => seasons.filter((season) => season.id !== currentSeasonId),
+    [currentSeasonId, seasons],
+  );
+  const isRecordsLoading = isMatchesLoading || isAccountsLoading || isSeasonsLoading;
 
   const accountById = useMemo(
     () => new Map(playerAccounts.map((account) => [account.id, account])),
@@ -135,8 +150,10 @@ const RecordsPage = () => {
     return matches.filter((match) => {
       const playedAtTime = new Date(match.playedAt).getTime();
       const accountLabel = getPlayerAccountLabel(accountById.get(match.accountId ?? ''));
+      const seasonLabel = getCompetitiveSeasonLabel(seasons, match.competitiveSeasonId);
       const searchableText = [
         accountLabel,
+        seasonLabel,
         getMapLabel(match.mapId),
         getMatchRoleLabel(match.matchRole),
         getModeLabel(match.modeId),
@@ -148,6 +165,17 @@ const RecordsPage = () => {
         .toLowerCase();
 
       if (periodStart !== null && playedAtTime < periodStart) return false;
+      if (seasonFilter === 'current') {
+        if (!currentSeasonId || match.competitiveSeasonId !== currentSeasonId) {
+          return false;
+        }
+      } else if (seasonFilter === 'unassigned') {
+        if (match.competitiveSeasonId) {
+          return false;
+        }
+      } else if (seasonFilter !== 'all' && match.competitiveSeasonId !== seasonFilter) {
+        return false;
+      }
       if (modeFilter !== 'all' && match.modeId !== modeFilter) return false;
       if (matchRoleFilter !== 'all' && match.matchRole !== matchRoleFilter) return false;
       if (resultFilter !== 'all' && match.result !== resultFilter) return false;
@@ -166,12 +194,15 @@ const RecordsPage = () => {
   }, [
     accountById,
     accountFilter,
+    currentSeasonId,
     matches,
     matchRoleFilter,
     modeFilter,
     periodFilter,
     resultFilter,
     searchQuery,
+    seasonFilter,
+    seasons,
   ]);
 
   const selectedMatches = useMemo(
@@ -190,6 +221,7 @@ const RecordsPage = () => {
   const activeFilterCount = [
     searchQuery.trim().length > 0,
     periodFilter !== 'all',
+    seasonFilter !== 'all',
     modeFilter !== 'all',
     matchRoleFilter !== 'all',
     resultFilter !== 'all',
@@ -204,6 +236,7 @@ const RecordsPage = () => {
     periodFilter !== 'all'
       ? periodOptions.find((period) => period.value === periodFilter)?.label
       : null,
+    seasonFilter !== 'all' ? getSeasonFilterLabel(seasons, seasonFilter, currentSeasonId) : null,
     modeFilter !== 'all' ? getModeLabel(modeFilter) : null,
     matchRoleFilter !== 'all' ? getMatchRoleLabel(matchRoleFilter) : null,
     resultFilter !== 'all' ? getResultLabel(resultFilter) : null,
@@ -218,6 +251,7 @@ const RecordsPage = () => {
   const resetFilters = () => {
     setSearchQuery('');
     setPeriodFilter('all');
+    setSeasonFilter('all');
     setModeFilter('all');
     setMatchRoleFilter('all');
     setResultFilter('all');
@@ -395,7 +429,7 @@ const RecordsPage = () => {
       <section className="border-t border-border/70">
         <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] px-3 py-3 sm:px-5">
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-center">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_180px_auto_auto]">
               <div className="relative col-span-2 sm:col-span-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -408,6 +442,29 @@ const RecordsPage = () => {
                   }}
                 />
               </div>
+              <Select
+                value={seasonFilter}
+                onValueChange={(value) => {
+                  setSeasonFilter(value);
+                  setRecordPage(1);
+                }}
+              >
+                <SelectTrigger className="col-span-2 h-10 bg-card sm:col-span-1">
+                  <SelectValue placeholder="시즌" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">전체 시즌</SelectItem>
+                  <SelectItem value="current">
+                    {getSeasonFilterLabel(seasons, 'current', currentSeasonId)}
+                  </SelectItem>
+                  <SelectItem value="unassigned">시즌 미지정</SelectItem>
+                  {selectableSeasons.map((season) => (
+                    <SelectItem key={season.id} value={season.id}>
+                      {season.displayName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button
                 type="button"
                 variant="outline"
@@ -614,7 +671,31 @@ const RecordsPage = () => {
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              <Select
+                value={seasonFilter}
+                onValueChange={(value) => {
+                  setSeasonFilter(value);
+                  setRecordPage(1);
+                }}
+              >
+                <SelectTrigger className="h-11 bg-card">
+                  <SelectValue placeholder="시즌" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">전체 시즌</SelectItem>
+                  <SelectItem value="current">
+                    {getSeasonFilterLabel(seasons, 'current', currentSeasonId)}
+                  </SelectItem>
+                  <SelectItem value="unassigned">시즌 미지정</SelectItem>
+                  {selectableSeasons.map((season) => (
+                    <SelectItem key={season.id} value={season.id}>
+                      {season.displayName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
               <Select
                 value={modeFilter}
                 onValueChange={(value) => {

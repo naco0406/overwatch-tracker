@@ -1,5 +1,16 @@
 import type { LucideIcon } from 'lucide-react';
-import { BarChart3, Clock3, ListOrdered, MapIcon, RotateCcw, Swords, Target } from 'lucide-react';
+import {
+  BarChart3,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  ListOrdered,
+  MapIcon,
+  RotateCcw,
+  Swords,
+  Target,
+} from 'lucide-react';
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import {
@@ -24,6 +35,7 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { MatchRoleIcon, MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -42,6 +54,7 @@ import {
   roleLabels,
 } from '@/data/matchOptions';
 import { getHeroPortraitPath, getMapScreenshotPath } from '@/data/masterAssets';
+import { useCompetitiveSeasons } from '@/hooks/useCompetitiveSeasons';
 import { useMatches } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import {
@@ -52,6 +65,12 @@ import {
 } from '@/lib/matchStats';
 import { groupMatchesBySession } from '@/lib/session';
 import { cn } from '@/lib/utils';
+import {
+  getCurrentCompetitiveSeason,
+  getSeasonFilterLabel,
+  type CompetitiveSeason,
+  type SeasonFilterValue,
+} from '@/types/competitiveSeason';
 import type { Match, MatchRole, ModeId, QueueType } from '@/types/match';
 import { getPlayerAccountLabel, type PlayerAccount } from '@/types/playerAccount';
 
@@ -60,6 +79,7 @@ const periodOptions = [
   { label: '7일', value: '7d' },
   { label: '30일', value: '30d' },
   { label: '90일', value: '90d' },
+  { label: '직접', value: 'custom' },
 ] as const;
 
 type PeriodFilter = (typeof periodOptions)[number]['value'];
@@ -106,18 +126,114 @@ const periodDays = {
   '7d': 7,
   '30d': 30,
   '90d': 90,
-} satisfies Record<Exclude<PeriodFilter, 'all'>, number>;
+} satisfies Record<Exclude<PeriodFilter, 'all' | 'custom'>, number>;
 
-const getPeriodStart = (period: PeriodFilter) => {
+const getDateStartTime = (date: string) => new Date(`${date}T00:00:00`).getTime();
+
+const getDateEndTime = (date: string) => new Date(`${date}T23:59:59.999`).getTime();
+
+const formatDateValue = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+};
+
+const parseDateValue = (value: string) => {
+  const [year, month, day] = value.split('-').map(Number);
+
+  if (!year || !month || !day) {
+    return null;
+  }
+
+  return new Date(year, month - 1, day);
+};
+
+const formatDateLabel = (value: string) => {
+  const date = parseDateValue(value);
+
+  if (!date) {
+    return '';
+  }
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(date);
+};
+
+const formatMonthLabel = (date: Date) =>
+  new Intl.DateTimeFormat('ko-KR', {
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
+
+const getMonthStart = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1);
+
+const addMonths = (date: Date, amount: number) =>
+  new Date(date.getFullYear(), date.getMonth() + amount, 1);
+
+const getCalendarMonthDays = (month: Date) => {
+  const firstDay = getMonthStart(month);
+  const calendarStart = new Date(firstDay);
+  calendarStart.setDate(firstDay.getDate() - firstDay.getDay());
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(calendarStart);
+    date.setDate(calendarStart.getDate() + index);
+    return date;
+  });
+};
+
+const getNormalizedDateRange = (startDate: string, endDate: string) => {
+  if (!startDate && !endDate) {
+    return { end: '', start: '' };
+  }
+
+  if (!startDate) {
+    return { end: endDate, start: endDate };
+  }
+
+  if (!endDate) {
+    return { end: startDate, start: startDate };
+  }
+
+  return startDate <= endDate
+    ? { end: endDate, start: startDate }
+    : { end: startDate, start: endDate };
+};
+
+const getCustomPeriodRange = (startDate: string, endDate: string) => {
+  const start = startDate ? getDateStartTime(startDate) : null;
+  const end = endDate ? getDateEndTime(endDate) : null;
+
+  if (start === null && end === null) {
+    return null;
+  }
+
+  if (start !== null && end !== null && start > end) {
+    return { end: getDateEndTime(startDate), start: getDateStartTime(endDate) };
+  }
+
+  return { end, start };
+};
+
+const getPeriodRange = (period: PeriodFilter, startDate: string, endDate: string) => {
   if (period === 'all') {
     return null;
+  }
+
+  if (period === 'custom') {
+    return getCustomPeriodRange(startDate, endDate);
   }
 
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   start.setDate(start.getDate() - periodDays[period] + 1);
 
-  return start.getTime();
+  return { end: null, start: start.getTime() };
 };
 
 const formatHour = (hour: number) => `${String(hour).padStart(2, '0')}:00`;
@@ -259,15 +375,21 @@ const getTooltipExtraRows = (value: unknown, renderedNames: Set<string>) => {
 const StatsPage = () => {
   const { section } = useParams();
   const activeSection = isStatsSection(section) ? section : 'maps';
-  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('30d');
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
+  const [customPeriodStartDate, setCustomPeriodStartDate] = useState('');
+  const [customPeriodEndDate, setCustomPeriodEndDate] = useState('');
+  const [seasonFilter, setSeasonFilter] = useState<SeasonFilterValue>('all');
   const [modeFilter, setModeFilter] = useState<ModeId | 'all'>('all');
   const [matchRoleFilter, setMatchRoleFilter] = useState<MatchRole | 'all'>('all');
   const [queueFilter, setQueueFilter] = useState<QueueType | 'all'>('all');
   const [accountFilter, setAccountFilter] = useState('all');
   const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
   const { data: matches = [], isLoading: isMatchesLoading } = useMatches();
+  const { data: seasons = [], isLoading: isSeasonsLoading } = useCompetitiveSeasons();
   const { data: playerAccounts = [], isLoading: isAccountsLoading } = usePlayerAccounts();
-  const isStatsLoading = isMatchesLoading || isAccountsLoading;
+  const currentSeason = useMemo(() => getCurrentCompetitiveSeason(seasons), [seasons]);
+  const currentSeasonId = currentSeason?.id ?? null;
+  const isStatsLoading = isMatchesLoading || isAccountsLoading || isSeasonsLoading;
   const shouldApplyModeFilter = activeSection !== 'modes' && modeFilter !== 'all';
   const heroRoleById = useMemo(
     () => new Map(heroOptions.map((hero) => [hero.value, hero.role])),
@@ -275,12 +397,36 @@ const StatsPage = () => {
   );
 
   const roleBaseMatches = useMemo(() => {
-    const periodStart = getPeriodStart(periodFilter);
+    const periodRange = getPeriodRange(periodFilter, customPeriodStartDate, customPeriodEndDate);
 
     return matches.filter((match) => {
       const playedAtTime = new Date(match.playedAt).getTime();
 
-      if (periodStart !== null && playedAtTime < periodStart) {
+      if (seasonFilter === 'current') {
+        if (!currentSeasonId || match.competitiveSeasonId !== currentSeasonId) {
+          return false;
+        }
+      } else if (seasonFilter === 'unassigned') {
+        if (match.competitiveSeasonId) {
+          return false;
+        }
+      } else if (seasonFilter !== 'all' && match.competitiveSeasonId !== seasonFilter) {
+        return false;
+      }
+
+      if (
+        periodRange?.start !== null &&
+        periodRange?.start !== undefined &&
+        playedAtTime < periodRange.start
+      ) {
+        return false;
+      }
+
+      if (
+        periodRange?.end !== null &&
+        periodRange?.end !== undefined &&
+        playedAtTime > periodRange.end
+      ) {
         return false;
       }
 
@@ -306,7 +452,18 @@ const StatsPage = () => {
 
       return true;
     });
-  }, [accountFilter, matches, modeFilter, periodFilter, queueFilter, shouldApplyModeFilter]);
+  }, [
+    accountFilter,
+    currentSeasonId,
+    customPeriodEndDate,
+    customPeriodStartDate,
+    matches,
+    modeFilter,
+    periodFilter,
+    queueFilter,
+    seasonFilter,
+    shouldApplyModeFilter,
+  ]);
 
   const filteredMatches = useMemo(
     () =>
@@ -592,7 +749,8 @@ const StatsPage = () => {
   const activeSectionMeta =
     statsSections.find((statsSection) => statsSection.value === activeSection) ?? statsSections[0];
   const activeFilterCount = [
-    periodFilter !== '30d',
+    periodFilter !== 'all',
+    seasonFilter !== 'all',
     shouldApplyModeFilter,
     matchRoleFilter !== 'all',
     queueFilter !== 'all',
@@ -600,7 +758,10 @@ const StatsPage = () => {
   ].filter(Boolean).length;
 
   const resetFilters = () => {
-    setPeriodFilter('30d');
+    setPeriodFilter('all');
+    setCustomPeriodStartDate('');
+    setCustomPeriodEndDate('');
+    setSeasonFilter('all');
     setModeFilter('all');
     setMatchRoleFilter('all');
     setQueueFilter('all');
@@ -791,17 +952,25 @@ const StatsPage = () => {
             <StatsFilterPanel
               activeFilterCount={activeFilterCount}
               accountFilter={accountFilter}
+              customPeriodEndDate={customPeriodEndDate}
+              customPeriodStartDate={customPeriodStartDate}
+              currentSeasonId={currentSeasonId}
               label="전장 조건"
               matchRoleFilter={matchRoleFilter}
               modeFilter={modeFilter}
               onAccountFilterChange={setAccountFilter}
               onMatchRoleFilterChange={setMatchRoleFilter}
               onModeFilterChange={setModeFilter}
+              onCustomPeriodEndDateChange={setCustomPeriodEndDate}
+              onCustomPeriodStartDateChange={setCustomPeriodStartDate}
               onPeriodFilterChange={setPeriodFilter}
               onQueueFilterChange={setQueueFilter}
+              onSeasonFilterChange={setSeasonFilter}
               periodFilter={periodFilter}
               playerAccounts={playerAccounts}
               queueFilter={queueFilter}
+              seasonFilter={seasonFilter}
+              seasons={seasons}
               title="맵별 승률 기준"
             />
             <PositionSummaryStrip
@@ -906,6 +1075,9 @@ const StatsPage = () => {
             <StatsFilterPanel
               activeFilterCount={activeFilterCount}
               accountFilter={accountFilter}
+              customPeriodEndDate={customPeriodEndDate}
+              customPeriodStartDate={customPeriodStartDate}
+              currentSeasonId={currentSeasonId}
               includeMode={false}
               label="모드 조건"
               matchRoleFilter={matchRoleFilter}
@@ -913,11 +1085,16 @@ const StatsPage = () => {
               onAccountFilterChange={setAccountFilter}
               onMatchRoleFilterChange={setMatchRoleFilter}
               onModeFilterChange={setModeFilter}
+              onCustomPeriodEndDateChange={setCustomPeriodEndDate}
+              onCustomPeriodStartDateChange={setCustomPeriodStartDate}
               onPeriodFilterChange={setPeriodFilter}
               onQueueFilterChange={setQueueFilter}
+              onSeasonFilterChange={setSeasonFilter}
               periodFilter={periodFilter}
               playerAccounts={playerAccounts}
               queueFilter={queueFilter}
+              seasonFilter={seasonFilter}
+              seasons={seasons}
               title="모드별 비교 기준"
             />
             <PositionSummaryStrip
@@ -1015,17 +1192,25 @@ const StatsPage = () => {
             <StatsFilterPanel
               activeFilterCount={activeFilterCount}
               accountFilter={accountFilter}
+              customPeriodEndDate={customPeriodEndDate}
+              customPeriodStartDate={customPeriodStartDate}
+              currentSeasonId={currentSeasonId}
               label="영웅 조건"
               matchRoleFilter={matchRoleFilter}
               modeFilter={modeFilter}
               onAccountFilterChange={setAccountFilter}
               onMatchRoleFilterChange={setMatchRoleFilter}
               onModeFilterChange={setModeFilter}
+              onCustomPeriodEndDateChange={setCustomPeriodEndDate}
+              onCustomPeriodStartDateChange={setCustomPeriodStartDate}
               onPeriodFilterChange={setPeriodFilter}
               onQueueFilterChange={setQueueFilter}
+              onSeasonFilterChange={setSeasonFilter}
               periodFilter={periodFilter}
               playerAccounts={playerAccounts}
               queueFilter={queueFilter}
+              seasonFilter={seasonFilter}
+              seasons={seasons}
               title="영웅 사용 분석 기준"
             />
             <PositionSummaryStrip
@@ -1131,17 +1316,25 @@ const StatsPage = () => {
             <StatsFilterPanel
               activeFilterCount={activeFilterCount}
               accountFilter={accountFilter}
+              customPeriodEndDate={customPeriodEndDate}
+              customPeriodStartDate={customPeriodStartDate}
+              currentSeasonId={currentSeasonId}
               label="시간 조건"
               matchRoleFilter={matchRoleFilter}
               modeFilter={modeFilter}
               onAccountFilterChange={setAccountFilter}
               onMatchRoleFilterChange={setMatchRoleFilter}
               onModeFilterChange={setModeFilter}
+              onCustomPeriodEndDateChange={setCustomPeriodEndDate}
+              onCustomPeriodStartDateChange={setCustomPeriodStartDate}
               onPeriodFilterChange={setPeriodFilter}
               onQueueFilterChange={setQueueFilter}
+              onSeasonFilterChange={setSeasonFilter}
               periodFilter={periodFilter}
               playerAccounts={playerAccounts}
               queueFilter={queueFilter}
+              seasonFilter={seasonFilter}
+              seasons={seasons}
               title="시간대 분석 기준"
             />
             <PositionSummaryStrip
@@ -1240,17 +1433,25 @@ const StatsPage = () => {
             <StatsFilterPanel
               activeFilterCount={activeFilterCount}
               accountFilter={accountFilter}
+              customPeriodEndDate={customPeriodEndDate}
+              customPeriodStartDate={customPeriodStartDate}
+              currentSeasonId={currentSeasonId}
               label="순서 조건"
               matchRoleFilter={matchRoleFilter}
               modeFilter={modeFilter}
               onAccountFilterChange={setAccountFilter}
               onMatchRoleFilterChange={setMatchRoleFilter}
               onModeFilterChange={setModeFilter}
+              onCustomPeriodEndDateChange={setCustomPeriodEndDate}
+              onCustomPeriodStartDateChange={setCustomPeriodStartDate}
               onPeriodFilterChange={setPeriodFilter}
               onQueueFilterChange={setQueueFilter}
+              onSeasonFilterChange={setSeasonFilter}
               periodFilter={periodFilter}
               playerAccounts={playerAccounts}
               queueFilter={queueFilter}
+              seasonFilter={seasonFilter}
+              seasons={seasons}
               title="세션 순서 분석 기준"
             />
             <PositionSummaryStrip
@@ -1502,144 +1703,220 @@ interface StatsFilterPanelProps {
   activeFilterCount: number;
   accountFilter: string;
   className?: string;
+  customPeriodEndDate: string;
+  customPeriodStartDate: string;
+  currentSeasonId?: string | null;
   includeMode?: boolean;
   label: string;
   matchRoleFilter: MatchRole | 'all';
   modeFilter: ModeId | 'all';
   onAccountFilterChange: (value: string) => void;
+  onCustomPeriodEndDateChange: (value: string) => void;
+  onCustomPeriodStartDateChange: (value: string) => void;
   onMatchRoleFilterChange: (value: MatchRole | 'all') => void;
   onModeFilterChange: (value: ModeId | 'all') => void;
   onPeriodFilterChange: (value: PeriodFilter) => void;
   onQueueFilterChange: (value: QueueType | 'all') => void;
+  onSeasonFilterChange: (value: SeasonFilterValue) => void;
   periodFilter: PeriodFilter;
   playerAccounts: PlayerAccount[];
   queueFilter: QueueType | 'all';
+  seasonFilter: SeasonFilterValue;
+  seasons: CompetitiveSeason[];
   title: string;
 }
+
+const statsFilterSelectTriggerClassName =
+  'h-10 w-full border-border/70 bg-card text-xs font-bold shadow-sm sm:h-9';
+
+const statsFilterThreeColumnClassName =
+  'xl:grid-cols-[minmax(220px,0.8fr)_minmax(300px,1.1fr)_minmax(280px,1fr)]';
 
 const StatsFilterPanel = ({
   activeFilterCount,
   accountFilter,
   className,
+  customPeriodEndDate,
+  customPeriodStartDate,
+  currentSeasonId,
   includeMode = true,
   label,
   matchRoleFilter,
   modeFilter,
   onAccountFilterChange,
+  onCustomPeriodEndDateChange,
+  onCustomPeriodStartDateChange,
   onMatchRoleFilterChange,
   onModeFilterChange,
   onPeriodFilterChange,
   onQueueFilterChange,
+  onSeasonFilterChange,
   periodFilter,
   playerAccounts,
   queueFilter,
+  seasonFilter,
+  seasons,
   title,
-}: StatsFilterPanelProps) => (
-  <div
-    className={cn('rounded-lg border border-border/70 bg-card/55 px-3.5 py-3 sm:px-5', className)}
-  >
-    <div className="grid gap-3 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start xl:gap-4">
-      <div>
-        <div className="flex items-center justify-between gap-3 xl:block">
-          <div>
+}: StatsFilterPanelProps) => {
+  const filterStatusLabel = activeFilterCount > 0 ? `${activeFilterCount}개 적용` : '전체 데이터';
+
+  return (
+    <div
+      className={cn(
+        'overflow-hidden rounded-lg border border-border/70 bg-card shadow-[0_20px_70px_-58px_hsl(var(--foreground)/0.45)]',
+        className,
+      )}
+    >
+      <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] px-3.5 py-3 sm:px-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
             <p className="metric-label">{label}</p>
-            <h2 className="mt-1 text-base font-bold">{title}</h2>
+            <h2 className="mt-1 truncate text-base font-bold">{title}</h2>
           </div>
-          <Badge variant="outline" className="shrink-0 bg-transparent">
-            {activeFilterCount}개 적용
+          <Badge
+            variant={activeFilterCount > 0 ? 'secondary' : 'outline'}
+            className={cn(
+              'w-fit shrink-0',
+              activeFilterCount > 0
+                ? 'border-primary/20 bg-primary/10 text-primary'
+                : 'bg-card text-muted-foreground',
+            )}
+          >
+            {filterStatusLabel}
           </Badge>
         </div>
       </div>
-      <div
-        className={cn(
-          'grid gap-3',
-          includeMode ? 'lg:grid-cols-2 2xl:grid-cols-5' : 'lg:grid-cols-2 2xl:grid-cols-4',
-        )}
-      >
-        <FilterGroup label="기간">
-          {periodOptions.map((period) => (
-            <FilterButton
-              key={period.value}
-              active={periodFilter === period.value}
-              onClick={() => onPeriodFilterChange(period.value)}
-            >
-              {period.label}
-            </FilterButton>
-          ))}
-        </FilterGroup>
 
-        <FilterSelect label="계정">
-          <Select value={accountFilter} onValueChange={onAccountFilterChange}>
-            <SelectTrigger className="h-10 bg-transparent sm:h-9">
-              <SelectValue placeholder="계정 선택" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">전체 계정</SelectItem>
-              <SelectItem value="unassigned">미지정</SelectItem>
-              {playerAccounts.map((account) => (
-                <SelectItem key={account.id} value={account.id}>
-                  {getPlayerAccountLabel(account)}
-                  {account.isMain ? ' · 본계' : ''}
-                  {!account.isActive ? ' · 비활성' : ''}
+      <div className="grid gap-2.5 p-3 sm:p-4">
+        <div className={cn('grid gap-2.5 lg:grid-cols-3', statsFilterThreeColumnClassName)}>
+          <FilterSelect label="시즌">
+            <Select value={seasonFilter} onValueChange={(value) => onSeasonFilterChange(value)}>
+              <SelectTrigger className={statsFilterSelectTriggerClassName}>
+                <SelectValue placeholder="시즌 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체 시즌</SelectItem>
+                <SelectItem value="current">
+                  {getSeasonFilterLabel(seasons, 'current', currentSeasonId)}
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </FilterSelect>
+                <SelectItem value="unassigned">시즌 미지정</SelectItem>
+                {seasons
+                  .filter((season) => season.id !== currentSeasonId)
+                  .map((season) => (
+                    <SelectItem key={season.id} value={season.id}>
+                      {season.displayName}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </FilterSelect>
 
-        <FilterGroup label="포지션">
-          <FilterButton
-            active={matchRoleFilter === 'all'}
-            onClick={() => onMatchRoleFilterChange('all')}
+          <FilterGroup
+            label="기간"
+            footer={
+              periodFilter === 'custom' ? (
+                <StatsDateRangePicker
+                  endDate={customPeriodEndDate}
+                  startDate={customPeriodStartDate}
+                  onEndDateChange={onCustomPeriodEndDateChange}
+                  onStartDateChange={onCustomPeriodStartDateChange}
+                />
+              ) : null
+            }
           >
-            전체
-          </FilterButton>
-          {matchRoleOptions.map((role) => (
-            <FilterButton
-              key={role.value}
-              active={matchRoleFilter === role.value}
-              onClick={() => onMatchRoleFilterChange(role.value)}
-            >
-              <MatchRoleLabel role={role.value} />
-            </FilterButton>
-          ))}
-        </FilterGroup>
-
-        {includeMode ? (
-          <FilterGroup label="모드">
-            <FilterButton active={modeFilter === 'all'} onClick={() => onModeFilterChange('all')}>
-              전체
-            </FilterButton>
-            {modeOptions.map((mode) => (
+            {periodOptions.map((period) => (
               <FilterButton
-                key={mode.value}
-                active={modeFilter === mode.value}
-                onClick={() => onModeFilterChange(mode.value)}
+                key={period.value}
+                active={periodFilter === period.value}
+                onClick={() => onPeriodFilterChange(period.value)}
               >
-                {mode.label}
+                {period.label}
               </FilterButton>
             ))}
           </FilterGroup>
-        ) : null}
 
-        <FilterGroup label="큐">
-          <FilterButton active={queueFilter === 'all'} onClick={() => onQueueFilterChange('all')}>
-            전체
-          </FilterButton>
-          {queueOptions.map((queue) => (
+          <FilterSelect label="계정">
+            <Select value={accountFilter} onValueChange={onAccountFilterChange}>
+              <SelectTrigger className={statsFilterSelectTriggerClassName}>
+                <SelectValue placeholder="계정 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체 계정</SelectItem>
+                <SelectItem value="unassigned">미지정</SelectItem>
+                {playerAccounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {getPlayerAccountLabel(account)}
+                    {account.isMain ? ' · 본계' : ''}
+                    {!account.isActive ? ' · 비활성' : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterSelect>
+        </div>
+
+        <div
+          className={cn(
+            'grid gap-2.5',
+            includeMode
+              ? statsFilterThreeColumnClassName
+              : 'xl:grid-cols-[minmax(230px,1fr)_minmax(280px,0.9fr)]',
+          )}
+        >
+          <FilterGroup label="포지션">
             <FilterButton
-              key={queue.value}
-              active={queueFilter === queue.value}
-              onClick={() => onQueueFilterChange(queue.value)}
+              active={matchRoleFilter === 'all'}
+              onClick={() => onMatchRoleFilterChange('all')}
             >
-              {queue.label}
+              전체
             </FilterButton>
-          ))}
-        </FilterGroup>
+            {matchRoleOptions.map((role) => (
+              <FilterButton
+                key={role.value}
+                active={matchRoleFilter === role.value}
+                onClick={() => onMatchRoleFilterChange(role.value)}
+              >
+                <MatchRoleLabel role={role.value} />
+              </FilterButton>
+            ))}
+          </FilterGroup>
+
+          {includeMode ? (
+            <FilterGroup label="모드">
+              <FilterButton active={modeFilter === 'all'} onClick={() => onModeFilterChange('all')}>
+                전체
+              </FilterButton>
+              {modeOptions.map((mode) => (
+                <FilterButton
+                  key={mode.value}
+                  active={modeFilter === mode.value}
+                  onClick={() => onModeFilterChange(mode.value)}
+                >
+                  {mode.label}
+                </FilterButton>
+              ))}
+            </FilterGroup>
+          ) : null}
+
+          <FilterGroup label="큐" wrap={false}>
+            <FilterButton active={queueFilter === 'all'} onClick={() => onQueueFilterChange('all')}>
+              전체
+            </FilterButton>
+            {queueOptions.map((queue) => (
+              <FilterButton
+                key={queue.value}
+                active={queueFilter === queue.value}
+                onClick={() => onQueueFilterChange(queue.value)}
+              >
+                {queue.label}
+              </FilterButton>
+            ))}
+          </FilterGroup>
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 interface FilterButtonProps {
   active: boolean;
@@ -1650,11 +1927,12 @@ interface FilterButtonProps {
 const FilterButton = ({ active, children, onClick }: FilterButtonProps) => (
   <button
     type="button"
+    aria-pressed={active}
     className={cn(
-      'inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-md border px-3 text-xs font-bold transition-[background-color,border-color,color] sm:h-9',
+      'inline-flex h-9 min-w-fit shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 text-xs font-bold transition-[background-color,border-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
       active
-        ? 'border-primary/60 bg-primary/10 text-primary'
-        : 'border-border/70 bg-transparent text-muted-foreground hover:bg-secondary/70 hover:text-foreground',
+        ? 'border-primary/40 bg-primary/10 text-primary shadow-[0_8px_24px_-20px_hsl(var(--primary)/0.9)]'
+        : 'border-transparent bg-transparent text-muted-foreground hover:border-border/70 hover:bg-card hover:text-foreground',
     )}
     onClick={onClick}
   >
@@ -1664,24 +1942,241 @@ const FilterButton = ({ active, children, onClick }: FilterButtonProps) => (
 
 interface FilterGroupProps {
   children: ReactNode;
+  className?: string;
+  footer?: ReactNode;
   label: string;
+  wrap?: boolean;
 }
 
-const FilterGroup = ({ children, label }: FilterGroupProps) => (
-  <div>
-    <p className="metric-label mb-2">{label}</p>
-    <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0">
+const FilterGroup = ({ children, className, footer, label, wrap = true }: FilterGroupProps) => (
+  <div
+    className={cn(
+      'min-w-0 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-2.5 py-2.5',
+      className,
+    )}
+  >
+    <p className="metric-label mb-2 px-0.5">{label}</p>
+    <div
+      className={cn(
+        'mobile-scroll -mx-0.5 flex gap-1.5 overflow-x-auto px-0.5 pb-0.5',
+        wrap ? 'lg:flex-wrap lg:overflow-visible lg:pb-0' : 'lg:flex-nowrap lg:pb-0',
+      )}
+    >
       {children}
     </div>
+    {footer}
   </div>
 );
 
-const FilterSelect = ({ children, label }: FilterGroupProps) => (
-  <div>
-    <p className="metric-label mb-2">{label}</p>
+const FilterSelect = ({ children, className, label }: FilterGroupProps) => (
+  <div
+    className={cn(
+      'min-w-0 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-2.5 py-2.5',
+      className,
+    )}
+  >
+    <p className="metric-label mb-2 px-0.5">{label}</p>
     {children}
   </div>
 );
+
+interface StatsDateRangePickerProps {
+  endDate: string;
+  onEndDateChange: (value: string) => void;
+  onStartDateChange: (value: string) => void;
+  startDate: string;
+}
+
+const calendarWeekdayLabels = ['일', '월', '화', '수', '목', '금', '토'];
+
+const StatsDateRangePicker = ({
+  endDate,
+  onEndDateChange,
+  onStartDateChange,
+  startDate,
+}: StatsDateRangePickerProps) => {
+  const [open, setOpen] = useState(false);
+  const [visibleMonth, setVisibleMonth] = useState(() =>
+    getMonthStart(parseDateValue(startDate) ?? new Date()),
+  );
+  const hasRange = Boolean(startDate || endDate);
+  const triggerLabel =
+    startDate && endDate
+      ? `${formatDateLabel(startDate)} - ${formatDateLabel(endDate)}`
+      : startDate
+        ? `${formatDateLabel(startDate)}부터`
+        : endDate
+          ? `${formatDateLabel(endDate)}까지`
+          : '날짜 범위 선택';
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+
+    if (nextOpen) {
+      setVisibleMonth(getMonthStart(parseDateValue(startDate || endDate) ?? new Date()));
+    }
+  };
+
+  const handleDateSelect = (dateValue: string) => {
+    if (!startDate || (startDate && endDate)) {
+      onStartDateChange(dateValue);
+      onEndDateChange('');
+      return;
+    }
+
+    if (dateValue < startDate) {
+      onStartDateChange(dateValue);
+      onEndDateChange(startDate);
+      return;
+    }
+
+    onEndDateChange(dateValue);
+  };
+
+  const clearRange = () => {
+    onStartDateChange('');
+    onEndDateChange('');
+  };
+
+  return (
+    <div className="mt-2">
+      <Popover open={open} onOpenChange={handleOpenChange}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className={cn(
+              'flex h-9 w-full min-w-0 items-center gap-2 rounded-md border border-border/70 bg-card px-2.5 text-left text-xs font-bold shadow-sm transition-[border-color,box-shadow] hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
+              hasRange ? 'text-foreground' : 'text-muted-foreground',
+            )}
+          >
+            <CalendarDays className="h-4 w-4 shrink-0 text-primary" />
+            <span className="min-w-0 truncate">{triggerLabel}</span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="center"
+          className="w-[min(calc(100vw-1.5rem),640px)] overflow-hidden rounded-lg p-0"
+          sideOffset={8}
+        >
+          <div className="flex items-center justify-between gap-3 border-b border-border/70 bg-[hsl(var(--surface-2))] px-3 py-2.5">
+            <div className="min-w-0">
+              <p className="metric-label">직접 기간</p>
+              <p className="mt-0.5 truncate text-sm font-bold">{triggerLabel}</p>
+            </div>
+            <div className="flex shrink-0 gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setVisibleMonth((month) => addMonths(month, -1))}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setVisibleMonth((month) => addMonths(month, 1))}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid gap-3 p-3 sm:grid-cols-2">
+            {[visibleMonth, addMonths(visibleMonth, 1)].map((month) => (
+              <StatsCalendarMonth
+                key={formatDateValue(month)}
+                endDate={endDate}
+                month={month}
+                startDate={startDate}
+                onDateSelect={handleDateSelect}
+              />
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between gap-2 border-t border-border/70 bg-[hsl(var(--surface-2))] px-3 py-2.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="px-2 text-muted-foreground"
+              disabled={!hasRange}
+              onClick={clearRange}
+            >
+              초기화
+            </Button>
+            <Button type="button" size="sm" onClick={() => setOpen(false)}>
+              완료
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+};
+
+interface StatsCalendarMonthProps {
+  endDate: string;
+  month: Date;
+  onDateSelect: (value: string) => void;
+  startDate: string;
+}
+
+const StatsCalendarMonth = ({
+  endDate,
+  month,
+  onDateSelect,
+  startDate,
+}: StatsCalendarMonthProps) => {
+  const today = formatDateValue(new Date());
+  const monthDays = getCalendarMonthDays(month);
+  const range = getNormalizedDateRange(startDate, endDate);
+
+  return (
+    <div className="min-w-0">
+      <p className="px-1 text-sm font-bold">{formatMonthLabel(month)}</p>
+      <div className="mt-2 grid grid-cols-7 gap-1">
+        {calendarWeekdayLabels.map((label) => (
+          <span
+            key={label}
+            className="flex h-7 items-center justify-center text-[11px] font-bold text-muted-foreground"
+          >
+            {label}
+          </span>
+        ))}
+        {monthDays.map((date) => {
+          const dateValue = formatDateValue(date);
+          const isOutsideMonth = date.getMonth() !== month.getMonth();
+          const isBoundary =
+            Boolean(range.start) && (dateValue === range.start || dateValue === range.end);
+          const isInRange =
+            Boolean(range.start && range.end) && dateValue > range.start && dateValue < range.end;
+          const isToday = dateValue === today;
+
+          return (
+            <button
+              key={dateValue}
+              type="button"
+              className={cn(
+                'flex h-9 min-w-0 items-center justify-center rounded-md text-xs font-bold transition-[background-color,color,box-shadow] hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
+                isOutsideMonth && 'text-muted-foreground/45',
+                isInRange && 'bg-primary/10 text-primary hover:bg-primary/15',
+                isBoundary && 'bg-primary text-primary-foreground hover:bg-primary',
+                isToday && !isBoundary && 'text-primary ring-1 ring-primary/25',
+              )}
+              onClick={() => onDateSelect(dateValue)}
+            >
+              {date.getDate()}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
 const ChartTooltipLayer = () => (
   <Tooltip
@@ -1804,35 +2299,48 @@ const StatsSectionSkeleton = ({ section }: { section: StatsSection }) => (
 );
 
 const StatsFilterPanelSkeleton = ({ includeMode }: { includeMode: boolean }) => (
-  <div className="rounded-lg border border-border/70 bg-card/55 px-3.5 py-3 sm:px-5">
-    <div className="grid gap-3 xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start xl:gap-4">
-      <div className="flex items-start justify-between gap-3 xl:block">
+  <div className="overflow-hidden rounded-lg border border-border/70 bg-card">
+    <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] px-3.5 py-3 sm:px-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <SkeletonBlock className="h-3 w-16" />
           <SkeletonBlock className="mt-2 h-5 w-36" />
         </div>
-        <SkeletonBlock className="h-6 w-16 shrink-0 xl:mt-3" />
+        <SkeletonBlock className="h-6 w-20 shrink-0" />
+      </div>
+    </div>
+    <div className="grid gap-2.5 p-3 sm:p-4">
+      <div className={cn('grid gap-2.5 lg:grid-cols-3', statsFilterThreeColumnClassName)}>
+        {Array.from({ length: 3 }, (_, groupIndex) => (
+          <StatsFilterGroupSkeleton key={groupIndex} single={groupIndex !== 1} />
+        ))}
       </div>
       <div
         className={cn(
-          'grid gap-3',
-          includeMode ? 'lg:grid-cols-2 2xl:grid-cols-4' : 'lg:grid-cols-3',
+          'grid gap-2.5',
+          includeMode
+            ? 'xl:grid-cols-[minmax(220px,0.8fr)_minmax(300px,1.1fr)_minmax(280px,1fr)]'
+            : 'xl:grid-cols-[minmax(230px,1fr)_minmax(280px,0.9fr)]',
         )}
       >
-        {Array.from({ length: includeMode ? 4 : 3 }, (_, groupIndex) => (
-          <div key={groupIndex}>
-            <SkeletonBlock className="mb-2 h-3 w-12" />
-            <div className="flex flex-wrap gap-1.5">
-              {Array.from({ length: groupIndex === 1 ? 1 : 4 }, (_, itemIndex) => (
-                <SkeletonBlock
-                  key={itemIndex}
-                  className={cn('h-9', itemIndex === 0 ? 'w-20' : 'w-16')}
-                />
-              ))}
-            </div>
-          </div>
+        {Array.from({ length: includeMode ? 3 : 2 }, (_, groupIndex) => (
+          <StatsFilterGroupSkeleton key={groupIndex} />
         ))}
       </div>
+    </div>
+  </div>
+);
+
+const StatsFilterGroupSkeleton = ({ single = false }: { single?: boolean }) => (
+  <div className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-2.5 py-2.5">
+    <SkeletonBlock className="mb-2 h-3 w-12" />
+    <div className="flex flex-wrap gap-1.5">
+      {Array.from({ length: single ? 1 : 4 }, (_, itemIndex) => (
+        <SkeletonBlock
+          key={itemIndex}
+          className={cn('h-9', single ? 'w-full' : itemIndex === 0 ? 'w-20' : 'w-16')}
+        />
+      ))}
     </div>
   </div>
 );

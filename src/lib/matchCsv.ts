@@ -24,6 +24,7 @@ import { getPlayerAccountLabel } from '@/types/playerAccount';
 
 const csvColumns = [
   'played_at',
+  'competitive_season_id',
   'mode_id',
   'mode',
   'map_id',
@@ -334,6 +335,7 @@ export const buildMatchesCsv = (matches: Match[], accounts: PlayerAccount[] = []
 
       return [
         match.playedAt,
+        match.competitiveSeasonId ?? '',
         match.modeId,
         getModeLabel(match.modeId),
         match.mapId,
