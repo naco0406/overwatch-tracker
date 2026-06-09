@@ -144,7 +144,21 @@ begin
   ),
   recent_rows as (
     select
-      result::text as result
+      base_matches.id,
+      base_matches.created_at,
+      base_matches.map_id,
+      base_matches.mode_id::text as mode_id,
+      base_matches.played_at,
+      base_matches.result::text as result,
+      coalesce(
+        (
+          select jsonb_agg(match_heroes.hero_id order by match_heroes.order_index asc, match_heroes.hero_id asc)
+          from public.match_heroes
+          where match_heroes.match_id = base_matches.id
+            and match_heroes.user_id = base_matches.user_id
+        ),
+        '[]'::jsonb
+      ) as hero_ids
     from base_matches
     order by played_at desc, created_at desc, id desc
     limit 12
@@ -245,7 +259,14 @@ begin
     coalesce(
       (
         select jsonb_agg(
-          jsonb_build_object('result', recent_rows.result)
+          jsonb_build_object(
+            'heroIds', recent_rows.hero_ids,
+            'mapId', recent_rows.map_id,
+            'modeId', recent_rows.mode_id,
+            'playedAt', recent_rows.played_at,
+            'result', recent_rows.result
+          )
+          order by recent_rows.played_at desc, recent_rows.created_at desc, recent_rows.id desc
         )
         from recent_rows
       ),

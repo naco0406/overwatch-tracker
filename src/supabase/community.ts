@@ -133,7 +133,7 @@ const asRecord = (value: Json): Record<string, unknown> =>
     ? (value as Record<string, unknown>)
     : {};
 
-const asArray = (value: Json): Json[] => (Array.isArray(value) ? value : []);
+const asArray = (value: unknown): Json[] => (Array.isArray(value) ? (value as Json[]) : []);
 
 const asString = (value: unknown, fallback = '') => (typeof value === 'string' ? value : fallback);
 
@@ -262,9 +262,20 @@ const parseStatsHero = (value: Json): FriendStatsHero | null => {
 };
 
 const parseRecentFormItem = (value: Json): FriendRecentFormItem | null => {
-  const result = asMatchResult(asRecord(value).result);
+  const record = asRecord(value);
+  const result = asMatchResult(record.result);
 
-  return result ? { result } : null;
+  return result
+    ? {
+        heroIds: asArray(record.heroIds).filter(
+          (heroId): heroId is string => typeof heroId === 'string',
+        ),
+        mapId: asNullableString(record.mapId),
+        modeId: asModeId(record.modeId),
+        playedAt: asNullableString(record.playedAt),
+        result,
+      }
+    : null;
 };
 
 const rowToFriendStats = (row: FriendStatsRow): FriendStats => {

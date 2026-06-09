@@ -91,6 +91,10 @@ export interface FriendStatsHero {
 }
 
 export interface FriendRecentFormItem {
+  heroIds: string[];
+  mapId: string | null;
+  modeId: ModeId | null;
+  playedAt: string | null;
   result: MatchResult;
 }
 

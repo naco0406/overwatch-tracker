@@ -74,10 +74,24 @@ const formatFullDate = (value: string) =>
     year: 'numeric',
   }).format(new Date(value));
 
+const formatRecentDate = (value: string | null) =>
+  value
+    ? new Intl.DateTimeFormat('ko-KR', {
+        day: 'numeric',
+        month: 'short',
+      }).format(new Date(value))
+    : '날짜 없음';
+
 const resultLabel: Record<MatchResult, string> = {
   draw: '무',
   loss: '패',
   win: '승',
+};
+
+const resultLongLabel: Record<MatchResult, string> = {
+  draw: '무승부',
+  loss: '패배',
+  win: '승리',
 };
 
 const resultTone: Record<MatchResult, string> = {
@@ -90,6 +104,12 @@ const resultBadgeTone: Record<MatchResult, string> = {
   draw: 'border-muted-foreground/25 bg-muted text-muted-foreground',
   loss: 'border-destructive/25 bg-destructive/10 text-destructive',
   win: 'border-border bg-card text-[hsl(var(--success))]',
+};
+
+const resultTextTone: Record<MatchResult, string> = {
+  draw: 'text-muted-foreground',
+  loss: 'text-destructive',
+  win: 'text-[hsl(var(--success))]',
 };
 
 type FriendSort = 'name' | 'oldest' | 'recent';
@@ -128,6 +148,39 @@ const getRecordShare = (value: number, total: number) => {
   if (total <= 0) return 0;
 
   return Math.max(0, Math.min(100, (value / total) * 100));
+};
+
+const getCurrentStreak = (items: FriendRecentFormItem[]) => {
+  const latestResult = items[0]?.result;
+
+  if (!latestResult) {
+    return null;
+  }
+
+  let count = 0;
+
+  for (const item of items) {
+    if (item.result !== latestResult) {
+      break;
+    }
+
+    count += 1;
+  }
+
+  const suffix: Record<MatchResult, string> = {
+    draw: '연무',
+    loss: '연패',
+    win: '연승',
+  };
+
+  return {
+    count,
+    label:
+      count > 1
+        ? `${formatCount(count)}${suffix[latestResult]}`
+        : `직전 ${resultLongLabel[latestResult]}`,
+    result: latestResult,
+  };
 };
 
 const sortFriends = (friends: FriendSummary[], sort: FriendSort) =>
@@ -1338,6 +1391,8 @@ const RecentFormPanel = ({ recentForm }: { recentForm: FriendRecentFormItem[] })
   const draws = recentForm.filter((item) => item.result === 'draw').length;
   const recentWinRate =
     recentForm.length > 0 ? formatPercent((wins / recentForm.length) * 100) : '-';
+  const latestMatch = recentForm[0];
+  const currentStreak = getCurrentStreak(recentForm);
 
   return (
     <section className="workspace-panel overflow-hidden">
@@ -1352,32 +1407,36 @@ const RecentFormPanel = ({ recentForm }: { recentForm: FriendRecentFormItem[] })
         </div>
       </div>
       <div className="section-pad">
-        {recentForm.length > 0 ? (
-          <div className="grid gap-3">
-            <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 xl:grid-cols-4 2xl:grid-cols-6">
-              {recentForm.map((item, index) => (
-                <div
-                  key={`${item.result}-${index}`}
-                  className={cn(
-                    'grid h-14 content-between rounded-md border bg-card p-2 text-center',
-                    resultBadgeTone[item.result],
-                  )}
-                  title={resultLabel[item.result]}
-                >
-                  <span className="text-[10px] font-black tabular-nums opacity-70">
-                    {String(index + 1).padStart(2, '0')}
-                  </span>
-                  <span className="text-sm font-black">{resultLabel[item.result]}</span>
+        {latestMatch ? (
+          <div className="grid gap-4">
+            <RecentLatestMatch match={latestMatch} streakLabel={currentStreak?.label ?? '-'} />
+            <RecentTimeline items={recentForm} />
+            <div className="rounded-lg border border-border/70 bg-card p-3">
+              <div className="flex h-2.5 overflow-hidden rounded-full bg-secondary">
+                {wins > 0 && (
                   <span
-                    className={cn('mx-auto block h-1 w-full rounded-full', resultTone[item.result])}
+                    className="bg-[hsl(var(--success))]"
+                    style={{ width: `${getRecordShare(wins, recentForm.length)}%` }}
                   />
-                </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <RecentResultStat label="승" value={wins} />
-              <RecentResultStat label="패" value={losses} />
-              <RecentResultStat label="무" value={draws} />
+                )}
+                {losses > 0 && (
+                  <span
+                    className="bg-destructive"
+                    style={{ width: `${getRecordShare(losses, recentForm.length)}%` }}
+                  />
+                )}
+                {draws > 0 && (
+                  <span
+                    className="bg-muted-foreground/40"
+                    style={{ width: `${getRecordShare(draws, recentForm.length)}%` }}
+                  />
+                )}
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <RecentResultStat label="승" total={recentForm.length} value={wins} />
+                <RecentResultStat label="패" total={recentForm.length} value={losses} />
+                <RecentResultStat label="무" total={recentForm.length} value={draws} />
+              </div>
             </div>
           </div>
         ) : (
@@ -1388,10 +1447,128 @@ const RecentFormPanel = ({ recentForm }: { recentForm: FriendRecentFormItem[] })
   );
 };
 
-const RecentResultStat = ({ label, value }: { label: string; value: number }) => (
-  <div className="rounded-md border border-border/70 bg-card px-3 py-2">
+const RecentLatestMatch = ({
+  match,
+  streakLabel,
+}: {
+  match: FriendRecentFormItem;
+  streakLabel: string;
+}) => {
+  const primaryHeroIds = match.heroIds.slice(0, 2);
+  const extraHeroCount = Math.max(0, match.heroIds.length - primaryHeroIds.length);
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border/70 bg-card">
+      <div className="grid grid-cols-[88px_minmax(0,1fr)]">
+        <div
+          className={cn(
+            'grid content-center justify-items-center gap-1 border-r border-border/70 bg-[hsl(var(--surface-2))] px-3 py-4 text-center',
+            resultBadgeTone[match.result],
+          )}
+        >
+          <p className="metric-label">최신</p>
+          <p className="text-3xl font-black leading-none tracking-normal">
+            {resultLabel[match.result]}
+          </p>
+          <p className="text-[11px] font-black">{resultLongLabel[match.result]}</p>
+        </div>
+
+        <div className="min-w-0 p-3.5">
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <p className="metric-label">{formatRecentDate(match.playedAt)}</p>
+            <span className="shrink-0 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-2 py-1 text-[11px] font-black text-muted-foreground">
+              {streakLabel}
+            </span>
+          </div>
+          <h3 className="mt-2 truncate text-base font-black">
+            {match.modeId ? getModeLabel(match.modeId) : '모드 미기록'}
+          </h3>
+          <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+            {match.mapId ? getMapLabel(match.mapId) : '전장 미기록'}
+          </p>
+
+          <div className="mt-3 flex min-w-0 flex-wrap gap-1.5">
+            {primaryHeroIds.length > 0 ? (
+              <>
+                {primaryHeroIds.map((heroId) => (
+                  <span
+                    className="inline-flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-1.5 pr-2 text-xs font-black"
+                    key={heroId}
+                  >
+                    <img
+                      alt=""
+                      className="h-5 w-5 rounded-sm object-cover object-top"
+                      src={getHeroPortraitPath(heroId)}
+                    />
+                    <span className="truncate">{getHeroLabel(heroId)}</span>
+                  </span>
+                ))}
+                {extraHeroCount > 0 && (
+                  <span className="inline-flex h-8 items-center rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-2 text-xs font-black text-muted-foreground">
+                    +{formatCount(extraHeroCount)}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="inline-flex h-8 items-center rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-2 text-xs font-black text-muted-foreground">
+                영웅 미기록
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const RecentTimeline = ({ items }: { items: FriendRecentFormItem[] }) => (
+  <div className="grid gap-2">
+    <div className="flex items-center justify-between gap-2">
+      <p className="metric-label">타임라인</p>
+      <p className="text-[11px] font-bold text-muted-foreground">최신순</p>
+    </div>
+    <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 xl:grid-cols-4 2xl:grid-cols-6">
+      {items.map((item, index) => (
+        <div
+          className="relative min-h-[76px] overflow-hidden rounded-md border border-border/70 bg-card px-2 py-2.5 text-center"
+          key={`${item.result}-${item.playedAt ?? index}-${index}`}
+          title={`${resultLongLabel[item.result]} · ${item.modeId ? getModeLabel(item.modeId) : '모드 미기록'} · ${
+            item.mapId ? getMapLabel(item.mapId) : '전장 미기록'
+          }`}
+        >
+          <span
+            className={cn('absolute inset-x-2 top-0 h-1 rounded-b-full', resultTone[item.result])}
+          />
+          <p className="text-[10px] font-black text-muted-foreground">
+            {index === 0 ? '최신' : formatRecentDate(item.playedAt)}
+          </p>
+          <p className={cn('mt-1 text-xl font-black leading-none', resultTextTone[item.result])}>
+            {resultLabel[item.result]}
+          </p>
+          <p className="mt-1.5 truncate text-[10px] font-bold text-muted-foreground">
+            {item.modeId ? getModeLabel(item.modeId) : '모드 미기록'}
+          </p>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const RecentResultStat = ({
+  label,
+  total,
+  value,
+}: {
+  label: string;
+  total: number;
+  value: number;
+}) => (
+  <div className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-3 py-2">
     <p className="metric-label">{label}</p>
     <p className="mt-1 text-base font-black tabular-nums">{formatCount(value)}</p>
+    <p className="mt-0.5 text-[11px] font-bold text-muted-foreground">
+      {formatPercent(getRecordShare(value, total))}
+    </p>
   </div>
 );
 
