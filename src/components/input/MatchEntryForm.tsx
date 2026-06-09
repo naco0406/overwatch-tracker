@@ -205,6 +205,7 @@ const MatchEntryForm = ({
     (account) => account.id === defaultSettings?.defaultPlayerAccountId,
   );
   const fallbackAccountId = defaultPlayerAccount?.id ?? mainAccount?.id ?? accounts[0]?.id ?? '';
+  const initialFormValues = getDefaultFormValues(defaultSettings, initialMatch, initialDraft);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
     initialMatch ? (initialMatch.accountId ?? '') : (initialDraft?.accountId ?? null),
   );
@@ -216,10 +217,10 @@ const MatchEntryForm = ({
   const [showHeroPicker, setShowHeroPicker] = useState(
     Boolean(initialMatch?.myHeroes?.length || initialDraft?.myHeroes?.length),
   );
-  const [roleFilter, setRoleFilter] = useState<HeroRoleFilter>('all');
+  const [roleFilter, setRoleFilter] = useState<HeroRoleFilter>(initialFormValues.matchRole);
 
   const form = useForm<MatchEntryFormValues>({
-    defaultValues: getDefaultFormValues(defaultSettings, initialMatch, initialDraft),
+    defaultValues: initialFormValues,
     resolver: zodResolver(matchEntrySchema),
   });
 
@@ -336,15 +337,24 @@ const MatchEntryForm = ({
     );
   };
 
+  const toggleHeroPicker = () => {
+    if (!showHeroPicker) {
+      setRoleFilter(form.getValues('matchRole'));
+    }
+    setShowHeroPicker((current) => !current);
+  };
+
   const resetForm = () => {
-    form.reset(getDefaultFormValues(defaultSettings, initialMatch, initialDraft));
+    const defaultValues = getDefaultFormValues(defaultSettings, initialMatch, initialDraft);
+
+    form.reset(defaultValues);
     setSelectedAccountId(
       initialMatch ? (initialMatch.accountId ?? '') : (initialDraft?.accountId ?? null),
     );
     setSelectedHeroes(initialMatch?.myHeroes ?? initialDraft?.myHeroes ?? []);
     setHeroQuery('');
     setMapQuery('');
-    setRoleFilter('all');
+    setRoleFilter(defaultValues.matchRole);
     setShowHeroPicker(Boolean(initialMatch?.myHeroes?.length || initialDraft?.myHeroes?.length));
   };
 
@@ -636,7 +646,12 @@ const MatchEntryForm = ({
                               ? 'border-primary bg-primary text-primary-foreground'
                               : 'border-border bg-card text-muted-foreground hover:bg-secondary',
                           )}
-                          onClick={() => field.onChange(option.value)}
+                          onClick={() => {
+                            field.onChange(option.value);
+                            if (showHeroPicker) {
+                              setRoleFilter(option.value);
+                            }
+                          }}
                         >
                           <MatchRoleLabel className="justify-center" role={option.value} />
                         </button>
@@ -688,7 +703,7 @@ const MatchEntryForm = ({
               type="button"
               className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left sm:px-4"
               aria-expanded={showHeroPicker}
-              onClick={() => setShowHeroPicker((current) => !current)}
+              onClick={toggleHeroPicker}
             >
               <div className="min-w-0">
                 <p className="metric-label">선택 영웅</p>
