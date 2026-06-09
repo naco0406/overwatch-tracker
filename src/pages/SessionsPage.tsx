@@ -5,6 +5,7 @@ import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
 import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
+import { MatchRoleBadge, MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -820,9 +821,7 @@ const SessionMatchTableRow = ({
         </div>
       </td>
       <td className="px-3 py-3 align-middle">
-        <Badge variant="outline" className="bg-transparent">
-          {getMatchRoleLabel(match.matchRole)}
-        </Badge>
+        <MatchRoleBadge role={match.matchRole} />
       </td>
       <td className="px-3 py-3 align-middle">
         <p className="text-sm font-bold tabular-nums">
@@ -884,9 +883,12 @@ const SessionMatchMobileRow = ({
             <p className="truncate text-sm font-bold">
               {index + 1}. {getMapLabel(match.mapId)}
             </p>
-            <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-              {formatTime(match.playedAt)} · {getModeLabel(match.modeId)} ·{' '}
-              {getMatchRoleLabel(match.matchRole)}
+            <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+              <span className="truncate">
+                {formatTime(match.playedAt)} · {getModeLabel(match.modeId)}
+              </span>
+              <span className="shrink-0">·</span>
+              <MatchRoleLabel className="shrink-0" role={match.matchRole} />
             </p>
             <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
               {heroSummary ? `${accountLabel} · ${heroSummary}` : accountLabel}
@@ -898,8 +900,15 @@ const SessionMatchMobileRow = ({
         </div>
 
         <div className="mt-2 flex items-center justify-between gap-2">
-          <p className={cn('truncate text-xs font-bold', getResultTextTone(match.result))}>
-            {getResultLabel(match.result)} · {getMatchRoleLabel(match.matchRole)}
+          <p
+            className={cn(
+              'inline-flex min-w-0 items-center gap-1.5 text-xs font-bold',
+              getResultTextTone(match.result),
+            )}
+          >
+            <span className="truncate">{getResultLabel(match.result)}</span>
+            <span className="shrink-0">·</span>
+            <MatchRoleLabel className="shrink-0" role={match.matchRole} />
           </p>
           <div className="flex shrink-0 justify-end gap-1">
             <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={onEdit}>

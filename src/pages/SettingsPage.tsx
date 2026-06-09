@@ -31,6 +31,7 @@ import { NavLink, useParams } from 'react-router-dom';
 
 import { SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
+import { MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -59,7 +60,8 @@ import { matchRoleOptions, queueOptions } from '@/data/matchOptions';
 import { useCreateMatch, useMatches } from '@/hooks/useMatches';
 import {
   useCreatePlayerAccount,
-  useDeletePlayerAccount,
+  useDeactivatePlayerAccount,
+  usePermanentlyDeletePlayerAccount,
   usePlayerAccounts,
   useRestorePlayerAccount,
   useUpdatePlayerAccount,
@@ -113,7 +115,8 @@ const SettingsPage = () => {
   const createPlayerAccount = useCreatePlayerAccount();
   const createMatch = useCreateMatch();
   const updatePlayerAccount = useUpdatePlayerAccount();
-  const deletePlayerAccount = useDeletePlayerAccount();
+  const deactivatePlayerAccount = useDeactivatePlayerAccount();
+  const permanentlyDeletePlayerAccount = usePermanentlyDeletePlayerAccount();
   const restorePlayerAccount = useRestorePlayerAccount();
   const updateUserSettings = useUpdateUserSettings();
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -143,12 +146,16 @@ const SettingsPage = () => {
   const [passwordNext, setPasswordNext] = useState('');
   const [deleteUserConfirmText, setDeleteUserConfirmText] = useState('');
   const [deleteUserDialogOpen, setDeleteUserDialogOpen] = useState(false);
+  const [permanentDeleteAccountId, setPermanentDeleteAccountId] = useState<string | null>(null);
   const activeAccounts = playerAccounts.filter((account) => account.isActive);
   const inactiveAccounts = playerAccounts.filter((account) => !account.isActive);
+  const permanentDeleteAccount =
+    playerAccounts.find((account) => account.id === permanentDeleteAccountId) ?? null;
   const isAccountMutating =
     createPlayerAccount.isPending ||
     updatePlayerAccount.isPending ||
-    deletePlayerAccount.isPending ||
+    deactivatePlayerAccount.isPending ||
+    permanentlyDeletePlayerAccount.isPending ||
     restorePlayerAccount.isPending;
   const canDeleteUser = deleteUserConfirmText.trim() === '회원탈퇴';
   const avatarUrlInput = avatarPreviewUrl ?? ownProfile?.avatarUrl ?? '';
@@ -500,18 +507,18 @@ const SettingsPage = () => {
     }
   };
 
-  const handleDeleteAccount = async (accountId: string) => {
+  const handleDeactivateAccount = async (accountId: string) => {
     const targetAccount = activeAccounts.find((account) => account.id === accountId);
 
     try {
-      await deletePlayerAccount.mutateAsync(accountId);
+      await deactivatePlayerAccount.mutateAsync(accountId);
       toast({
-        title: '계정 삭제 완료',
+        title: '계정 비활성화 완료',
         description: targetAccount?.isMain ? '본계 지정도 함께 해제했습니다.' : undefined,
       });
     } catch (error) {
       toast({
-        title: '계정 삭제 실패',
+        title: '계정 비활성화 실패',
         description: error instanceof Error ? error.message : '잠시 후 다시 시도하세요.',
         variant: 'destructive',
       });
@@ -528,6 +535,27 @@ const SettingsPage = () => {
     } catch (error) {
       toast({
         title: '계정 복원 실패',
+        description: error instanceof Error ? error.message : '잠시 후 다시 시도하세요.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handlePermanentlyDeleteAccount = async () => {
+    if (!permanentDeleteAccountId) {
+      return;
+    }
+
+    try {
+      await permanentlyDeletePlayerAccount.mutateAsync(permanentDeleteAccountId);
+      setPermanentDeleteAccountId(null);
+      toast({
+        title: '계정 영구 삭제 완료',
+        description: '이 계정으로 연결된 기존 기록은 계정 미지정으로 남습니다.',
+      });
+    } catch (error) {
+      toast({
+        title: '계정 영구 삭제 실패',
         description: error instanceof Error ? error.message : '잠시 후 다시 시도하세요.',
         variant: 'destructive',
       });
@@ -750,14 +778,16 @@ const SettingsPage = () => {
           isAccountMutating={isAccountMutating}
           isAccountsLoading={isAccountsLoading}
           isCreatingAccount={createPlayerAccount.isPending}
+          isPermanentlyDeletingAccount={permanentlyDeletePlayerAccount.isPending}
           isRestoringAccount={restorePlayerAccount.isPending}
           onBattleTagChange={setBattleTag}
           onCancelEditAccount={cancelEditAccount}
           onCreateAccount={handleCreateAccount}
-          onDeleteAccount={handleDeleteAccount}
+          onDeactivateAccount={handleDeactivateAccount}
           onDisplayNameChange={setDisplayName}
           onEditingBattleTagChange={setEditingBattleTag}
           onEditingDisplayNameChange={setEditingDisplayName}
+          onPermanentlyDeleteAccountClick={setPermanentDeleteAccountId}
           onRestoreAccount={handleRestoreAccount}
           onSaveAccount={handleSaveAccount}
           onStartEditAccount={startEditAccount}
@@ -799,6 +829,16 @@ const SettingsPage = () => {
         onConfirmTextChange={setDeleteUserConfirmText}
         onDelete={handleDeleteUserAccount}
         onOpenChange={setDeleteUserDialogOpen}
+      />
+
+      <PermanentDeletePlayerAccountDialog
+        account={permanentDeleteAccount}
+        isDeleting={permanentlyDeletePlayerAccount.isPending}
+        open={Boolean(permanentDeleteAccountId)}
+        onDelete={handlePermanentlyDeleteAccount}
+        onOpenChange={(open) => {
+          if (!open) setPermanentDeleteAccountId(null);
+        }}
       />
     </div>
   );
@@ -1247,7 +1287,7 @@ const QuickInputDefaultsPanel = ({
                   disabled={isSaving}
                   onClick={() => onDefaultMatchRoleChange(option.value)}
                 >
-                  {option.label}
+                  <MatchRoleLabel className="justify-center" role={option.value} />
                 </button>
               ))}
             </div>
@@ -1279,14 +1319,16 @@ interface BattleNetSettingsSectionProps {
   isAccountMutating: boolean;
   isAccountsLoading: boolean;
   isCreatingAccount: boolean;
+  isPermanentlyDeletingAccount: boolean;
   isRestoringAccount: boolean;
   onBattleTagChange: (value: string) => void;
   onCancelEditAccount: () => void;
   onCreateAccount: () => void;
-  onDeleteAccount: (accountId: string) => void;
+  onDeactivateAccount: (accountId: string) => void;
   onDisplayNameChange: (value: string) => void;
   onEditingBattleTagChange: (value: string) => void;
   onEditingDisplayNameChange: (value: string) => void;
+  onPermanentlyDeleteAccountClick: (accountId: string) => void;
   onRestoreAccount: (accountId: string) => void;
   onSaveAccount: (accountId: string) => void;
   onStartEditAccount: (account: PlayerAccount) => void;
@@ -1304,14 +1346,16 @@ const BattleNetSettingsSection = ({
   isAccountMutating,
   isAccountsLoading,
   isCreatingAccount,
+  isPermanentlyDeletingAccount,
   isRestoringAccount,
   onBattleTagChange,
   onCancelEditAccount,
   onCreateAccount,
-  onDeleteAccount,
+  onDeactivateAccount,
   onDisplayNameChange,
   onEditingBattleTagChange,
   onEditingDisplayNameChange,
+  onPermanentlyDeleteAccountClick,
   onRestoreAccount,
   onSaveAccount,
   onStartEditAccount,
@@ -1446,10 +1490,10 @@ const BattleNetSettingsSection = ({
                         size="sm"
                         type="button"
                         variant="outline"
-                        onClick={() => onDeleteAccount(account.id)}
+                        onClick={() => onDeactivateAccount(account.id)}
                       >
                         <Trash2 className="h-4 w-4" />
-                        삭제
+                        비활성화
                       </Button>
                     </>
                   )}
@@ -1476,15 +1520,27 @@ const BattleNetSettingsSection = ({
                 <p className="truncate text-sm font-bold">{getPlayerAccountLabel(account)}</p>
                 <p className="mt-1 truncate text-xs text-muted-foreground">{account.battleTag}</p>
               </div>
-              <Button
-                className="h-10 bg-transparent sm:h-9"
-                disabled={isRestoringAccount}
-                size="sm"
-                variant="outline"
-                onClick={() => onRestoreAccount(account.id)}
-              >
-                복원
-              </Button>
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end">
+                <Button
+                  className="h-10 bg-transparent sm:h-9"
+                  disabled={isRestoringAccount || isPermanentlyDeletingAccount}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onRestoreAccount(account.id)}
+                >
+                  복원
+                </Button>
+                <Button
+                  className="h-10 bg-transparent text-destructive hover:text-destructive sm:h-9"
+                  disabled={isRestoringAccount || isPermanentlyDeletingAccount}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onPermanentlyDeleteAccountClick(account.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  영구 삭제
+                </Button>
+              </div>
             </div>
           ))}
         </div>
@@ -1754,6 +1810,69 @@ const DeleteUserDialog = ({
         >
           <Trash2 className="h-4 w-4" />
           {isDeletingUser ? '탈퇴 처리 중' : '탈퇴하기'}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+);
+
+interface PermanentDeletePlayerAccountDialogProps {
+  account: PlayerAccount | null;
+  isDeleting: boolean;
+  open: boolean;
+  onDelete: () => void;
+  onOpenChange: (open: boolean) => void;
+}
+
+const PermanentDeletePlayerAccountDialog = ({
+  account,
+  isDeleting,
+  open,
+  onDelete,
+  onOpenChange,
+}: PermanentDeletePlayerAccountDialogProps) => (
+  <Dialog open={open} onOpenChange={onOpenChange}>
+    <DialogContent className="gap-0 p-0 sm:max-w-md">
+      <DialogHeader className="gap-3 border-b border-border/70 px-4 py-4 pr-14 sm:px-5 sm:py-5">
+        <DialogTitle>배틀넷 계정 영구 삭제</DialogTitle>
+        <DialogDescription>
+          비활성 계정을 목록에서 완전히 삭제합니다. 기존 경기 기록은 삭제되지 않고 계정만 미지정으로
+          바뀝니다.
+        </DialogDescription>
+      </DialogHeader>
+
+      <div className="px-4 py-4 sm:px-5">
+        <div className="rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] p-3">
+          <p className="metric-label text-destructive">삭제 대상</p>
+          <p className="mt-1 truncate text-sm font-bold">
+            {account ? getPlayerAccountLabel(account) : '선택된 계정 없음'}
+          </p>
+          {account?.battleTag ? (
+            <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+              {account.battleTag}
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      <DialogFooter className="border-t border-border/70 px-4 py-4 sm:px-5">
+        <Button
+          type="button"
+          variant="outline"
+          className="bg-transparent"
+          disabled={isDeleting}
+          onClick={() => onOpenChange(false)}
+        >
+          취소
+        </Button>
+        <Button
+          type="button"
+          variant="destructive"
+          disabled={!account || isDeleting}
+          onClick={onDelete}
+        >
+          <Trash2 className="h-4 w-4" />
+          {isDeleting ? '삭제 중' : '영구 삭제'}
         </Button>
       </DialogFooter>
     </DialogContent>

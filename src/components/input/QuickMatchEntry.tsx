@@ -2,6 +2,7 @@ import { Minus, Plus, Save, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 
 import { SkeletonBlock } from '@/components/common/DataState';
+import { MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -445,13 +446,20 @@ const QuickMatchEntry = ({
               aria-label="포지션 선택"
               className="h-9 min-w-0 bg-card text-xs font-bold"
             >
-              <SelectValue />
+              <div className="min-w-0 flex-1">
+                <MatchRoleLabel role={selectedMatchRole} />
+              </div>
             </SelectTrigger>
             <SelectContent align="end">
               {matchRoleOptions.map((role) => {
                 return (
-                  <SelectItem key={role.value} value={role.value} className="text-xs font-semibold">
-                    {role.label}
+                  <SelectItem
+                    key={role.value}
+                    value={role.value}
+                    textValue={role.label}
+                    className="text-xs font-semibold"
+                  >
+                    <MatchRoleLabel role={role.value} />
                   </SelectItem>
                 );
               })}

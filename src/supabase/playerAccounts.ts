@@ -100,11 +100,24 @@ export const updatePlayerAccount = async (input: PlayerAccountUpdateInput) => {
   return rowToPlayerAccount(data);
 };
 
-export const deletePlayerAccount = async (accountId: string) => {
+export const deactivatePlayerAccount = async (accountId: string) => {
   const user = await getCurrentUserOrThrow();
   const { error } = await supabase
     .from('player_accounts')
     .update({ is_active: false })
+    .eq('user_id', user.id)
+    .eq('id', accountId);
+
+  if (error) {
+    throw error;
+  }
+};
+
+export const permanentlyDeletePlayerAccount = async (accountId: string) => {
+  const user = await getCurrentUserOrThrow();
+  const { error } = await supabase
+    .from('player_accounts')
+    .delete()
     .eq('user_id', user.id)
     .eq('id', accountId);
 

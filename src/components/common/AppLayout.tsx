@@ -55,7 +55,7 @@ const navItems: NavItem[] = [
       { to: '/stats/order', label: '순서' },
     ],
   },
-  { to: '/master-data', label: '마스터', icon: Grid2X2 },
+  { to: '/master-data', label: '오버워치 에셋', icon: Grid2X2 },
   {
     to: '/settings/account',
     label: '설정',

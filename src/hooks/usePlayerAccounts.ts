@@ -2,8 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   createPlayerAccount,
-  deletePlayerAccount,
+  deactivatePlayerAccount,
   listPlayerAccounts,
+  permanentlyDeletePlayerAccount,
   updatePlayerAccount,
 } from '@/supabase/playerAccounts';
 import type { PlayerAccountCreateInput, PlayerAccountUpdateInput } from '@/types/playerAccount';
@@ -39,14 +40,27 @@ export const useUpdatePlayerAccount = () => {
   });
 };
 
-export const useDeletePlayerAccount = () => {
+export const useDeactivatePlayerAccount = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (accountId: string) => deletePlayerAccount(accountId),
+    mutationFn: (accountId: string) => deactivatePlayerAccount(accountId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: playerAccountsQueryKey });
       void queryClient.invalidateQueries({ queryKey: ['matches'] });
+    },
+  });
+};
+
+export const usePermanentlyDeletePlayerAccount = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (accountId: string) => permanentlyDeletePlayerAccount(accountId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: playerAccountsQueryKey });
+      void queryClient.invalidateQueries({ queryKey: ['matches'] });
+      void queryClient.invalidateQueries({ queryKey: ['user-settings'] });
     },
   });
 };

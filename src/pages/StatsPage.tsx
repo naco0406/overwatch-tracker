@@ -1,14 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import {
-  BarChart3,
-  Clock3,
-  ListOrdered,
-  MapIcon,
-  RotateCcw,
-  Shield,
-  Swords,
-  Target,
-} from 'lucide-react';
+import { BarChart3, Clock3, ListOrdered, MapIcon, RotateCcw, Swords, Target } from 'lucide-react';
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import {
@@ -30,6 +21,7 @@ import {
 import { EmptyState } from '@/components/common/EmptyState';
 import { SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
+import { MatchRoleIcon, MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -1489,8 +1481,12 @@ const PositionSummaryStrip = ({ activeRole, onRoleChange, stats }: PositionSumma
                 {item.total.toLocaleString('ko-KR')}경기 · {formatWinRate(item.winRate)}
               </p>
             </div>
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-primary">
-              <Shield className="h-4 w-4" />
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background">
+              {item.value === 'all' ? (
+                <BarChart3 className="h-4 w-4 text-primary" />
+              ) : (
+                <MatchRoleIcon role={item.value} />
+              )}
             </div>
           </div>
           <p className="mt-2 truncate text-xs font-semibold text-muted-foreground">
@@ -1604,7 +1600,7 @@ const StatsFilterPanel = ({
               active={matchRoleFilter === role.value}
               onClick={() => onMatchRoleFilterChange(role.value)}
             >
-              {role.label}
+              <MatchRoleLabel role={role.value} />
             </FilterButton>
           ))}
         </FilterGroup>
@@ -1655,7 +1651,7 @@ const FilterButton = ({ active, children, onClick }: FilterButtonProps) => (
   <button
     type="button"
     className={cn(
-      'h-10 shrink-0 rounded-md border px-3 text-xs font-bold transition-[background-color,border-color,color] sm:h-9',
+      'inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-md border px-3 text-xs font-bold transition-[background-color,border-color,color] sm:h-9',
       active
         ? 'border-primary/60 bg-primary/10 text-primary'
         : 'border-border/70 bg-transparent text-muted-foreground hover:bg-secondary/70 hover:text-foreground',

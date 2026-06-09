@@ -25,6 +25,7 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
 import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
 import { QuickMatchEntry } from '@/components/input/QuickMatchEntry';
+import { MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,7 +40,7 @@ import { toast } from '@/hooks/use-toast';
 import { useCreateMatch, useDeleteMatch, useMatches, useUpdateMatch } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useUserSettings } from '@/hooks/useUserSettings';
-import { getMapLabel, getMatchRoleLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
+import { getMapLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
 import { getMapScreenshotPath } from '@/data/masterAssets';
 import { calculateWinRate, compareMatchesByTimelineDesc, getCurrentStreak } from '@/lib/matchStats';
 import { createSessionId, groupMatchesBySession, shouldReuseSession } from '@/lib/session';
@@ -937,11 +938,13 @@ const RecentMatchRow = ({ accountLabel, match, onDelete, onEdit }: RecentMatchRo
       <p className="truncate text-sm font-semibold">
         {getMapLabel(match.mapId)} · {getModeLabel(match.modeId)}
       </p>
-      <p className="mt-1 truncate text-xs text-muted-foreground">
+      <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
         <span className="sm:hidden">
           {formatTime(match.playedAt)} · {getResultLabel(match.result)} ·{' '}
         </span>
-        {accountLabel} · {getMatchRoleLabel(match.matchRole)}
+        <span className="truncate">{accountLabel}</span>
+        <span className="shrink-0">·</span>
+        <MatchRoleLabel className="shrink-0" role={match.matchRole} />
       </p>
     </div>
     <div
@@ -995,9 +998,12 @@ const SessionTimelineItem = ({ index, match }: { index: number; match: Match }) 
     </span>
     <div className="min-w-0">
       <p className="truncate text-xs font-bold">{getMapLabel(match.mapId)}</p>
-      <p className="mt-0.5 truncate text-[10px] font-semibold opacity-75">
-        {match.teamScore}:{match.enemyScore} · {getResultLabel(match.result)} ·{' '}
-        {getMatchRoleLabel(match.matchRole)}
+      <p className="mt-0.5 flex min-w-0 items-center gap-1 text-[10px] font-semibold opacity-75">
+        <span className="truncate">
+          {match.teamScore}:{match.enemyScore} · {getResultLabel(match.result)}
+        </span>
+        <span className="shrink-0">·</span>
+        <MatchRoleLabel className="shrink-0 gap-1" role={match.matchRole} />
       </p>
     </div>
   </div>

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
+import { MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -637,7 +638,7 @@ const MatchEntryForm = ({
                           )}
                           onClick={() => field.onChange(option.value)}
                         >
-                          {option.label}
+                          <MatchRoleLabel className="justify-center" role={option.value} />
                         </button>
                       ))}
                     </div>

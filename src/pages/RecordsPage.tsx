@@ -13,6 +13,7 @@ import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
 import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
+import { MatchRoleBadge, MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -647,8 +648,8 @@ const RecordsPage = () => {
                 <SelectContent>
                   <SelectItem value="all">전체 포지션</SelectItem>
                   {matchRoleOptions.map((role) => (
-                    <SelectItem key={role.value} value={role.value}>
-                      {role.label}
+                    <SelectItem key={role.value} value={role.value} textValue={role.label}>
+                      <MatchRoleLabel role={role.value} />
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1006,8 +1007,8 @@ const BulkActionBar = ({
             <SelectContent>
               <SelectItem value="keep">포지션 유지</SelectItem>
               {matchRoleOptions.map((role) => (
-                <SelectItem key={role.value} value={role.value}>
-                  {role.label}
+                <SelectItem key={role.value} value={role.value} textValue={role.label}>
+                  <MatchRoleLabel role={role.value} />
                 </SelectItem>
               ))}
             </SelectContent>
@@ -1100,9 +1101,7 @@ const RecordTableRow = ({
       </p>
     </td>
     <td className="px-3 py-3 align-middle">
-      <Badge variant="outline" className="bg-transparent">
-        {getMatchRoleLabel(match.matchRole)}
-      </Badge>
+      <MatchRoleBadge role={match.matchRole} />
     </td>
     <td className="px-3 py-3 align-middle">
       <p className="text-sm font-bold">
@@ -1161,9 +1160,13 @@ const RecordCard = ({ account, match, onDelete, onEdit, onSelect, selected }: Re
         <p className="truncate text-sm font-bold">
           {getMapLabel(match.mapId)} · {getModeLabel(match.modeId)}
         </p>
-        <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-          {formatDate(match.playedAt)} · {formatTime(match.playedAt)} ·{' '}
-          {getPlayerAccountLabel(account)} · {getMatchRoleLabel(match.matchRole)}
+        <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+          <span className="truncate">
+            {formatDate(match.playedAt)} · {formatTime(match.playedAt)} ·{' '}
+            {getPlayerAccountLabel(account)}
+          </span>
+          <span className="shrink-0">·</span>
+          <MatchRoleLabel className="shrink-0" role={match.matchRole} />
         </p>
       </div>
 
@@ -1182,7 +1185,8 @@ const RecordCard = ({ account, match, onDelete, onEdit, onSelect, selected }: Re
         >
           {getResultLabel(match.result)}
         </span>{' '}
-        · {getOptionLabel(queueOptions, match.queueType)} · {getMatchRoleLabel(match.matchRole)}
+        · {getOptionLabel(queueOptions, match.queueType)} ·{' '}
+        <MatchRoleLabel role={match.matchRole} />
       </p>
       <div className="flex shrink-0 justify-end gap-1">
         <Button type="button" size="icon" variant="ghost" className="h-9 w-9" onClick={onEdit}>

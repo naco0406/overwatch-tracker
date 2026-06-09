@@ -69,9 +69,9 @@ const MasterDataPage = () => {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="마스터"
-        title="마스터 데이터"
-        description="상세 입력과 이미지 분석에 쓰이는 영웅, 전장, 모드 asset을 확인합니다."
+        eyebrow="오버워치"
+        title="오버워치 에셋"
+        description="상세 입력과 이미지 분석에 쓰이는 영웅, 전장, 모드 에셋을 확인합니다."
       />
 
       <section className="workspace-panel overflow-hidden">
