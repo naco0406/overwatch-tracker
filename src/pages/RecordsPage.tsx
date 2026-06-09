@@ -431,7 +431,7 @@ const RecordsPage = () => {
       <section className="border-t border-border/70">
         <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] px-3 py-3 sm:px-5">
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-center">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_180px_auto_auto]">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(220px,1fr)_minmax(230px,260px)_auto_auto]">
               <div className="relative col-span-2 sm:col-span-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -451,7 +451,7 @@ const RecordsPage = () => {
                   setRecordPage(1);
                 }}
               >
-                <SelectTrigger className="col-span-2 h-10 bg-card sm:col-span-1">
+                <SelectTrigger className="col-span-2 h-10 bg-card text-left sm:col-span-1">
                   <SelectValue placeholder="시즌" />
                 </SelectTrigger>
                 <SelectContent>
