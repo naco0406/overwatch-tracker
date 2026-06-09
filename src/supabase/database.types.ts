@@ -297,6 +297,7 @@ export interface Database {
       get_friend_stats: {
         Args: { p_friend_id: string };
         Returns: Array<{
+          heroes: Json;
           maps: Json;
           modes: Json;
           profile: Json;
@@ -319,6 +320,7 @@ export interface Database {
       list_friends: {
         Args: Record<PropertyKey, never>;
         Returns: Array<{
+          avatar_url: string | null;
           draws: number;
           friend_id: string;
           friends_since: string;

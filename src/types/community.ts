@@ -34,6 +34,7 @@ export interface FriendRequest {
 }
 
 export interface FriendSummary {
+  avatarUrl: string | null;
   draws: number;
   friendId: string;
   friendsSince: string;
@@ -45,11 +46,13 @@ export interface FriendSummary {
 }
 
 export interface FriendStatsProfile {
+  avatarUrl: string | null;
   nickname: string;
   userId: string;
 }
 
 export interface FriendStatsSummary {
+  bestHeroId: string | null;
   bestMapId: string | null;
   bestModeId: ModeId | null;
   draws: number;
@@ -78,11 +81,21 @@ export interface FriendStatsMap {
   wins: number;
 }
 
+export interface FriendStatsHero {
+  draws: number;
+  heroId: string;
+  losses: number;
+  totalMatches: number;
+  winRate: number;
+  wins: number;
+}
+
 export interface FriendRecentFormItem {
   result: MatchResult;
 }
 
 export interface FriendStats {
+  heroes: FriendStatsHero[];
   maps: FriendStatsMap[];
   modes: FriendStatsMode[];
   profile: FriendStatsProfile;

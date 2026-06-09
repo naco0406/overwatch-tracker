@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 
 import { AppLayout } from '@/components/common/AppLayout';
 import { RequireAuth } from '@/components/common/RequireAuth';
@@ -14,8 +14,8 @@ const RecordsPage = lazy(() =>
   import('@/pages/RecordsPage').then((module) => ({ default: module.RecordsPage })),
 );
 
-const CommunityPage = lazy(() =>
-  import('@/pages/CommunityPage').then((module) => ({ default: module.CommunityPage })),
+const FriendsPage = lazy(() =>
+  import('@/pages/FriendsPage').then((module) => ({ default: module.FriendsPage })),
 );
 
 const StatsPage = lazy(() =>
@@ -29,6 +29,12 @@ const LazyPage = ({ children }: { children: ReactNode }) => (
     {children}
   </Suspense>
 );
+
+const LegacyCommunityFriendRedirect = () => {
+  const { friendId } = useParams<{ friendId: string }>();
+
+  return <Navigate to={friendId ? `/friends/${friendId}` : '/friends'} replace />;
+};
 
 const AppRoutes = () => (
   <Routes>
@@ -46,19 +52,21 @@ const AppRoutes = () => (
           }
         />
         <Route path="/sessions" element={<SessionsPage />} />
+        <Route path="/community" element={<Navigate to="/friends" replace />} />
+        <Route path="/community/friends/:friendId" element={<LegacyCommunityFriendRedirect />} />
         <Route
-          path="/community"
+          path="/friends"
           element={
             <LazyPage>
-              <CommunityPage />
+              <FriendsPage />
             </LazyPage>
           }
         />
         <Route
-          path="/community/friends/:friendId"
+          path="/friends/:friendId"
           element={
             <LazyPage>
-              <CommunityPage />
+              <FriendsPage />
             </LazyPage>
           }
         />

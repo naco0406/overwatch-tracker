@@ -1070,9 +1070,9 @@ const AccountSettingsSection = ({
 
             <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
               <Button asChild variant="outline" className="min-w-0 justify-start bg-transparent">
-                <NavLink to="/community">
+                <NavLink to="/friends">
                   <UserRound className="h-4 w-4" />
-                  커뮤니티
+                  친구
                 </NavLink>
               </Button>
               <Button

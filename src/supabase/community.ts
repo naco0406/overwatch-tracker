@@ -7,6 +7,7 @@ import type {
   FriendRequestDirection,
   FriendRequestStatus,
   FriendStats,
+  FriendStatsHero,
   FriendStatsMap,
   FriendStatsMode,
   FriendStatsProfile,
@@ -35,7 +36,7 @@ const relationshipValues: ProfileRelationship[] = ['friend', 'none', 'received',
 const requestDirectionValues: FriendRequestDirection[] = ['incoming', 'outgoing'];
 const requestStatusValues: FriendRequestStatus[] = ['accepted', 'canceled', 'declined', 'pending'];
 const matchResultValues: MatchResult[] = ['draw', 'loss', 'win'];
-const modeValues: ModeId[] = ['control', 'escort', 'flashpoint', 'hybrid', 'push'];
+const modeValues: ModeId[] = ['clash', 'control', 'escort', 'flashpoint', 'hybrid', 'push'];
 
 const normalizeNickname = (nickname: string) => nickname.trim();
 
@@ -193,6 +194,7 @@ const rowToFriendRequest = (row: FriendRequestRow): FriendRequest => ({
 });
 
 const rowToFriendSummary = (row: FriendSummaryRow): FriendSummary => ({
+  avatarUrl: sanitizeAvatarUrl(row.avatar_url),
   draws: row.draws,
   friendId: row.friend_id,
   friendsSince: row.friends_since,
@@ -241,6 +243,24 @@ const parseStatsMap = (value: Json): FriendStatsMap | null => {
   };
 };
 
+const parseStatsHero = (value: Json): FriendStatsHero | null => {
+  const record = asRecord(value);
+  const heroId = asNullableString(record.heroId);
+
+  if (!heroId) {
+    return null;
+  }
+
+  return {
+    draws: asNumber(record.draws),
+    heroId,
+    losses: asNumber(record.losses),
+    totalMatches: asNumber(record.totalMatches),
+    winRate: asNumber(record.winRate),
+    wins: asNumber(record.wins),
+  };
+};
+
 const parseRecentFormItem = (value: Json): FriendRecentFormItem | null => {
   const result = asMatchResult(asRecord(value).result);
 
@@ -251,10 +271,12 @@ const rowToFriendStats = (row: FriendStatsRow): FriendStats => {
   const profileRecord = asRecord(row.profile);
   const summaryRecord = asRecord(row.summary);
   const profile: FriendStatsProfile = {
+    avatarUrl: sanitizeAvatarUrl(asNullableString(profileRecord.avatarUrl)),
     nickname: asString(profileRecord.nickname, '친구'),
     userId: asString(profileRecord.userId),
   };
   const summary: FriendStatsSummary = {
+    bestHeroId: asNullableString(summaryRecord.bestHeroId),
     bestMapId: asNullableString(summaryRecord.bestMapId),
     bestModeId: asModeId(summaryRecord.bestModeId),
     draws: asNumber(summaryRecord.draws),
@@ -265,6 +287,9 @@ const rowToFriendStats = (row: FriendStatsRow): FriendStats => {
   };
 
   return {
+    heroes: asArray(row.heroes)
+      .map(parseStatsHero)
+      .filter((hero): hero is FriendStatsHero => Boolean(hero)),
     maps: asArray(row.maps)
       .map(parseStatsMap)
       .filter((map): map is FriendStatsMap => Boolean(map)),
