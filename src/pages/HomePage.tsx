@@ -42,6 +42,7 @@ import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { getMapLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
 import { getMapScreenshotPath } from '@/data/masterAssets';
+import { activeSessionStorageKey } from '@/lib/clientSessionState';
 import { calculateWinRate, compareMatchesByTimelineDesc, getCurrentStreak } from '@/lib/matchStats';
 import { createSessionId, groupMatchesBySession, shouldReuseSession } from '@/lib/session';
 import {
@@ -56,7 +57,6 @@ const recentPreviewCount = 4;
 const sessionTimelineCount = 8;
 const recentPreviewRows = Array.from({ length: recentPreviewCount });
 const sessionTimelineSkeletonItems = Array.from({ length: sessionTimelineCount });
-const activeSessionStorageKey = 'overwatch-tracker:active-session-id';
 const sessionIdStartedAtPattern = /^session_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})_/;
 
 interface ScreenshotPreview {

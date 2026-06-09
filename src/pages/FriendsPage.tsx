@@ -94,18 +94,6 @@ const resultLongLabel: Record<MatchResult, string> = {
   win: '승리',
 };
 
-const resultTone: Record<MatchResult, string> = {
-  draw: 'bg-muted-foreground/35',
-  loss: 'bg-destructive',
-  win: 'bg-[hsl(var(--success))]',
-};
-
-const resultBadgeTone: Record<MatchResult, string> = {
-  draw: 'border-muted-foreground/25 bg-muted text-muted-foreground',
-  loss: 'border-destructive/25 bg-destructive/10 text-destructive',
-  win: 'border-border bg-card text-[hsl(var(--success))]',
-};
-
 const resultTextTone: Record<MatchResult, string> = {
   draw: 'text-muted-foreground',
   loss: 'text-destructive',
@@ -143,12 +131,6 @@ const getWinRateSort = (a: WinRateSortable, b: WinRateSortable) =>
 
 const getUsageSort = (a: HeroUsageSortable, b: HeroUsageSortable) =>
   b.totalMatches - a.totalMatches || b.winRate - a.winRate || a.heroId.localeCompare(b.heroId);
-
-const getRecordShare = (value: number, total: number) => {
-  if (total <= 0) return 0;
-
-  return Math.max(0, Math.min(100, (value / total) * 100));
-};
 
 const getCurrentStreak = (items: FriendRecentFormItem[]) => {
   const latestResult = items[0]?.result;
@@ -1048,28 +1030,30 @@ const FriendDetailView = ({
 
   return (
     <div className="page-stack">
-      <FriendProfilePanel
-        friend={friend}
-        isLoading={isStatsLoading}
-        stats={stats}
-        onRemoveFriend={onRemoveFriend}
-      />
-
       {isStatsLoading || !stats ? (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-          <SkeletonBlock className="h-72" />
-          <SkeletonBlock className="h-80" />
-          <SkeletonBlock className="h-80" />
+        <div className="grid gap-4">
+          <SkeletonBlock className="h-[360px]" />
+          <SkeletonBlock className="h-[420px]" />
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+            <SkeletonBlock className="h-96" />
+            <SkeletonBlock className="h-96" />
+          </div>
         </div>
       ) : (
         <>
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <HeroPerformancePanel heroes={stats.heroes} summary={stats.summary} />
-            <RecentFormPanel recentForm={stats.recentForm} />
-          </div>
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+          <FriendProfilePanel friend={friend} stats={stats} onRemoveFriend={onRemoveFriend} />
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start">
             <ModePerformancePanel modes={stats.modes} />
             <MapStrengthList maps={stats.maps} />
+          </div>
+          <div
+            className={cn(
+              'grid gap-4 xl:items-start',
+              stats.recentForm.length > 0 && 'xl:grid-cols-[minmax(0,1fr)_420px]',
+            )}
+          >
+            <HeroPerformancePanel heroes={stats.heroes} />
+            {stats.recentForm.length > 0 && <RecentFormPanel recentForm={stats.recentForm} />}
           </div>
         </>
       )}
@@ -1079,32 +1063,40 @@ const FriendDetailView = ({
 
 interface FriendProfilePanelProps {
   friend: FriendSummary;
-  isLoading: boolean;
   onRemoveFriend: (friend: FriendSummary) => void;
-  stats?: FriendStats;
+  stats: FriendStats;
 }
 
-const FriendProfilePanel = ({
-  friend,
-  isLoading,
-  onRemoveFriend,
-  stats,
-}: FriendProfilePanelProps) => {
-  const avatarUrl = stats?.profile.avatarUrl ?? friend.avatarUrl;
-  const bestHeroLabel = stats?.summary.bestHeroId
-    ? getHeroLabel(stats.summary.bestHeroId)
-    : stats
-      ? '-'
-      : '분석 중';
+const FriendProfilePanel = ({ friend, onRemoveFriend, stats }: FriendProfilePanelProps) => {
+  const avatarUrl = stats.profile.avatarUrl ?? friend.avatarUrl;
+  const bestModeLabel = stats.summary.bestModeId ? getModeLabel(stats.summary.bestModeId) : '-';
+  const bestMapLabel = stats.summary.bestMapId ? getMapLabel(stats.summary.bestMapId) : '-';
 
   return (
-    <section className="workspace-panel overflow-hidden shadow-sm">
-      <div className="grid border-b border-border/70 bg-[hsl(var(--surface-2))] lg:grid-cols-[minmax(0,1fr)_190px]">
-        <div className="section-pad grid gap-5 lg:border-r lg:border-border/70">
-          <div className="grid gap-4 sm:grid-cols-[88px_minmax(0,1fr)]">
+    <section className="workspace-panel overflow-hidden">
+      <div className="flex flex-col gap-2 border-b border-border/70 bg-[hsl(var(--surface-2))] px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <Button asChild className="w-full bg-card sm:w-auto" variant="outline">
+          <NavLink to="/friends">
+            <ArrowLeft className="h-4 w-4" />
+            목록
+          </NavLink>
+        </Button>
+        <Button
+          className="w-full bg-card text-destructive hover:text-destructive sm:w-auto"
+          variant="outline"
+          onClick={() => onRemoveFriend(friend)}
+        >
+          <UserMinus className="h-4 w-4" />
+          삭제
+        </Button>
+      </div>
+
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_420px]">
+        <div className="section-pad">
+          <div className="grid gap-5 sm:grid-cols-[96px_minmax(0,1fr)] sm:items-center">
             <FriendAvatar
               avatarUrl={avatarUrl}
-              className="h-20 w-20 rounded-lg text-2xl"
+              className="h-20 w-20 rounded-lg text-2xl sm:h-24 sm:w-24 sm:text-3xl"
               nickname={friend.nickname}
             />
             <div className="min-w-0">
@@ -1115,195 +1107,123 @@ const FriendProfilePanel = ({
                   친구 공개
                 </span>
               </div>
-              <h1 className="mt-2 truncate text-3xl font-black tracking-normal sm:text-4xl">
+              <h1 className="mt-3 truncate text-4xl font-black tracking-normal sm:text-5xl">
                 {friend.nickname}
               </h1>
-              <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                <ProfileMetaPill label="친구 등록일" value={formatFullDate(friend.friendsSince)} />
-                <ProfileMetaPill label="공개 범위" value="공유 통계" />
-                <ProfileMetaPill label="대표 영웅" value={bestHeroLabel} />
+              <div className="mt-4 flex flex-wrap gap-2">
+                <ProfileInfoChip label="친구 등록일" value={formatFullDate(friend.friendsSince)} />
+                <ProfileInfoChip label="공개 범위" value="공유 통계" />
               </div>
             </div>
           </div>
         </div>
 
-        <div className="section-pad flex gap-2 lg:flex-col lg:justify-between">
-          <div className="hidden lg:block">
-            <p className="metric-label">관리</p>
-            <p className="mt-1 text-xs font-semibold leading-relaxed text-muted-foreground">
-              친구 목록과 공개 통계만 관리합니다.
-            </p>
-          </div>
-          <div className="grid flex-1 grid-cols-2 gap-2 lg:flex-none lg:grid-cols-1">
-            <Button asChild className="bg-card" variant="outline">
-              <NavLink to="/friends">
-                <ArrowLeft className="h-4 w-4" />
-                목록
-              </NavLink>
-            </Button>
-            <Button
-              className="bg-card text-destructive hover:text-destructive"
-              variant="outline"
-              onClick={() => onRemoveFriend(friend)}
-            >
-              <UserMinus className="h-4 w-4" />
-              삭제
-            </Button>
-          </div>
-        </div>
-      </div>
+        <aside className="section-pad border-t border-border/70 bg-[hsl(var(--surface-2))] lg:border-l lg:border-t-0">
+          <div className="grid gap-4">
+            <div>
+              <p className="metric-label">통계 요약</p>
+              <h2 className="mt-1 text-base font-black">모드와 전장 기준</h2>
+            </div>
 
-      <div className="grid gap-3 bg-card p-3.5 sm:grid-cols-2 sm:p-4 xl:grid-cols-4">
-        <ProfileMetricCard
-          label="승률"
-          loading={isLoading || !stats}
-          primary
-          value={stats ? formatPercent(stats.summary.winRate) : null}
-        />
-        <ProfileMetricCard
-          label="경기"
-          loading={isLoading || !stats}
-          value={stats ? formatCount(stats.summary.totalMatches) : null}
-        />
-        <ProfileMetricCard
-          label="주력 영웅"
-          loading={isLoading || !stats}
-          value={stats ? bestHeroLabel : null}
-        />
-        <ProfileMetricCard
-          label="전적"
-          loading={isLoading || !stats}
-          value={
-            stats
-              ? getRecordSummary(stats.summary.wins, stats.summary.losses, stats.summary.draws)
-              : null
-          }
-        />
+            <div className="grid gap-3">
+              <div className="grid grid-cols-2 gap-2">
+                <SummaryMetric label="승률" primary value={formatPercent(stats.summary.winRate)} />
+                <SummaryMetric label="경기" value={formatCount(stats.summary.totalMatches)} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <SummaryMetric label="강점 모드" value={bestModeLabel} />
+                <SummaryMetric label="강점 전장" value={bestMapLabel} />
+              </div>
+              <SummaryRecordBlock
+                draws={stats.summary.draws}
+                losses={stats.summary.losses}
+                wins={stats.summary.wins}
+              />
+            </div>
+          </div>
+        </aside>
       </div>
     </section>
   );
 };
 
-const ProfileMetaPill = ({ label, value }: { label: string; value: string }) => (
-  <div className="min-w-0 rounded-lg border border-border/70 bg-card px-3 py-2.5">
-    <p className="metric-label">{label}</p>
-    <p className="mt-1 truncate text-xs font-black text-foreground">{value}</p>
-  </div>
+const ProfileInfoChip = ({ label, value }: { label: string; value: string }) => (
+  <span className="inline-flex h-8 max-w-full items-center gap-2 rounded-md border border-border/70 bg-card px-2.5 text-xs font-black">
+    <span className="shrink-0 text-muted-foreground">{label}</span>
+    <span className="min-w-0 truncate">{value}</span>
+  </span>
 );
 
-interface ProfileMetricCardProps {
+interface SummaryMetricProps {
   label: string;
-  loading: boolean;
   primary?: boolean;
-  value: string | null;
+  value: string;
 }
 
-const ProfileMetricCard = ({ label, loading, primary = false, value }: ProfileMetricCardProps) => (
-  <div className="min-w-0 rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] px-3.5 py-3">
-    <p className="metric-label">{label}</p>
-    {loading || value === null ? (
-      <SkeletonBlock className="mt-3 h-7 w-24" />
-    ) : (
-      <p
-        className={cn(
-          'mt-2 text-2xl font-black leading-tight tracking-normal [overflow-wrap:anywhere]',
-          primary && 'text-primary',
-        )}
-      >
-        {value}
-      </p>
+const SummaryMetric = ({ label, primary = false, value }: SummaryMetricProps) => (
+  <div
+    className={cn(
+      'min-w-0 rounded-lg border border-border/70 bg-card px-3 py-3',
+      primary && 'border-primary/25 bg-primary/5',
     )}
+  >
+    <p className="metric-label">{label}</p>
+    <p
+      className={cn(
+        'mt-1.5 truncate text-xl font-black leading-tight tracking-normal',
+        primary && 'text-primary',
+      )}
+    >
+      {value}
+    </p>
   </div>
 );
 
-const HeroPerformancePanel = ({
-  heroes,
-  summary,
+const SummaryRecordBlock = ({
+  draws,
+  losses,
+  wins,
 }: {
-  heroes: FriendStatsHero[];
-  summary: FriendStats['summary'];
-}) => {
-  const topHeroes = [...heroes].sort(getUsageSort).slice(0, 6);
-  const bestHero = summary.bestHeroId
-    ? heroes.find((hero) => hero.heroId === summary.bestHeroId)
-    : null;
-  const featuredHero = bestHero ?? topHeroes[0];
+  draws: number;
+  losses: number;
+  wins: number;
+}) => (
+  <div className="rounded-lg border border-border/70 bg-card px-3 py-3">
+    <p className="metric-label">전적</p>
+    <p className="mt-1.5 text-sm font-black leading-tight [overflow-wrap:anywhere]">
+      {getRecordSummary(wins, losses, draws)}
+    </p>
+  </div>
+);
+
+const HeroPerformancePanel = ({ heroes }: { heroes: FriendStatsHero[] }) => {
+  const topHeroes = [...heroes].sort(getUsageSort).slice(0, 8);
 
   return (
     <section className="workspace-panel overflow-hidden">
       <div className="section-header flex items-center justify-between gap-3">
         <div>
-          <p className="metric-label">영웅</p>
-          <h2 className="mt-1 text-base font-bold">영웅 성향</h2>
+          <p className="metric-label">보조 통계</p>
+          <h2 className="mt-1 text-base font-bold">기록된 영웅</h2>
         </div>
         <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border/70 bg-card text-primary">
           <Trophy className="h-4 w-4" />
         </div>
       </div>
-      <div className="section-pad">
-        {featuredHero ? (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-            <FeaturedHeroCard hero={featuredHero} />
-            <div className="overflow-hidden rounded-lg border border-border/70 bg-card">
-              <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] px-3.5 py-3">
-                <p className="metric-label">플레이 상위</p>
-                <p className="mt-1 text-sm font-black">최근 기록 기준 랭킹</p>
-              </div>
-              {topHeroes.map((hero, index) => (
-                <HeroCompactRow hero={hero} index={index} key={hero.heroId} />
-              ))}
-            </div>
-          </div>
+      <div className="divide-y divide-border/70">
+        {topHeroes.length > 0 ? (
+          topHeroes.map((hero, index) => (
+            <HeroCompactRow hero={hero} index={index} key={hero.heroId} />
+          ))
         ) : (
-          <EmptyState
-            className="min-h-[220px]"
-            icon={UserRound}
-            title="공개된 영웅 기록이 없습니다."
-            description="친구가 매치에 사용 영웅을 기록하면 이곳에 주력 영웅이 표시됩니다."
-          />
+          <div className="flex min-h-[220px] items-center justify-center px-4 text-sm font-semibold text-muted-foreground">
+            공개된 영웅 기록이 없습니다.
+          </div>
         )}
       </div>
     </section>
   );
 };
-
-const FeaturedHeroCard = ({ hero }: { hero: FriendStatsHero }) => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card">
-    <div className="grid lg:grid-cols-[240px_minmax(0,1fr)]">
-      <div className="relative aspect-[16/10] bg-[hsl(var(--surface-2))] lg:aspect-auto lg:min-h-[282px]">
-        <img
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover object-top"
-          src={getHeroPortraitPath(hero.heroId)}
-        />
-      </div>
-      <div className="grid min-w-0 content-between gap-5 p-4 sm:p-5">
-        <div className="min-w-0">
-          <p className="metric-label">대표 영웅</p>
-          <div className="mt-2 flex min-w-0 flex-wrap items-end gap-x-3 gap-y-1">
-            <h3 className="truncate text-3xl font-black tracking-normal">
-              {getHeroLabel(hero.heroId)}
-            </h3>
-            <p className="pb-1 text-xs font-black text-muted-foreground">
-              {getHeroRoleLabel(hero.heroId)}
-            </p>
-          </div>
-          <p className="mt-3 text-sm font-semibold leading-relaxed text-muted-foreground">
-            사용량과 승률을 함께 기준으로 본 친구의 핵심 영웅입니다.
-          </p>
-        </div>
-
-        <div className="grid gap-3">
-          <div className="grid grid-cols-2 gap-2">
-            <MiniStat label="승률" primary value={formatPercent(hero.winRate)} />
-            <MiniStat label="경기" value={formatCount(hero.totalMatches)} />
-          </div>
-          <RecordComposition wins={hero.wins} losses={hero.losses} draws={hero.draws} />
-        </div>
-      </div>
-    </div>
-  </div>
-);
 
 const HeroCompactRow = ({ hero, index }: { hero: FriendStatsHero; index: number }) => (
   <div className="grid min-h-[64px] grid-cols-[28px_44px_minmax(0,1fr)_72px] items-center gap-3 border-b border-border/70 px-3 transition-colors last:border-b-0 hover:bg-[hsl(var(--surface-2))]">
@@ -1331,45 +1251,6 @@ const HeroCompactRow = ({ hero, index }: { hero: FriendStatsHero; index: number 
   </div>
 );
 
-const RecordComposition = ({
-  draws,
-  losses,
-  wins,
-}: {
-  draws: number;
-  losses: number;
-  wins: number;
-}) => {
-  const total = wins + losses + draws;
-
-  return (
-    <div className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3">
-      <div className="flex h-2 overflow-hidden rounded-full bg-secondary">
-        {wins > 0 && (
-          <span
-            className="bg-[hsl(var(--success))]"
-            style={{ width: `${getRecordShare(wins, total)}%` }}
-          />
-        )}
-        {losses > 0 && (
-          <span className="bg-destructive" style={{ width: `${getRecordShare(losses, total)}%` }} />
-        )}
-        {draws > 0 && (
-          <span
-            className="bg-muted-foreground/40"
-            style={{ width: `${getRecordShare(draws, total)}%` }}
-          />
-        )}
-      </div>
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        <MiniStat label="승" value={formatCount(wins)} />
-        <MiniStat label="패" value={formatCount(losses)} />
-        <MiniStat label="무" value={formatCount(draws)} />
-      </div>
-    </div>
-  );
-};
-
 interface MiniStatProps {
   label: string;
   primary?: boolean;
@@ -1379,7 +1260,12 @@ interface MiniStatProps {
 const MiniStat = ({ label, primary = false, value }: MiniStatProps) => (
   <div className="min-w-0 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-2.5 py-2">
     <p className="metric-label">{label}</p>
-    <p className={cn('mt-1 truncate text-base font-black tabular-nums', primary && 'text-primary')}>
+    <p
+      className={cn(
+        'mt-1 text-base font-black leading-tight tabular-nums [overflow-wrap:anywhere]',
+        primary && 'text-primary',
+      )}
+    >
       {value}
     </p>
   </div>
@@ -1387,11 +1273,8 @@ const MiniStat = ({ label, primary = false, value }: MiniStatProps) => (
 
 const RecentFormPanel = ({ recentForm }: { recentForm: FriendRecentFormItem[] }) => {
   const wins = recentForm.filter((item) => item.result === 'win').length;
-  const losses = recentForm.filter((item) => item.result === 'loss').length;
-  const draws = recentForm.filter((item) => item.result === 'draw').length;
   const recentWinRate =
     recentForm.length > 0 ? formatPercent((wins / recentForm.length) * 100) : '-';
-  const latestMatch = recentForm[0];
   const currentStreak = getCurrentStreak(recentForm);
 
   return (
@@ -1399,183 +1282,52 @@ const RecentFormPanel = ({ recentForm }: { recentForm: FriendRecentFormItem[] })
       <div className="section-header flex items-center justify-between gap-3">
         <div>
           <p className="metric-label">최근 흐름</p>
-          <h2 className="mt-1 text-base font-bold">최근 {formatCount(recentForm.length)}경기</h2>
+          <h2 className="mt-1 text-base font-bold">보조 지표</h2>
         </div>
-        <div className="text-right">
-          <p className="metric-label">승률</p>
-          <p className="mt-1 text-sm font-black text-primary">{recentWinRate}</p>
-        </div>
+        <p className="text-sm font-black text-primary">{recentWinRate}</p>
       </div>
       <div className="section-pad">
-        {latestMatch ? (
-          <div className="grid gap-4">
-            <RecentLatestMatch match={latestMatch} streakLabel={currentStreak?.label ?? '-'} />
-            <RecentTimeline items={recentForm} />
-            <div className="rounded-lg border border-border/70 bg-card p-3">
-              <div className="flex h-2.5 overflow-hidden rounded-full bg-secondary">
-                {wins > 0 && (
-                  <span
-                    className="bg-[hsl(var(--success))]"
-                    style={{ width: `${getRecordShare(wins, recentForm.length)}%` }}
-                  />
-                )}
-                {losses > 0 && (
-                  <span
-                    className="bg-destructive"
-                    style={{ width: `${getRecordShare(losses, recentForm.length)}%` }}
-                  />
-                )}
-                {draws > 0 && (
-                  <span
-                    className="bg-muted-foreground/40"
-                    style={{ width: `${getRecordShare(draws, recentForm.length)}%` }}
-                  />
-                )}
+        {recentForm.length > 0 ? (
+          <div className="grid gap-3">
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border/70 bg-card px-3 py-2.5">
+              <div className="min-w-0">
+                <p className="metric-label">현재 흐름</p>
+                <p className="mt-1 truncate text-sm font-black">{currentStreak?.label ?? '-'}</p>
               </div>
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                <RecentResultStat label="승" total={recentForm.length} value={wins} />
-                <RecentResultStat label="패" total={recentForm.length} value={losses} />
-                <RecentResultStat label="무" total={recentForm.length} value={draws} />
+              <div className="text-right">
+                <p className="metric-label">최근 {formatCount(recentForm.length)}경기</p>
+                <p className="mt-1 text-sm font-black text-primary">{recentWinRate}</p>
               </div>
+            </div>
+            <div className="grid grid-cols-12 gap-1.5">
+              {recentForm.map((item, index) => (
+                <span
+                  className={cn(
+                    'h-8 rounded-sm border border-border/70 bg-card text-center text-[11px] font-black leading-8',
+                    resultTextTone[item.result],
+                  )}
+                  key={`${item.result}-${item.playedAt ?? index}-${index}`}
+                  title={`${formatRecentDate(item.playedAt)} · ${resultLongLabel[item.result]}`}
+                >
+                  {resultLabel[item.result]}
+                </span>
+              ))}
             </div>
           </div>
         ) : (
-          <InlineEmptyState title="공개된 최근 경기 흐름이 없습니다." />
+          <InlineEmptyState title="공개된 최근 흐름이 없습니다." />
         )}
       </div>
     </section>
   );
 };
 
-const RecentLatestMatch = ({
-  match,
-  streakLabel,
-}: {
-  match: FriendRecentFormItem;
-  streakLabel: string;
-}) => {
-  const primaryHeroIds = match.heroIds.slice(0, 2);
-  const extraHeroCount = Math.max(0, match.heroIds.length - primaryHeroIds.length);
-
-  return (
-    <div className="overflow-hidden rounded-lg border border-border/70 bg-card">
-      <div className="grid grid-cols-[88px_minmax(0,1fr)]">
-        <div
-          className={cn(
-            'grid content-center justify-items-center gap-1 border-r border-border/70 bg-[hsl(var(--surface-2))] px-3 py-4 text-center',
-            resultBadgeTone[match.result],
-          )}
-        >
-          <p className="metric-label">최신</p>
-          <p className="text-3xl font-black leading-none tracking-normal">
-            {resultLabel[match.result]}
-          </p>
-          <p className="text-[11px] font-black">{resultLongLabel[match.result]}</p>
-        </div>
-
-        <div className="min-w-0 p-3.5">
-          <div className="flex min-w-0 items-center justify-between gap-3">
-            <p className="metric-label">{formatRecentDate(match.playedAt)}</p>
-            <span className="shrink-0 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-2 py-1 text-[11px] font-black text-muted-foreground">
-              {streakLabel}
-            </span>
-          </div>
-          <h3 className="mt-2 truncate text-base font-black">
-            {match.modeId ? getModeLabel(match.modeId) : '모드 미기록'}
-          </h3>
-          <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-            {match.mapId ? getMapLabel(match.mapId) : '전장 미기록'}
-          </p>
-
-          <div className="mt-3 flex min-w-0 flex-wrap gap-1.5">
-            {primaryHeroIds.length > 0 ? (
-              <>
-                {primaryHeroIds.map((heroId) => (
-                  <span
-                    className="inline-flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-1.5 pr-2 text-xs font-black"
-                    key={heroId}
-                  >
-                    <img
-                      alt=""
-                      className="h-5 w-5 rounded-sm object-cover object-top"
-                      src={getHeroPortraitPath(heroId)}
-                    />
-                    <span className="truncate">{getHeroLabel(heroId)}</span>
-                  </span>
-                ))}
-                {extraHeroCount > 0 && (
-                  <span className="inline-flex h-8 items-center rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-2 text-xs font-black text-muted-foreground">
-                    +{formatCount(extraHeroCount)}
-                  </span>
-                )}
-              </>
-            ) : (
-              <span className="inline-flex h-8 items-center rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-2 text-xs font-black text-muted-foreground">
-                영웅 미기록
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const RecentTimeline = ({ items }: { items: FriendRecentFormItem[] }) => (
-  <div className="grid gap-2">
-    <div className="flex items-center justify-between gap-2">
-      <p className="metric-label">타임라인</p>
-      <p className="text-[11px] font-bold text-muted-foreground">최신순</p>
-    </div>
-    <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 xl:grid-cols-4 2xl:grid-cols-6">
-      {items.map((item, index) => (
-        <div
-          className="relative min-h-[76px] overflow-hidden rounded-md border border-border/70 bg-card px-2 py-2.5 text-center"
-          key={`${item.result}-${item.playedAt ?? index}-${index}`}
-          title={`${resultLongLabel[item.result]} · ${item.modeId ? getModeLabel(item.modeId) : '모드 미기록'} · ${
-            item.mapId ? getMapLabel(item.mapId) : '전장 미기록'
-          }`}
-        >
-          <span
-            className={cn('absolute inset-x-2 top-0 h-1 rounded-b-full', resultTone[item.result])}
-          />
-          <p className="text-[10px] font-black text-muted-foreground">
-            {index === 0 ? '최신' : formatRecentDate(item.playedAt)}
-          </p>
-          <p className={cn('mt-1 text-xl font-black leading-none', resultTextTone[item.result])}>
-            {resultLabel[item.result]}
-          </p>
-          <p className="mt-1.5 truncate text-[10px] font-bold text-muted-foreground">
-            {item.modeId ? getModeLabel(item.modeId) : '모드 미기록'}
-          </p>
-        </div>
-      ))}
-    </div>
-  </div>
-);
-
-const RecentResultStat = ({
-  label,
-  total,
-  value,
-}: {
-  label: string;
-  total: number;
-  value: number;
-}) => (
-  <div className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-3 py-2">
-    <p className="metric-label">{label}</p>
-    <p className="mt-1 text-base font-black tabular-nums">{formatCount(value)}</p>
-    <p className="mt-0.5 text-[11px] font-bold text-muted-foreground">
-      {formatPercent(getRecordShare(value, total))}
-    </p>
-  </div>
-);
-
 const ModePerformancePanel = ({ modes }: { modes: FriendStatsMode[] }) => {
   const sortedModes = [...modes].sort(
     (a, b) => getWinRateSort(a, b) || a.modeId.localeCompare(b.modeId),
   );
+  const topModes = sortedModes.slice(0, 5);
+  const featuredMode = sortedModes[0];
 
   return (
     <section className="workspace-panel overflow-hidden">
@@ -1586,16 +1338,21 @@ const ModePerformancePanel = ({ modes }: { modes: FriendStatsMode[] }) => {
         </div>
         <div className="flex items-center gap-2">
           <span className="rounded-md border border-border/70 bg-card px-2 py-1 text-xs font-black text-muted-foreground">
-            승률순
+            상위 5
           </span>
           <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border/70 bg-card text-primary">
             <Swords className="h-4 w-4" />
           </div>
         </div>
       </div>
+      {featuredMode && (
+        <div className="section-pad border-b border-border/70">
+          <ModeSpotlight mode={featuredMode} />
+        </div>
+      )}
       <div className="divide-y divide-border/70">
-        {sortedModes.length > 0 ? (
-          sortedModes.map((mode, index) => (
+        {topModes.length > 0 ? (
+          topModes.map((mode, index) => (
             <PerformanceRow
               index={index}
               key={mode.modeId}
@@ -1614,6 +1371,24 @@ const ModePerformancePanel = ({ modes }: { modes: FriendStatsMode[] }) => {
     </section>
   );
 };
+
+const ModeSpotlight = ({ mode }: { mode: FriendStatsMode }) => (
+  <div className="grid min-h-[156px] gap-4 rounded-lg border border-border/70 bg-card p-4 sm:grid-cols-[minmax(0,1fr)_180px]">
+    <div className="min-w-0">
+      <p className="metric-label">최고 승률 모드</p>
+      <h3 className="mt-2 truncate text-3xl font-black tracking-normal">
+        {getModeLabel(mode.modeId)}
+      </h3>
+      <p className="mt-2 truncate text-sm font-semibold text-muted-foreground">
+        {formatCount(mode.totalMatches)}전 · {getRecordSummary(mode.wins, mode.losses, mode.draws)}
+      </p>
+    </div>
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-1">
+      <MiniStat label="승률" primary value={formatPercent(mode.winRate)} />
+      <MiniStat label="경기" value={formatCount(mode.totalMatches)} />
+    </div>
+  </div>
+);
 
 interface PerformanceRowProps {
   index: number;
@@ -1647,27 +1422,36 @@ const PerformanceRow = ({ index, name, record, totalMatches, winRate }: Performa
   </div>
 );
 
-const MapStrengthList = ({ maps }: { maps: FriendStatsMap[] }) => (
-  <section className="workspace-panel overflow-hidden">
-    <div className="section-header flex items-center justify-between gap-3">
-      <div>
-        <p className="metric-label">전장</p>
-        <h2 className="mt-1 text-base font-bold">강점 전장</h2>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="rounded-md border border-border/70 bg-card px-2 py-1 text-xs font-black text-muted-foreground">
-          상위 8
-        </span>
-        <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border/70 bg-card text-primary">
-          <MapIcon className="h-4 w-4" />
+const MapStrengthList = ({ maps }: { maps: FriendStatsMap[] }) => {
+  const sortedMaps = [...maps]
+    .sort((a, b) => getWinRateSort(a, b) || a.mapId.localeCompare(b.mapId))
+    .slice(0, 5);
+  const featuredMap = sortedMaps[0];
+
+  return (
+    <section className="workspace-panel overflow-hidden">
+      <div className="section-header flex items-center justify-between gap-3">
+        <div>
+          <p className="metric-label">전장</p>
+          <h2 className="mt-1 text-base font-bold">전장별 성과</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="rounded-md border border-border/70 bg-card px-2 py-1 text-xs font-black text-muted-foreground">
+            상위 5
+          </span>
+          <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border/70 bg-card text-primary">
+            <MapIcon className="h-4 w-4" />
+          </div>
         </div>
       </div>
-    </div>
-    <div className="divide-y divide-border/70">
-      {maps.length > 0 ? (
-        maps
-          .slice(0, 8)
-          .map((map, index) => (
+      {featuredMap && (
+        <div className="section-pad border-b border-border/70">
+          <MapSpotlight map={featuredMap} />
+        </div>
+      )}
+      <div className="divide-y divide-border/70">
+        {sortedMaps.length > 0 ? (
+          sortedMaps.map((map, index) => (
             <PerformanceRow
               index={index}
               key={map.mapId}
@@ -1677,13 +1461,32 @@ const MapStrengthList = ({ maps }: { maps: FriendStatsMap[] }) => (
               winRate={map.winRate}
             />
           ))
-      ) : (
-        <div className="flex min-h-[260px] items-center justify-center px-4 text-sm font-semibold text-muted-foreground">
-          공개된 전장 통계가 없습니다.
-        </div>
-      )}
+        ) : (
+          <div className="flex min-h-[260px] items-center justify-center px-4 text-sm font-semibold text-muted-foreground">
+            공개된 전장 통계가 없습니다.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+};
+
+const MapSpotlight = ({ map }: { map: FriendStatsMap }) => (
+  <div className="grid min-h-[156px] gap-4 rounded-lg border border-border/70 bg-card p-4 sm:grid-cols-[minmax(0,1fr)_180px]">
+    <div className="min-w-0">
+      <p className="metric-label">최고 승률 전장</p>
+      <h3 className="mt-2 truncate text-3xl font-black tracking-normal">
+        {getMapLabel(map.mapId)}
+      </h3>
+      <p className="mt-2 truncate text-sm font-semibold text-muted-foreground">
+        {getModeLabel(map.modeId)} · {getRecordSummary(map.wins, map.losses, map.draws)}
+      </p>
     </div>
-  </section>
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-1">
+      <MiniStat label="승률" primary value={formatPercent(map.winRate)} />
+      <MiniStat label="경기" value={formatCount(map.totalMatches)} />
+    </div>
+  </div>
 );
 
 interface FriendAvatarProps {

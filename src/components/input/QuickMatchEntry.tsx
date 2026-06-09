@@ -22,6 +22,7 @@ import {
   resultOptions,
 } from '@/data/matchOptions';
 import { getMapScreenshotPath } from '@/data/masterAssets';
+import { quickMatchEntryPreferenceStorageKey } from '@/lib/clientSessionState';
 import { cn } from '@/lib/utils';
 import type {
   Match,
@@ -37,8 +38,6 @@ import type { UserSettings } from '@/types/userSettings';
 
 type ModeFilter = ModeId | 'all';
 type ResultValue = MatchResult | '';
-
-const preferenceStorageKey = 'overwatch-tracker:quick-match-entry-preferences';
 
 interface QuickMatchEntryProps {
   accounts?: PlayerAccount[];
@@ -116,7 +115,7 @@ const readQuickMatchEntryPreferences = (): QuickMatchEntryPreferences => {
   }
 
   try {
-    const raw = window.sessionStorage.getItem(preferenceStorageKey);
+    const raw = window.sessionStorage.getItem(quickMatchEntryPreferenceStorageKey);
     if (!raw) return {};
 
     const parsed = JSON.parse(raw) as QuickMatchEntryPreferences;
@@ -139,7 +138,7 @@ const writeQuickMatchEntryPreferences = (preferences: QuickMatchEntryPreferences
   try {
     const current = readQuickMatchEntryPreferences();
     window.sessionStorage.setItem(
-      preferenceStorageKey,
+      quickMatchEntryPreferenceStorageKey,
       JSON.stringify({
         ...current,
         ...preferences,

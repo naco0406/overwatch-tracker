@@ -1,7 +1,17 @@
+import { useQueryClient } from '@tanstack/react-query';
 import type { Session, User } from '@supabase/supabase-js';
 import type { ReactNode } from 'react';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
+import { clearUserScopedClientState } from '@/lib/clientSessionState';
 import {
   deleteCurrentUser,
   getSession,
@@ -31,8 +41,35 @@ interface AuthProviderProps {
 }
 
 const AuthProvider = ({ children }: AuthProviderProps) => {
+  const queryClient = useQueryClient();
   const [isLoading, setIsLoading] = useState(true);
   const [session, setSession] = useState<Session | null>(null);
+  const userIdRef = useRef<string | null>(null);
+
+  const clearClientSessionState = useCallback(() => {
+    clearUserScopedClientState();
+    void queryClient.cancelQueries();
+    queryClient.clear();
+  }, [queryClient]);
+
+  const applySession = useCallback(
+    (nextSession: Session | null) => {
+      const previousUserId = userIdRef.current;
+      const nextUserId = nextSession?.user.id ?? null;
+      const didSignOut = previousUserId !== null && nextUserId === null;
+      const didSwitchUser =
+        previousUserId !== null && nextUserId !== null && previousUserId !== nextUserId;
+
+      if (didSignOut || didSwitchUser) {
+        clearClientSessionState();
+      }
+
+      userIdRef.current = nextUserId;
+      setSession(nextSession);
+      setIsLoading(false);
+    },
+    [clearClientSessionState],
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -47,20 +84,13 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
         return;
       }
 
-      if (error) {
-        setSession(null);
-      } else {
-        setSession(currentSession);
-      }
-
-      setIsLoading(false);
+      applySession(error ? null : currentSession);
     };
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-      setIsLoading(false);
+      applySession(nextSession);
     });
 
     void loadSession();
@@ -69,7 +99,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [applySession]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const { error } = await signInWithPassword({ email, password });
@@ -85,7 +115,11 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
     if (error) {
       throw error;
     }
-  }, []);
+
+    clearClientSessionState();
+    userIdRef.current = null;
+    setSession(null);
+  }, [clearClientSessionState]);
 
   const signUp = useCallback(async (email: string, password: string) => {
     const { error } = await signUpWithPassword({ email, password });
@@ -115,7 +149,11 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
     if (signOutError) {
       throw signOutError;
     }
-  }, []);
+
+    clearClientSessionState();
+    userIdRef.current = null;
+    setSession(null);
+  }, [clearClientSessionState]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -131,7 +169,11 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
     [deleteAccount, isLoading, session, signIn, signOut, signUp, updatePassword],
   );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider key={session?.user.id ?? 'signed-out'} value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
 };
 
 const useAuth = () => {
