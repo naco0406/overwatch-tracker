@@ -176,6 +176,7 @@ const rowToProfile = (row: UserProfileRow): UserProfile => ({
 });
 
 const rowToSearchResult = (row: ProfileSearchRow): ProfileSearchResult => ({
+  avatarUrl: sanitizeAvatarUrl(row.avatar_url),
   createdAt: row.created_at,
   nickname: row.nickname,
   relationship: asRelationship(row.relationship),

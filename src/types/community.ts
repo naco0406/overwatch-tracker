@@ -13,6 +13,7 @@ export interface UserProfile {
 export type ProfileRelationship = 'friend' | 'none' | 'received' | 'sent';
 
 export interface ProfileSearchResult {
+  avatarUrl: string | null;
   createdAt: string;
   nickname: string;
   relationship: ProfileRelationship;

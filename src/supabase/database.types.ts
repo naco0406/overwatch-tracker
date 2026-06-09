@@ -338,6 +338,7 @@ export interface Database {
       search_user_profiles: {
         Args: { p_limit?: number; p_query: string };
         Returns: Array<{
+          avatar_url: string | null;
           created_at: string;
           nickname: string;
           relationship: string;

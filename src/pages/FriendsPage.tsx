@@ -209,9 +209,7 @@ const FriendsPage = () => {
   const selectedFriend = friendId
     ? friends.find((friend) => friend.friendId === friendId)
     : undefined;
-  const { data: selectedStats, isLoading: isStatsLoading } = useFriendStats(
-    selectedFriend?.friendId,
-  );
+  const { data: selectedStats, isLoading: isStatsLoading } = useFriendStats(friendId);
   const incomingRequests = requests.filter((request) => request.direction === 'incoming');
   const outgoingRequests = requests.filter((request) => request.direction === 'outgoing');
   const filteredFriends = useMemo(() => {
@@ -296,10 +294,10 @@ const FriendsPage = () => {
     }
   };
 
-  const handleRemoveFriend = async (targetFriend: FriendSummary) => {
+  const handleRemoveFriend = async (targetFriendId: string, targetNickname: string) => {
     try {
-      await removeFriend.mutateAsync(targetFriend.friendId);
-      toast({ title: `${targetFriend.nickname}님을 친구 목록에서 삭제했습니다.` });
+      await removeFriend.mutateAsync(targetFriendId);
+      toast({ title: `${targetNickname}님을 친구 목록에서 삭제했습니다.` });
       navigate('/friends');
     } catch (error) {
       toast({
@@ -314,7 +312,6 @@ const FriendsPage = () => {
     return (
       <FriendDetailView
         friend={selectedFriend}
-        isFriendsLoading={isFriendsLoading}
         isStatsLoading={isStatsLoading}
         stats={selectedStats}
         onRemoveFriend={handleRemoveFriend}
@@ -569,7 +566,11 @@ const ProfileSearchRow = ({
   onSend,
 }: ProfileSearchRowProps) => (
   <div className="flat-row grid gap-3 p-3 transition-colors hover:bg-secondary/50 sm:grid-cols-[40px_minmax(0,1fr)_auto] sm:items-center">
-    <FriendAvatar className="h-9 w-9 text-xs" nickname={result.nickname} />
+    <FriendAvatar
+      avatarUrl={result.avatarUrl}
+      className="h-9 w-9 text-xs"
+      nickname={result.nickname}
+    />
     <div className="min-w-0">
       <div className="flex min-w-0 items-center gap-2">
         <p className="truncate text-sm font-bold">{result.nickname}</p>
@@ -975,20 +976,18 @@ const FriendSortControl = ({ sort, onSortChange }: FriendSortControlProps) => (
 
 interface FriendDetailViewProps {
   friend?: FriendSummary;
-  isFriendsLoading: boolean;
   isStatsLoading: boolean;
   stats?: FriendStats;
-  onRemoveFriend: (friend: FriendSummary) => void;
+  onRemoveFriend: (friendId: string, nickname: string) => void;
 }
 
 const FriendDetailView = ({
   friend,
-  isFriendsLoading,
   isStatsLoading,
   stats,
   onRemoveFriend,
 }: FriendDetailViewProps) => {
-  if (isFriendsLoading) {
+  if (isStatsLoading) {
     return (
       <div className="page-stack">
         <PageHeader compact eyebrow="친구 상세" title="불러오는 중" />
@@ -998,7 +997,7 @@ const FriendDetailView = ({
     );
   }
 
-  if (!friend) {
+  if (!stats) {
     return (
       <div className="page-stack">
         <PageHeader
@@ -1030,45 +1029,36 @@ const FriendDetailView = ({
 
   return (
     <div className="page-stack">
-      {isStatsLoading || !stats ? (
-        <div className="grid gap-4">
-          <SkeletonBlock className="h-[360px]" />
-          <SkeletonBlock className="h-[420px]" />
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-            <SkeletonBlock className="h-96" />
-            <SkeletonBlock className="h-96" />
-          </div>
+      <>
+        <FriendProfilePanel friend={friend} stats={stats} onRemoveFriend={onRemoveFriend} />
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start">
+          <ModePerformancePanel modes={stats.modes} />
+          <MapStrengthList maps={stats.maps} />
         </div>
-      ) : (
-        <>
-          <FriendProfilePanel friend={friend} stats={stats} onRemoveFriend={onRemoveFriend} />
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start">
-            <ModePerformancePanel modes={stats.modes} />
-            <MapStrengthList maps={stats.maps} />
-          </div>
-          <div
-            className={cn(
-              'grid gap-4 xl:items-start',
-              stats.recentForm.length > 0 && 'xl:grid-cols-[minmax(0,1fr)_420px]',
-            )}
-          >
-            <HeroPerformancePanel heroes={stats.heroes} />
-            {stats.recentForm.length > 0 && <RecentFormPanel recentForm={stats.recentForm} />}
-          </div>
-        </>
-      )}
+        <div
+          className={cn(
+            'grid gap-4 xl:items-start',
+            stats.recentForm.length > 0 && 'xl:grid-cols-[minmax(0,1fr)_420px]',
+          )}
+        >
+          <HeroPerformancePanel heroes={stats.heroes} />
+          {stats.recentForm.length > 0 && <RecentFormPanel recentForm={stats.recentForm} />}
+        </div>
+      </>
     </div>
   );
 };
 
 interface FriendProfilePanelProps {
-  friend: FriendSummary;
-  onRemoveFriend: (friend: FriendSummary) => void;
+  friend?: FriendSummary;
+  onRemoveFriend: (friendId: string, nickname: string) => void;
   stats: FriendStats;
 }
 
 const FriendProfilePanel = ({ friend, onRemoveFriend, stats }: FriendProfilePanelProps) => {
-  const avatarUrl = stats.profile.avatarUrl ?? friend.avatarUrl;
+  const profileNickname = stats.profile.nickname || friend?.nickname || '친구';
+  const profileUserId = stats.profile.userId || friend?.friendId || '';
+  const avatarUrl = stats.profile.avatarUrl || friend?.avatarUrl || null;
   const bestModeLabel = stats.summary.bestModeId ? getModeLabel(stats.summary.bestModeId) : '-';
   const bestMapLabel = stats.summary.bestMapId ? getMapLabel(stats.summary.bestMapId) : '-';
 
@@ -1083,8 +1073,9 @@ const FriendProfilePanel = ({ friend, onRemoveFriend, stats }: FriendProfilePane
         </Button>
         <Button
           className="w-full bg-card text-destructive hover:text-destructive sm:w-auto"
+          disabled={!profileUserId}
           variant="outline"
-          onClick={() => onRemoveFriend(friend)}
+          onClick={() => onRemoveFriend(profileUserId, profileNickname)}
         >
           <UserMinus className="h-4 w-4" />
           삭제
@@ -1097,7 +1088,7 @@ const FriendProfilePanel = ({ friend, onRemoveFriend, stats }: FriendProfilePane
             <FriendAvatar
               avatarUrl={avatarUrl}
               className="h-20 w-20 rounded-lg text-2xl sm:h-24 sm:w-24 sm:text-3xl"
-              nickname={friend.nickname}
+              nickname={profileNickname}
             />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -1108,10 +1099,13 @@ const FriendProfilePanel = ({ friend, onRemoveFriend, stats }: FriendProfilePane
                 </span>
               </div>
               <h1 className="mt-3 truncate text-4xl font-black tracking-normal sm:text-5xl">
-                {friend.nickname}
+                {profileNickname}
               </h1>
               <div className="mt-4 flex flex-wrap gap-2">
-                <ProfileInfoChip label="친구 등록일" value={formatFullDate(friend.friendsSince)} />
+                <ProfileInfoChip
+                  label="친구 등록일"
+                  value={friend ? formatFullDate(friend.friendsSince) : '확인 중'}
+                />
                 <ProfileInfoChip label="공개 범위" value="공유 통계" />
               </div>
             </div>
