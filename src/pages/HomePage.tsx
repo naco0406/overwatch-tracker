@@ -22,6 +22,7 @@ import {
 
 import { SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
+import { StickyNotesDock } from '@/components/home/StickyNotesDock';
 import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
 import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
 import { QuickMatchEntry } from '@/components/input/QuickMatchEntry';
@@ -45,6 +46,7 @@ import { getMapScreenshotPath } from '@/data/masterAssets';
 import { activeSessionStorageKey } from '@/lib/clientSessionState';
 import { calculateWinRate, compareMatchesByTimelineDesc, getCurrentStreak } from '@/lib/matchStats';
 import { createSessionId, groupMatchesBySession, shouldReuseSession } from '@/lib/session';
+import { cn } from '@/lib/utils';
 import {
   extractMatchFromScreenshot,
   type VisionExtractionProgress,
@@ -147,6 +149,7 @@ const HomePage = () => {
   const [visionProgress, setVisionProgress] = useState<VisionExtractionProgress | null>(null);
   const [visionResult, setVisionResult] = useState<VisionExtractionResult | null>(null);
   const [isExtractingVision, setIsExtractingVision] = useState(false);
+  const [stickyNotesDesktopOpen, setStickyNotesDesktopOpen] = useState(false);
   const [manualSessionId, setManualSessionId] = useState<string | null>(() => {
     if (typeof window === 'undefined') {
       return null;
@@ -551,134 +554,142 @@ const HomePage = () => {
 
   return (
     <div className="page-stack" onPaste={handlePaste}>
-      <PageHeader
-        eyebrow="오늘"
-        title="경기 기록"
-        actions={
-          <Button
-            variant="outline"
-            className="bg-transparent"
-            type="button"
-            onClick={() => setToolsOpen(true)}
-          >
-            <Plus className="h-4 w-4" />
-            상세/이미지
-          </Button>
-        }
-      />
-      <input
-        ref={fileInputRef}
-        accept="image/png,image/jpeg,image/webp"
-        className="hidden"
-        type="file"
-        onChange={handleFileChange}
-      />
-
-      <section className="workspace-panel overflow-hidden">
-        <div className="metric-strip grid-cols-3 divide-x divide-border/70">
-          {summaryMetrics.map((metric) => (
-            <div
-              key={metric.label}
-              className="flex min-h-[68px] items-end justify-between gap-2 px-3 py-3 sm:min-h-[74px] sm:px-5 sm:py-4"
+      <div
+        className={cn(
+          'page-stack min-w-0 transition-[padding-right] duration-300 ease-out',
+          stickyNotesDesktopOpen ? 'xl:pr-[400px]' : 'xl:pr-12',
+        )}
+      >
+        <PageHeader
+          eyebrow="오늘"
+          title="경기 기록"
+          actions={
+            <Button
+              variant="outline"
+              className="bg-transparent"
+              type="button"
+              onClick={() => setToolsOpen(true)}
             >
-              <div className="min-w-0">
-                <p className="metric-label">{metric.label}</p>
-                {isHomeDataLoading ? (
-                  <div className="mt-2 min-w-0 sm:flex sm:items-baseline sm:gap-2">
-                    <SkeletonBlock className="h-6 w-14 sm:h-7" />
-                    <SkeletonBlock className="mt-2 h-3 w-20 sm:mt-0" />
-                  </div>
+              <Plus className="h-4 w-4" />
+              상세/이미지
+            </Button>
+          }
+        />
+        <input
+          ref={fileInputRef}
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          type="file"
+          onChange={handleFileChange}
+        />
+
+        <section className="workspace-panel overflow-hidden">
+          <div className="metric-strip grid-cols-3 divide-x divide-border/70">
+            {summaryMetrics.map((metric) => (
+              <div
+                key={metric.label}
+                className="flex min-h-[68px] items-end justify-between gap-2 px-3 py-3 sm:min-h-[74px] sm:px-5 sm:py-4"
+              >
+                <div className="min-w-0">
+                  <p className="metric-label">{metric.label}</p>
+                  {isHomeDataLoading ? (
+                    <div className="mt-2 min-w-0 sm:flex sm:items-baseline sm:gap-2">
+                      <SkeletonBlock className="h-6 w-14 sm:h-7" />
+                      <SkeletonBlock className="mt-2 h-3 w-20 sm:mt-0" />
+                    </div>
+                  ) : (
+                    <div className="mt-2 min-w-0 sm:flex sm:items-baseline sm:gap-2">
+                      <p className="truncate text-xl font-bold leading-none sm:text-2xl">
+                        {metric.value}
+                      </p>
+                      <p className="mt-1 truncate text-[10px] font-semibold text-muted-foreground sm:mt-0 sm:text-xs">
+                        {metric.detail}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="section-pad">
+            <QuickMatchEntry
+              key={quickEntryResetKey}
+              accounts={activePlayerAccounts}
+              defaultSettings={userSettings}
+              isHydrating={isHomeDataLoading}
+              isSubmitting={createMatchMutation.isPending}
+              matches={matches}
+              onSubmit={handleCreateMatch}
+            />
+          </div>
+        </section>
+
+        <section className="workspace-panel overflow-hidden">
+          <div className="section-header flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="metric-label">세션</p>
+              <h2 className="mt-1 truncate text-lg font-bold tracking-normal">이번 세션</h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {isHomeDataLoading ? (
+                <SkeletonBlock className="h-6 w-20" />
+              ) : (
+                <Badge variant={manualSessionId ? 'default' : 'secondary'}>
+                  {manualSessionId ? '진행중' : `${sessionMatches.length} 경기`}
+                </Badge>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                variant={manualSessionId ? 'outline' : 'default'}
+                className={manualSessionId ? 'bg-transparent' : ''}
+                disabled={isHomeDataLoading}
+                onClick={manualSessionId ? handleStopSession : handleStartSession}
+              >
+                {manualSessionId ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                {manualSessionId ? '종료' : '시작'}
+              </Button>
+            </div>
+          </div>
+
+          {isHomeDataLoading ? (
+            <SessionStripSkeleton />
+          ) : (
+            <div>
+              <div className="border-b border-border/70 px-3.5 py-3 sm:px-5">
+                {sessionMatches.length > 0 ? (
+                  <SessionTimeline matches={sessionFlowMatches} />
                 ) : (
-                  <div className="mt-2 min-w-0 sm:flex sm:items-baseline sm:gap-2">
-                    <p className="truncate text-xl font-bold leading-none sm:text-2xl">
-                      {metric.value}
-                    </p>
-                    <p className="mt-1 truncate text-[10px] font-semibold text-muted-foreground sm:mt-0 sm:text-xs">
-                      {metric.detail}
-                    </p>
+                  <div className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-dashed border-border/80 bg-[hsl(var(--surface-2))] px-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold">새 세션 대기</p>
+                      <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+                        빠른 기록을 저장하면 이곳에 흐름이 쌓입니다.
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
-            </div>
-          ))}
-        </div>
 
-        <div className="section-pad">
-          <QuickMatchEntry
-            key={quickEntryResetKey}
-            accounts={activePlayerAccounts}
-            defaultSettings={userSettings}
-            isHydrating={isHomeDataLoading}
-            isSubmitting={createMatchMutation.isPending}
-            matches={matches}
-            onSubmit={handleCreateMatch}
-          />
-        </div>
-      </section>
-
-      <section className="workspace-panel overflow-hidden">
-        <div className="section-header flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <p className="metric-label">세션</p>
-            <h2 className="mt-1 truncate text-lg font-bold tracking-normal">이번 세션</h2>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {isHomeDataLoading ? (
-              <SkeletonBlock className="h-6 w-20" />
-            ) : (
-              <Badge variant={manualSessionId ? 'default' : 'secondary'}>
-                {manualSessionId ? '진행중' : `${sessionMatches.length} 경기`}
-              </Badge>
-            )}
-            <Button
-              type="button"
-              size="sm"
-              variant={manualSessionId ? 'outline' : 'default'}
-              className={manualSessionId ? 'bg-transparent' : ''}
-              disabled={isHomeDataLoading}
-              onClick={manualSessionId ? handleStopSession : handleStartSession}
-            >
-              {manualSessionId ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-              {manualSessionId ? '종료' : '시작'}
-            </Button>
-          </div>
-        </div>
-
-        {isHomeDataLoading ? (
-          <SessionStripSkeleton />
-        ) : (
-          <div>
-            <div className="border-b border-border/70 px-3.5 py-3 sm:px-5">
               {sessionMatches.length > 0 ? (
-                <SessionTimeline matches={sessionFlowMatches} />
-              ) : (
-                <div className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-dashed border-border/80 bg-[hsl(var(--surface-2))] px-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-bold">새 세션 대기</p>
-                    <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-                      빠른 기록을 저장하면 이곳에 흐름이 쌓입니다.
-                    </p>
-                  </div>
+                <div className="divide-y divide-border/70">
+                  {sortedSessionMatches.slice(0, recentPreviewCount).map((match) => (
+                    <RecentMatchRow
+                      key={match.id}
+                      accountLabel={getPlayerAccountLabel(accountById.get(match.accountId ?? ''))}
+                      match={match}
+                      onDelete={() => setDeleteTarget(match)}
+                      onEdit={() => openEditEntry(match)}
+                    />
+                  ))}
                 </div>
-              )}
+              ) : null}
             </div>
-
-            {sessionMatches.length > 0 ? (
-              <div className="divide-y divide-border/70">
-                {sortedSessionMatches.slice(0, recentPreviewCount).map((match) => (
-                  <RecentMatchRow
-                    key={match.id}
-                    accountLabel={getPlayerAccountLabel(accountById.get(match.accountId ?? ''))}
-                    match={match}
-                    onDelete={() => setDeleteTarget(match)}
-                    onEdit={() => openEditEntry(match)}
-                  />
-                ))}
-              </div>
-            ) : null}
-          </div>
-        )}
-      </section>
+          )}
+        </section>
+      </div>
+      <StickyNotesDock onDesktopOpenChange={setStickyNotesDesktopOpen} />
 
       <Dialog open={toolsOpen} onOpenChange={setToolsOpen}>
         <DialogContent className="flex h-[calc(100dvh-1rem)] max-w-2xl flex-col gap-0 p-0 sm:h-[680px] sm:max-h-[calc(100dvh-3rem)]">

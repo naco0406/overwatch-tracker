@@ -320,7 +320,7 @@ const AppLayout = () => {
             </div>
           </nav>
         ) : null}
-        <main className="safe-page-bottom mx-auto flex min-h-screen w-full max-w-7xl flex-col px-3.5 pt-4 sm:px-6 sm:pt-5 xl:px-8 xl:py-8">
+        <main className="safe-page-bottom mx-auto flex min-h-screen w-full max-w-none flex-col px-3.5 pt-4 sm:px-6 sm:pt-5 xl:px-8 xl:py-8">
           <Outlet />
         </main>
         <nav className="safe-bottom-nav fixed inset-x-2 z-40 grid grid-cols-4 rounded-lg border border-border/70 bg-card/95 p-1 backdrop-blur-xl xl:hidden">
