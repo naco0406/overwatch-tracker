@@ -1,4 +1,6 @@
 const allowedTags = new Set(['br', 'em', 'li', 'ol', 'p', 'strong', 'u', 'ul']);
+const lineBreakTags = new Set(['br']);
+const blockTextTags = new Set(['li', 'p']);
 const tagAliases = new Map([
   ['b', 'strong'],
   ['div', 'p'],
@@ -52,20 +54,60 @@ export const sanitizeRichTextHtml = (html: string) => {
   return container.innerHTML.trim();
 };
 
+const normalizePlainText = (value: string) =>
+  value
+    .replace(/\u00a0/g, ' ')
+    .replace(/[ \t\f\v]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+const appendPlainText = (source: Node, parts: string[]) => {
+  if (source.nodeType === Node.TEXT_NODE) {
+    parts.push(source.textContent ?? '');
+    return;
+  }
+
+  if (source.nodeType !== Node.ELEMENT_NODE) {
+    return;
+  }
+
+  const element = source as HTMLElement;
+  const tagName = tagAliases.get(element.tagName.toLowerCase()) ?? element.tagName.toLowerCase();
+
+  if (lineBreakTags.has(tagName)) {
+    parts.push('\n');
+    return;
+  }
+
+  Array.from(element.childNodes).forEach((child) => appendPlainText(child, parts));
+
+  if (blockTextTags.has(tagName)) {
+    parts.push('\n');
+  }
+};
+
 export const getRichTextPlainText = (html: string) => {
   if (typeof window === 'undefined') {
     return html
+      .replace(/<\s*br\s*\/?>/gi, '\n')
+      .replace(/<\/\s*(div|li|p)\s*>/gi, '\n')
       .replace(/<[^>]*>/g, ' ')
-      .replace(/\s+/g, ' ')
+      .split('\n')
+      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
       .trim();
   }
 
   const document = createEmptyDocument();
   const container = document.createElement('div');
+  const parts: string[] = [];
 
   container.innerHTML = sanitizeRichTextHtml(html);
+  Array.from(container.childNodes).forEach((child) => appendPlainText(child, parts));
 
-  return (container.textContent ?? '').replace(/\s+/g, ' ').trim();
+  return normalizePlainText(parts.join(''));
 };
 
 export const plainTextToRichTextHtml = (value: string) => {

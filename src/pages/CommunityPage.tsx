@@ -7,7 +7,6 @@ import { CommunityPostCard } from '@/components/community/CommunityPostCard';
 import { CommunityStoryTray } from '@/components/community/CommunityStoryTray';
 import { CommunityStoryViewer } from '@/components/community/CommunityStoryViewer';
 import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
-import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import {
@@ -81,16 +80,25 @@ const CommunityPage = () => {
   };
 
   return (
-    <div className="page-stack mx-auto w-full max-w-5xl">
-      <PageHeader
-        eyebrow="친구 전용"
-        title="커뮤니티"
-        actions={
-          <Button type="button" disabled={!hasNickname} onClick={() => setComposerOpen(true)}>
+    <div className="page-stack mx-auto w-full max-w-[640px]">
+      <header className="sticky top-14 z-20 bg-background/95 py-2 backdrop-blur-xl xl:top-0">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="metric-label mb-1">친구 전용</p>
+            <h1 className="truncate text-2xl font-bold leading-tight tracking-normal text-foreground sm:text-[26px]">
+              커뮤니티
+            </h1>
+          </div>
+          <Button
+            type="button"
+            className="shrink-0"
+            disabled={!hasNickname}
+            onClick={() => setComposerOpen(true)}
+          >
             <Plus className="h-4 w-4" />새 게시글
           </Button>
-        }
-      />
+        </div>
+      </header>
 
       {!isPageLoading && !hasNickname ? (
         <InlineEmptyState
@@ -108,7 +116,7 @@ const CommunityPage = () => {
       ) : null}
 
       {hasNickname ? (
-        <>
+        <div className="min-w-0 space-y-4">
           <CommunityStoryTray
             groups={stories}
             isLoading={storiesQuery.isLoading}
@@ -172,11 +180,16 @@ const CommunityPage = () => {
               title="아직 게시글이 없습니다"
             />
           )}
-        </>
+        </div>
       ) : null}
 
       {composerOpen ? (
-        <CommunityComposerDialog open={composerOpen} onOpenChange={setComposerOpen} />
+        <CommunityComposerDialog
+          avatarUrl={profile?.avatarUrl}
+          nickname={profile?.nickname}
+          open={composerOpen}
+          onOpenChange={setComposerOpen}
+        />
       ) : null}
 
       {storyViewerOpen ? (
@@ -197,7 +210,7 @@ const CommunityFeedSkeleton = () => (
     {Array.from({ length: 3 }).map((_, index) => (
       <article key={index} className="overflow-hidden rounded-lg border border-border/70 bg-card">
         <div className="flex items-center gap-3 px-3.5 py-3 sm:px-5">
-          <SkeletonBlock className="h-10 w-10 rounded-md" />
+          <SkeletonBlock className="h-10 w-10 rounded-full" />
           <div className="min-w-0 flex-1">
             <SkeletonBlock className="h-4 w-28" />
             <SkeletonBlock className="mt-2 h-3 w-20" />

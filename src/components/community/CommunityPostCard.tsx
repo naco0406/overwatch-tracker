@@ -34,12 +34,12 @@ const CommunityPostCard = ({
   const sanitizedHtml = sanitizeRichTextHtml(post.bodyHtml);
 
   return (
-    <article className="overflow-hidden rounded-lg border border-border/70 bg-card">
-      <header className="flex items-center justify-between gap-3 px-3.5 py-3 sm:px-5">
+    <article className="overflow-hidden rounded-lg border border-border/70 bg-card shadow-sm shadow-slate-950/5">
+      <header className="flex h-14 items-center justify-between gap-3 px-3.5 sm:px-4">
         <div className="flex min-w-0 items-center gap-3">
-          <Avatar className="h-10 w-10 rounded-md">
+          <Avatar className="h-9 w-9">
             <AvatarImage alt={post.author.nickname} src={post.author.avatarUrl ?? undefined} />
-            <AvatarFallback className="rounded-md bg-primary/10 text-sm font-black text-primary">
+            <AvatarFallback className="bg-primary/10 text-sm font-black text-primary">
               {getInitial(post.author.nickname)}
             </AvatarFallback>
           </Avatar>
@@ -73,7 +73,13 @@ const CommunityPostCard = ({
       <CommunityImageCarousel images={post.images} />
 
       {post.bodyText ? (
-        <div className="px-3.5 py-3 sm:px-5 sm:py-4">
+        <div className="px-3.5 py-3 sm:px-4">
+          <div className="mb-1 flex items-baseline gap-2">
+            <span className="text-sm font-black">{post.author.nickname}</span>
+            <span className="text-[11px] font-semibold text-muted-foreground">
+              {formatPostTime(post.createdAt)}
+            </span>
+          </div>
           <div
             className={cn(
               'text-sm font-semibold leading-6 text-foreground',
