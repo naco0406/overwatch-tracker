@@ -3,6 +3,7 @@ import {
   BarChart3,
   ChevronDown,
   Command,
+  Database,
   Grid2X2,
   Home,
   LogOut,
@@ -12,10 +13,8 @@ import {
   Settings,
   ShieldCheck,
   Square,
-  Swords,
   TableProperties,
   UserRound,
-  UsersRound,
 } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -39,12 +38,17 @@ interface NavItem {
   to: string;
 }
 
-const navItems: NavItem[] = [
+const primaryNavItems: NavItem[] = [
   { to: '/', label: '홈', icon: Home },
-  { to: '/records', label: '기록', icon: TableProperties },
-  { to: '/sessions', label: '세션', icon: Swords },
-  { to: '/community', label: '커뮤니티', icon: MessagesSquare },
-  { to: '/friends', label: '친구', icon: UsersRound },
+  {
+    to: '/records',
+    label: '기록',
+    icon: TableProperties,
+    children: [
+      { to: '/records', label: '매치 기록' },
+      { to: '/sessions', label: '세션' },
+    ],
+  },
   {
     to: '/stats/maps',
     label: '통계',
@@ -57,18 +61,30 @@ const navItems: NavItem[] = [
       { to: '/stats/order', label: '순서' },
     ],
   },
-  { to: '/master-data', label: '오버워치 에셋', icon: Grid2X2 },
   {
-    to: '/settings/account',
-    label: '설정',
-    icon: Settings,
+    to: '/community',
+    label: '커뮤니티',
+    icon: MessagesSquare,
     children: [
-      { to: '/settings/account', label: '내 계정' },
-      { to: '/settings/battle-net', label: '배틀넷' },
-      { to: '/settings/data', label: '데이터' },
+      { to: '/community', label: '피드' },
+      { to: '/friends', label: '친구' },
     ],
   },
 ];
+
+const settingsNavItem: NavItem = {
+  to: '/settings/account',
+  label: '설정',
+  icon: Settings,
+  children: [
+    { to: '/settings/account', label: '내 계정' },
+    { to: '/settings/battle-net', label: '배틀넷' },
+    { to: '/settings/data', label: '데이터' },
+  ],
+};
+
+const desktopNavItems: NavItem[] = [...primaryNavItems, settingsNavItem];
+const mobileNavItems: NavItem[] = primaryNavItems;
 
 const isPathActive = (to: string, pathname: string) =>
   to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(`${to}/`);
@@ -90,7 +106,7 @@ const AppLayout = () => {
     label: 'LIVE',
     to: '/live',
   };
-  const visibleNavItems: NavItem[] = [...navItems, liveNavItem];
+  const visibleNavItems: NavItem[] = [...desktopNavItems, liveNavItem];
   const activeNavItem = visibleNavItems.find((item) => isNavItemActive(item, location.pathname));
   const liveActive = isPathActive('/live', location.pathname);
   const liveActionLabel = isLiveAvailable
@@ -160,7 +176,7 @@ const AppLayout = () => {
           </div>
         </div>
         <nav className="flex flex-1 flex-col gap-1 p-3">
-          {navItems.map((item) => {
+          {desktopNavItems.map((item) => {
             const active = isNavItemActive(item, location.pathname);
 
             return (
@@ -326,7 +342,7 @@ const AppLayout = () => {
           <Outlet />
         </main>
         <nav className="safe-bottom-nav fixed inset-x-2 z-40 grid grid-cols-4 rounded-lg border border-border/70 bg-card/95 p-1 backdrop-blur-xl xl:hidden">
-          {navItems.map((item) => {
+          {mobileNavItems.map((item) => {
             const active = isNavItemActive(item, location.pathname);
 
             return (
@@ -357,6 +373,7 @@ interface AccountMenuProps {
   email?: string;
   hasNickname: boolean;
   isProfileLoading: boolean;
+  showSettingsLinks?: boolean;
   subtitle?: string;
   onSignOut: () => void;
 }
@@ -368,6 +385,7 @@ const AccountMenu = ({
   email,
   hasNickname,
   isProfileLoading,
+  showSettingsLinks = compact,
   subtitle,
   onSignOut,
 }: AccountMenuProps) => {
@@ -432,21 +450,43 @@ const AccountMenu = ({
           </div>
         </div>
         <div className="grid gap-1 p-2.5">
+          {showSettingsLinks ? (
+            <>
+              <PopoverClose asChild>
+                <NavLink
+                  to="/settings/account"
+                  className="flex h-10 items-center gap-3 rounded-md px-3 text-sm font-bold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                >
+                  <UserRound className="h-4 w-4" />내 계정
+                </NavLink>
+              </PopoverClose>
+              <PopoverClose asChild>
+                <NavLink
+                  to="/settings/battle-net"
+                  className="flex h-10 items-center gap-3 rounded-md px-3 text-sm font-bold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                >
+                  <Settings className="h-4 w-4" />
+                  배틀넷 계정
+                </NavLink>
+              </PopoverClose>
+              <PopoverClose asChild>
+                <NavLink
+                  to="/settings/data"
+                  className="flex h-10 items-center gap-3 rounded-md px-3 text-sm font-bold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                >
+                  <Database className="h-4 w-4" />
+                  데이터
+                </NavLink>
+              </PopoverClose>
+            </>
+          ) : null}
           <PopoverClose asChild>
             <NavLink
-              to="/settings/account"
+              to="/master-data"
               className="flex h-10 items-center gap-3 rounded-md px-3 text-sm font-bold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >
-              <UserRound className="h-4 w-4" />내 계정
-            </NavLink>
-          </PopoverClose>
-          <PopoverClose asChild>
-            <NavLink
-              to="/settings/battle-net"
-              className="flex h-10 items-center gap-3 rounded-md px-3 text-sm font-bold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-            >
-              <Settings className="h-4 w-4" />
-              배틀넷 계정
+              <Grid2X2 className="h-4 w-4" />
+              오버워치 에셋
             </NavLink>
           </PopoverClose>
           <div className="my-1 border-t border-border/70" />
