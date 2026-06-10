@@ -90,6 +90,102 @@ export interface Database {
         };
         Relationships: [];
       };
+      community_post_images: {
+        Row: {
+          created_at: string;
+          height: number;
+          id: string;
+          image_url: string;
+          mime_type: string;
+          object_key: string;
+          post_id: string;
+          size_bytes: number;
+          sort_order: number;
+          user_id: string;
+          width: number;
+        };
+        Insert: {
+          created_at?: string;
+          height: number;
+          id?: string;
+          image_url: string;
+          mime_type: string;
+          object_key: string;
+          post_id: string;
+          size_bytes: number;
+          sort_order?: number;
+          user_id: string;
+          width: number;
+        };
+        Update: {
+          created_at?: string;
+          height?: number;
+          id?: string;
+          image_url?: string;
+          mime_type?: string;
+          object_key?: string;
+          post_id?: string;
+          size_bytes?: number;
+          sort_order?: number;
+          user_id?: string;
+          width?: number;
+        };
+        Relationships: [];
+      };
+      community_posts: {
+        Row: {
+          body_html: string;
+          body_text: string;
+          created_at: string;
+          deleted_at: string | null;
+          id: string;
+          story_expires_at: string;
+          updated_at: string;
+          user_id: string;
+          visibility: string;
+        };
+        Insert: {
+          body_html?: string;
+          body_text?: string;
+          created_at?: string;
+          deleted_at?: string | null;
+          id?: string;
+          story_expires_at?: string;
+          updated_at?: string;
+          user_id: string;
+          visibility?: string;
+        };
+        Update: {
+          body_html?: string;
+          body_text?: string;
+          created_at?: string;
+          deleted_at?: string | null;
+          id?: string;
+          story_expires_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          visibility?: string;
+        };
+        Relationships: [];
+      };
+      community_story_views: {
+        Row: {
+          post_id: string;
+          viewed_at: string;
+          viewer_id: string;
+        };
+        Insert: {
+          post_id: string;
+          viewed_at?: string;
+          viewer_id: string;
+        };
+        Update: {
+          post_id?: string;
+          viewed_at?: string;
+          viewer_id?: string;
+        };
+        Relationships: [];
+      };
       match_heroes: {
         Row: {
           created_at: string;
@@ -348,8 +444,20 @@ export interface Database {
         Args: { p_user_a: string; p_user_b: string };
         Returns: boolean;
       };
+      can_view_community_post: {
+        Args: { p_post_id: string; p_user_id: string };
+        Returns: boolean;
+      };
       cancel_friend_request: {
         Args: { p_request_id: string };
+        Returns: undefined;
+      };
+      create_community_post: {
+        Args: { p_body_html: string; p_body_text: string; p_images?: Json };
+        Returns: Array<{ post_id: string }>;
+      };
+      delete_community_post: {
+        Args: { p_post_id: string };
         Returns: undefined;
       };
       delete_current_user: {
@@ -369,6 +477,36 @@ export interface Database {
           profile: Json;
           recent_form: Json;
           summary: Json;
+        }>;
+      };
+      list_community_feed: {
+        Args: {
+          p_cursor_created_at?: string | null;
+          p_cursor_id?: string | null;
+          p_limit?: number;
+        };
+        Returns: Array<{
+          author_avatar_url: string | null;
+          author_nickname: string | null;
+          author_user_id: string;
+          body_html: string;
+          body_text: string;
+          created_at: string;
+          images: Json;
+          post_id: string;
+          story_expires_at: string;
+          updated_at: string;
+          viewer_has_seen_story: boolean;
+        }>;
+      };
+      list_community_stories: {
+        Args: Record<PropertyKey, never>;
+        Returns: Array<{
+          author_avatar_url: string | null;
+          author_nickname: string | null;
+          author_user_id: string;
+          has_unseen: boolean;
+          posts: Json;
         }>;
       };
       list_friend_requests: {
@@ -399,6 +537,10 @@ export interface Database {
       };
       remove_friend: {
         Args: { p_friend_id: string };
+        Returns: undefined;
+      };
+      mark_community_story_viewed: {
+        Args: { p_post_id: string };
         Returns: undefined;
       };
       search_user_profiles: {

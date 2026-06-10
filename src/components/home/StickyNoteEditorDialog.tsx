@@ -1,5 +1,4 @@
 import Placeholder from '@tiptap/extension-placeholder';
-import Underline from '@tiptap/extension-underline';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import {
@@ -19,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -121,7 +121,6 @@ const StickyNoteEditorDialog = ({
         heading: false,
         horizontalRule: false,
       }),
-      Underline,
       Placeholder.configure({
         placeholder: '메모를 입력하세요.',
       }),
@@ -160,6 +159,9 @@ const StickyNoteEditorDialog = ({
       <DialogContent className="flex h-[calc(100dvh-1rem)] max-w-3xl flex-col gap-0 p-0 sm:h-[680px] sm:max-h-[calc(100dvh-3rem)]">
         <DialogHeader className="border-b border-border bg-card px-4 py-4 pr-14 sm:px-5">
           <DialogTitle>{mode === 'edit' ? '메모 편집' : '새 메모'}</DialogTitle>
+          <DialogDescription className="sr-only">
+            리치텍스트 메모 내용을 작성하고 저장합니다.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="border-b border-border bg-[hsl(var(--surface-2))] px-3.5 py-2">

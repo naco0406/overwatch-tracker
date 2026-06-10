@@ -18,6 +18,10 @@ const FriendsPage = lazy(() =>
   import('@/pages/FriendsPage').then((module) => ({ default: module.FriendsPage })),
 );
 
+const CommunityPage = lazy(() =>
+  import('@/pages/CommunityPage').then((module) => ({ default: module.CommunityPage })),
+);
+
 const StatsPage = lazy(() =>
   import('@/pages/StatsPage').then((module) => ({ default: module.StatsPage })),
 );
@@ -52,7 +56,14 @@ const AppRoutes = () => (
           }
         />
         <Route path="/sessions" element={<SessionsPage />} />
-        <Route path="/community" element={<Navigate to="/friends" replace />} />
+        <Route
+          path="/community"
+          element={
+            <LazyPage>
+              <CommunityPage />
+            </LazyPage>
+          }
+        />
         <Route path="/community/friends/:friendId" element={<LegacyCommunityFriendRedirect />} />
         <Route
           path="/friends"

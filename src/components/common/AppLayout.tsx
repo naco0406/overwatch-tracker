@@ -6,6 +6,7 @@ import {
   Grid2X2,
   Home,
   LogOut,
+  MessagesSquare,
   MonitorUp,
   Radio,
   Settings,
@@ -42,6 +43,7 @@ const navItems: NavItem[] = [
   { to: '/', label: '홈', icon: Home },
   { to: '/records', label: '기록', icon: TableProperties },
   { to: '/sessions', label: '세션', icon: Swords },
+  { to: '/community', label: '커뮤니티', icon: MessagesSquare },
   { to: '/friends', label: '친구', icon: UsersRound },
   {
     to: '/stats/maps',

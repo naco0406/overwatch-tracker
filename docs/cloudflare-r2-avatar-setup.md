@@ -78,7 +78,7 @@ Cloudflare Worker에 R2 binding을 연결한다.
 
 ```text
 Binding type: R2 bucket
-Variable name: AVATAR_BUCKET
+Variable name: ASSETS_BUCKET
 Bucket: overwatch-tracker-assets
 ```
 
@@ -138,6 +138,7 @@ Worker는 다음 API를 제공한다.
 
 ```text
 PUT https://api-ow.naco.kr/avatars/upload
+PUT https://api-ow.naco.kr/community/images/upload
 ```
 
 요청 헤더:
@@ -155,6 +156,30 @@ Content-Type: image/webp
   "key": "avatars/{userId}/20260605.webp"
 }
 ```
+
+커뮤니티 이미지 업로드는 같은 Worker와 R2 bucket을 사용한다. Worker의 R2 binding 이름은 `ASSETS_BUCKET` 하나로 통일한다.
+
+커뮤니티 이미지 요청 헤더:
+
+```text
+Authorization: Bearer {supabaseAccessToken}
+Content-Type: image/webp
+X-Post-Draft-Id: {uuid}
+X-Image-Id: {uuid}
+```
+
+커뮤니티 이미지 응답:
+
+```json
+{
+  "imageUrl": "https://assets.your-domain.com/community/{userId}/{draftId}/{imageId}.webp",
+  "objectKey": "community/{userId}/{draftId}/{imageId}.webp",
+  "publicUrl": "https://assets.your-domain.com/community/{userId}/{draftId}/{imageId}.webp",
+  "key": "community/{userId}/{draftId}/{imageId}.webp"
+}
+```
+
+커뮤니티 이미지는 public R2 URL로 서빙한다. 게시글 API에서 게시글 단위 권한을 확인하고, 권한 있는 사용자에게만 이미지 URL을 반환한다.
 
 현재 Worker 예시 코드:
 

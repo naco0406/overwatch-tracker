@@ -4,7 +4,9 @@ const ALLOWED_IMAGE_TYPES = new Map([
   ['image/jpeg', 'jpg'],
 ]);
 
-const DEFAULT_MAX_BYTES = 1024 * 1024;
+const DEFAULT_MAX_AVATAR_BYTES = 1024 * 1024;
+const DEFAULT_MAX_COMMUNITY_IMAGE_BYTES = 2 * 1024 * 1024;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const getRequiredEnv = (env, key) => {
   const value = env[key];
@@ -35,7 +37,7 @@ const getAllowedOrigin = (request, env) => {
 const buildCorsHeaders = (origin) => {
   const headers = {
     'Access-Control-Allow-Methods': 'PUT, OPTIONS',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Image-Id, X-Post-Draft-Id',
     'Access-Control-Max-Age': '3600',
     Vary: 'Origin',
   };
@@ -69,11 +71,20 @@ const getContentType = (request) =>
 
 const normalizeBaseUrl = (value) => value.replace(/\/+$/, '');
 
-const createObjectKey = (userId, extension) => {
+const createAvatarObjectKey = (userId, extension) => {
   const day = new Date().toISOString().slice(0, 10).replaceAll('-', '');
 
   return `avatars/${userId}/${day}-${crypto.randomUUID()}.${extension}`;
 };
+
+const getUuidHeader = (request, key) => {
+  const value = request.headers.get(key)?.trim();
+
+  return value && UUID_PATTERN.test(value) ? value : null;
+};
+
+const createCommunityObjectKey = (userId, draftId, imageId, extension) =>
+  `community/${userId}/${draftId}/${imageId}.${extension}`;
 
 const verifySupabaseUser = async (request, env) => {
   const token = getBearerToken(request);
@@ -116,7 +127,10 @@ export default {
       });
     }
 
-    if (url.pathname !== '/avatars/upload') {
+    const isAvatarUpload = url.pathname === '/avatars/upload';
+    const isCommunityImageUpload = url.pathname === '/community/images/upload';
+
+    if (!isAvatarUpload && !isCommunityImageUpload) {
       return jsonResponse({ error: 'Not found.' }, { status: 404 }, origin);
     }
 
@@ -145,7 +159,11 @@ export default {
       );
     }
 
-    const maxBytes = Number(env.MAX_AVATAR_BYTES ?? DEFAULT_MAX_BYTES);
+    const maxBytes = Number(
+      isCommunityImageUpload
+        ? (env.MAX_COMMUNITY_IMAGE_BYTES ?? DEFAULT_MAX_COMMUNITY_IMAGE_BYTES)
+        : (env.MAX_AVATAR_BYTES ?? DEFAULT_MAX_AVATAR_BYTES),
+    );
     const contentLength = Number(request.headers.get('Content-Length') ?? 0);
 
     if (contentLength > maxBytes) {
@@ -162,10 +180,25 @@ export default {
       return jsonResponse({ error: 'Image is too large.' }, { status: 413 }, origin);
     }
 
-    const key = createObjectKey(user.id, extension);
+    const draftId = isCommunityImageUpload ? getUuidHeader(request, 'X-Post-Draft-Id') : null;
+    const imageId = isCommunityImageUpload ? getUuidHeader(request, 'X-Image-Id') : null;
 
-    await env.AVATAR_BUCKET.put(key, body, {
+    if (isCommunityImageUpload && (!draftId || !imageId)) {
+      return jsonResponse({ error: 'Image metadata is invalid.' }, { status: 400 }, origin);
+    }
+
+    const key = isCommunityImageUpload
+      ? createCommunityObjectKey(user.id, draftId, imageId, extension)
+      : createAvatarObjectKey(user.id, extension);
+    const bucket = env.ASSETS_BUCKET;
+
+    if (!bucket) {
+      return jsonResponse({ error: 'Upload bucket is not configured.' }, { status: 500 }, origin);
+    }
+
+    await bucket.put(key, body, {
       customMetadata: {
+        assetType: isCommunityImageUpload ? 'community-image' : 'avatar',
         userId: user.id,
       },
       httpMetadata: {
@@ -178,7 +211,9 @@ export default {
 
     return jsonResponse(
       {
+        imageUrl: `${publicBaseUrl}/${key}`,
         key,
+        objectKey: key,
         publicUrl: `${publicBaseUrl}/${key}`,
       },
       { status: 201 },
