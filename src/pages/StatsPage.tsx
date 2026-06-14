@@ -5,13 +5,17 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Cpu,
   ListOrdered,
+  Loader2,
   MapIcon,
   RotateCcw,
+  Sparkles,
   Swords,
   Target,
+  TriangleAlert,
 } from 'lucide-react';
-import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import {
   Bar,
@@ -57,6 +61,7 @@ import { getHeroPortraitPath, getMapScreenshotPath } from '@/data/masterAssets';
 import { useCompetitiveSeasons } from '@/hooks/useCompetitiveSeasons';
 import { useMatches } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
+import { useQwenInsightNarrator } from '@/hooks/useQwenInsightNarrator';
 import {
   compareMatchesByTimelineDesc,
   formatWinRate,
@@ -64,6 +69,13 @@ import {
   type ResultSummary,
 } from '@/lib/matchStats';
 import { groupMatchesBySession } from '@/lib/session';
+import {
+  QWEN_STATS_INSIGHT_SOURCE_MODEL,
+  buildStatsInsightPack,
+  type StatsInsightCandidate,
+  type StatsInsightPack,
+  type StatsInsightTone,
+} from '@/lib/statsInsights';
 import { cn } from '@/lib/utils';
 import {
   getCurrentCompetitiveSeason,
@@ -114,6 +126,12 @@ const statsSections = [
     eyebrow: '세션 분석',
     title: '순서 통계',
     value: 'order',
+  },
+  {
+    description: '현재 필터의 전장, 모드, 영웅, 시간, 순서, 조합 신호를 한 번에 요약합니다.',
+    eyebrow: '인사이트',
+    title: '요약(beta)',
+    value: 'summary',
   },
 ] as const;
 
@@ -541,6 +559,7 @@ const StatsPage = () => {
 
   const summary = useMemo(() => summarizeResults(filteredMatches), [filteredMatches]);
   const sessions = useMemo(() => groupMatchesBySession(filteredMatches), [filteredMatches]);
+  const insightPack = useMemo(() => buildStatsInsightPack(filteredMatches), [filteredMatches]);
 
   const matchRoleStats = useMemo(
     () =>
@@ -829,6 +848,62 @@ const StatsPage = () => {
     queueFilter !== 'all',
     accountFilter !== 'all',
   ].filter(Boolean).length;
+  const summaryScopeItems = useMemo(() => {
+    const periodLabel =
+      periodFilter === 'custom'
+        ? customPeriodStartDate || customPeriodEndDate
+          ? `${customPeriodStartDate ? formatDateLabel(customPeriodStartDate) : '처음'} - ${customPeriodEndDate ? formatDateLabel(customPeriodEndDate) : '오늘'}`
+          : '직접'
+        : (periodOptions.find((period) => period.value === periodFilter)?.label ?? '전체');
+    const accountLabel =
+      accountFilter === 'all'
+        ? '전체'
+        : accountFilter === 'unassigned'
+          ? '미지정'
+          : getPlayerAccountLabel(playerAccounts.find((account) => account.id === accountFilter));
+
+    return [
+      {
+        label: '시즌',
+        value: getSeasonFilterLabel(seasons, seasonFilter, currentSeasonId),
+      },
+      {
+        label: '기간',
+        value: periodLabel,
+      },
+      {
+        label: '포지션',
+        value: matchRoleFilter === 'all' ? '전체' : getMatchRoleLabel(matchRoleFilter),
+      },
+      {
+        label: '모드',
+        value: modeFilter === 'all' ? '전체' : getModeLabel(modeFilter),
+      },
+      {
+        label: '큐',
+        value:
+          queueFilter === 'all'
+            ? '전체'
+            : (queueOptions.find((queue) => queue.value === queueFilter)?.label ?? queueFilter),
+      },
+      {
+        label: '계정',
+        value: accountLabel,
+      },
+    ];
+  }, [
+    accountFilter,
+    currentSeasonId,
+    customPeriodEndDate,
+    customPeriodStartDate,
+    matchRoleFilter,
+    modeFilter,
+    periodFilter,
+    playerAccounts,
+    queueFilter,
+    seasonFilter,
+    seasons,
+  ]);
 
   const resetFilters = () => {
     setPeriodFilter('all');
@@ -946,6 +1021,34 @@ const StatsPage = () => {
         icon: ListOrdered,
         label: '주의 구간',
         value: worstOrder ? `${worstOrder.order}번째 ${formatWinRate(worstOrder.winRate)}` : '--',
+      },
+    ],
+    summary: [
+      {
+        detail: `${summary.wins}승 ${summary.losses}패 ${summary.draws}무`,
+        icon: BarChart3,
+        label: '분석 경기',
+        value: summary.total.toLocaleString('ko-KR'),
+      },
+      {
+        detail: summary.decisive > 0 ? `${summary.decisive}결정전 기준` : '결정전 기록 대기',
+        icon: Target,
+        label: '전체 승률',
+        value: formatWinRate(summary.winRate),
+      },
+      {
+        detail: '전장 · 모드 · 영웅 · 시간 · 순서 · 조합',
+        icon: Sparkles,
+        label: '후보 수',
+        value: insightPack.candidates.length.toLocaleString('ko-KR'),
+      },
+      {
+        detail: insightPack.candidates[0]
+          ? insightToneLabels[insightPack.candidates[0].tone]
+          : '표본 대기',
+        icon: Sparkles,
+        label: '최상위 신호',
+        value: insightPack.candidates[0]?.title ?? '--',
       },
     ],
     time: [
@@ -1628,6 +1731,42 @@ const StatsPage = () => {
             )}
           </div>
         ) : null}
+
+        {activeSection === 'summary' ? (
+          <div className="space-y-4">
+            <StatsFilterPanel
+              activeFilterCount={activeFilterCount}
+              accountFilter={accountFilter}
+              customPeriodEndDate={customPeriodEndDate}
+              customPeriodStartDate={customPeriodStartDate}
+              currentSeasonId={currentSeasonId}
+              label="요약 조건"
+              matchRoleFilter={matchRoleFilter}
+              modeFilter={modeFilter}
+              onAccountFilterChange={setAccountFilter}
+              onMatchRoleFilterChange={setMatchRoleFilter}
+              onModeFilterChange={setModeFilter}
+              onCustomPeriodEndDateChange={setCustomPeriodEndDate}
+              onCustomPeriodStartDateChange={setCustomPeriodStartDate}
+              onPeriodFilterChange={setPeriodFilter}
+              onQueueFilterChange={setQueueFilter}
+              onSeasonFilterChange={setSeasonFilter}
+              periodFilter={periodFilter}
+              playerAccounts={playerAccounts}
+              queueFilter={queueFilter}
+              seasonFilter={seasonFilter}
+              seasons={seasons}
+              title="인사이트 분석 기준"
+            />
+            <PositionSummaryStrip
+              activeRole={matchRoleFilter}
+              stats={matchRoleStats}
+              onRoleChange={setMatchRoleFilter}
+            />
+            <MetricGrid metrics={sectionMetrics.summary} />
+            <StatsInsightSummaryPanel insightPack={insightPack} scopeItems={summaryScopeItems} />
+          </div>
+        ) : null}
       </section>
     </div>
   );
@@ -1689,6 +1828,898 @@ const SectionMetricStack = ({ metrics }: { metrics: MetricCellProps[] }) => (
         className="border-b border-border/60 last:border-b-0"
       />
     ))}
+  </div>
+);
+
+const insightToneLabels = {
+  neutral: '관찰',
+  positive: '강점',
+  warning: '주의',
+} satisfies Record<StatsInsightTone, string>;
+
+const insightToneClassNames = {
+  neutral: 'border-white/15 bg-white/[0.05]',
+  positive: 'border-emerald-300/25 bg-emerald-300/[0.08]',
+  warning: 'border-amber-300/30 bg-amber-300/[0.08]',
+} satisfies Record<StatsInsightTone, string>;
+
+const insightToneBadgeClassNames = {
+  neutral: 'border-white/15 bg-white/10 text-slate-300',
+  positive: 'border-emerald-300/25 bg-emerald-300/10 text-emerald-100',
+  warning: 'border-amber-300/30 bg-amber-300/10 text-amber-100',
+} satisfies Record<StatsInsightTone, string>;
+
+const insightToneAccentClassNames = {
+  neutral: 'bg-slate-400/70',
+  positive: 'bg-emerald-300',
+  warning: 'bg-amber-300',
+} satisfies Record<StatsInsightTone, string>;
+
+const insightToneIconClassNames = {
+  neutral: 'border-white/15 bg-white/10 text-slate-300',
+  positive: 'border-emerald-300/25 bg-emerald-300/10 text-emerald-100',
+  warning: 'border-amber-300/30 bg-amber-300/10 text-amber-100',
+} satisfies Record<StatsInsightTone, string>;
+
+interface StatsInsightScopeItem {
+  label: string;
+  value: string;
+}
+
+const StatsInsightSummaryPanel = ({
+  insightPack,
+  scopeItems,
+}: {
+  insightPack: StatsInsightPack;
+  scopeItems: StatsInsightScopeItem[];
+}) => {
+  const { generate, isSupported, runtimeLabel, state } = useQwenInsightNarrator(
+    insightPack.signature,
+  );
+  const isBusy = state.status === 'loading' || state.status === 'generating';
+  const generatedText = state.text.trim();
+  const displayText = generatedText || insightPack.fallbackText;
+  const topCandidate = insightPack.candidates[0] ?? null;
+  const positiveCandidateCount = insightPack.candidates.filter(
+    (candidate) => candidate.tone === 'positive',
+  ).length;
+  const warningCandidateCount = insightPack.candidates.filter(
+    (candidate) => candidate.tone === 'warning',
+  ).length;
+  const neutralCandidateCount = insightPack.candidates.filter(
+    (candidate) => candidate.tone === 'neutral',
+  ).length;
+  const runtimeValue =
+    state.device && state.dtype ? `${state.device.toUpperCase()} · ${state.dtype}` : runtimeLabel;
+  const modelValue = state.model ?? QWEN_STATS_INSIGHT_SOURCE_MODEL;
+  const shouldAutoGenerate =
+    isSupported && insightPack.summary.total > 0 && state.status === 'idle';
+  const statusLabel =
+    insightPack.summary.total === 0
+      ? '기록 없음'
+      : !isSupported
+        ? '미지원'
+        : isBusy
+          ? '분석 중'
+          : state.status === 'done'
+            ? '완료'
+            : state.status === 'error'
+              ? '기본 분석'
+              : '준비 중';
+
+  useEffect(() => {
+    if (!shouldAutoGenerate) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      generate(insightPack.prompt);
+    }, 450);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [generate, insightPack.prompt, shouldAutoGenerate]);
+
+  return (
+    <section className="ai-insight-shell overflow-hidden rounded-lg border border-sky-300/20 shadow-[0_34px_120px_-76px_rgb(2_6_23/0.9)]">
+      <div className="ai-scanline" />
+      <div className="relative z-10 overflow-hidden border-b border-white/10">
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-sky-400/25 via-emerald-300/55 to-amber-300/45" />
+        <div className="grid gap-5 px-4 py-6 sm:px-5 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-end">
+          <div className="min-w-0">
+            <Badge
+              variant="outline"
+              className="mb-3 w-fit gap-1.5 border-sky-300/25 bg-sky-300/10 text-sky-100 shadow-[0_0_30px_rgb(56_189_248/0.15)]"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              AI 분석
+            </Badge>
+            <h2 className="ai-gradient-text text-2xl font-black tracking-normal sm:text-3xl">
+              현재 필터 기준 요약
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-slate-300/85">
+              전장, 모드, 영웅, 시간대, 세션 순서, 전장·영웅 조합 신호를 한 화면에서 정리합니다.
+            </p>
+          </div>
+
+          <StatsInsightRuntimePanel
+            isBusy={isBusy}
+            modelValue={modelValue}
+            runtimeValue={runtimeValue}
+            state={state}
+            statusLabel={statusLabel}
+          />
+        </div>
+      </div>
+
+      <div className="relative z-10 grid xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="min-w-0 space-y-4 p-4 sm:p-5">
+          <StatsInsightScopeBar items={scopeItems} />
+          <StatsInsightNarrativePanel
+            displayText={displayText}
+            generatedText={generatedText}
+            insightPack={insightPack}
+            isBusy={isBusy}
+            state={state}
+          />
+        </div>
+
+        <StatsInsightSignalPanel
+          neutralCandidateCount={neutralCandidateCount}
+          positiveCandidateCount={positiveCandidateCount}
+          topCandidate={topCandidate}
+          totalCandidateCount={insightPack.candidates.length}
+          warningCandidateCount={warningCandidateCount}
+        />
+      </div>
+
+      <div className="relative z-10 border-t border-white/10 bg-black/20 p-4 sm:p-5">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold text-slate-400">인사이트 후보</p>
+            <h3 className="mt-1 text-base font-bold text-white">계산된 신호</h3>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge
+              variant="outline"
+              className="w-fit border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
+            >
+              강점 {positiveCandidateCount}
+            </Badge>
+            <Badge
+              variant="outline"
+              className="w-fit border-amber-300/30 bg-amber-300/10 text-amber-100"
+            >
+              주의 {warningCandidateCount}
+            </Badge>
+            <Badge variant="outline" className="w-fit border-white/15 bg-white/10 text-slate-200">
+              전체 {insightPack.candidates.length}
+            </Badge>
+          </div>
+        </div>
+
+        {insightPack.candidates.length > 0 ? (
+          <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+            {insightPack.candidates.map((candidate, index) => (
+              <StatsInsightCandidateCard key={candidate.id} candidate={candidate} index={index} />
+            ))}
+          </div>
+        ) : (
+          <div className="ai-glass rounded-lg p-5">
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-white">표본 대기</p>
+              <p className="mt-1 text-sm font-semibold text-slate-300/80">
+                표본이 더 쌓이면 후보가 표시됩니다.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+};
+
+const StatsInsightRuntimePanel = ({
+  isBusy,
+  modelValue,
+  runtimeValue,
+  state,
+  statusLabel,
+}: {
+  isBusy: boolean;
+  modelValue: string;
+  runtimeValue: string;
+  state: ReturnType<typeof useQwenInsightNarrator>['state'];
+  statusLabel: string;
+}) => {
+  const progress = state.progress ?? (state.status === 'done' ? 100 : 0);
+
+  return (
+    <div className="ai-glass overflow-hidden rounded-lg">
+      <div className="flex items-center justify-between gap-3 border-b border-white/10 px-3.5 py-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-sky-300/25 bg-sky-300/10 text-sky-100 shadow-[0_0_28px_rgb(56_189_248/0.2)]">
+            {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cpu className="h-4 w-4" />}
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold text-slate-400">모델 상태</p>
+            <p className="mt-0.5 truncate text-sm font-bold text-white">{statusLabel}</p>
+          </div>
+        </div>
+        <Badge
+          variant="outline"
+          className={cn(
+            'shrink-0',
+            isBusy
+              ? 'border-sky-300/25 bg-sky-300/10 text-sky-100'
+              : state.status === 'done'
+                ? 'border-emerald-300/25 bg-emerald-300/10 text-emerald-100'
+                : state.status === 'error'
+                  ? 'border-amber-300/30 bg-amber-300/10 text-amber-100'
+                  : 'border-white/15 bg-white/10 text-slate-300',
+          )}
+        >
+          {state.status === 'done' ? 'LIVE' : statusLabel}
+        </Badge>
+      </div>
+
+      <div className="grid grid-cols-2 gap-0">
+        <div className="min-w-0 border-r border-white/10 px-3.5 py-3">
+          <p className="text-[11px] font-semibold text-slate-400">런타임</p>
+          <p className="mt-1 truncate text-sm font-bold text-slate-100">{runtimeValue}</p>
+        </div>
+        <div className="min-w-0 px-3.5 py-3">
+          <p className="text-[11px] font-semibold text-slate-400">모델</p>
+          <p className="mt-1 truncate text-sm font-bold text-slate-100" title={modelValue}>
+            {modelValue}
+          </p>
+        </div>
+      </div>
+
+      {isBusy || state.progress !== undefined ? (
+        <div className="border-t border-white/10 px-3.5 py-3">
+          <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-300/80">
+            <span className="truncate">{state.message || 'AI 분석 준비 중'}</span>
+            <span className="shrink-0">{Math.round(progress)}%</span>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-sky-400 via-emerald-300 to-amber-300 shadow-[0_0_22px_rgb(56_189_248/0.45)] transition-[width]"
+              style={{ width: `${Math.max(4, Math.min(100, progress))}%` }}
+            />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+const StatsInsightNarrativePanel = ({
+  displayText,
+  generatedText,
+  insightPack,
+  isBusy,
+  state,
+}: {
+  displayText: string;
+  generatedText: string;
+  insightPack: StatsInsightPack;
+  isBusy: boolean;
+  state: ReturnType<typeof useQwenInsightNarrator>['state'];
+}) => {
+  const shouldShowSkeleton = isBusy;
+  const title = isBusy ? 'AI 분석 생성 중' : generatedText ? 'AI 분석 결과' : '기본 분석 결과';
+  const meta =
+    insightPack.summary.total === 0
+      ? '기록 없음'
+      : state.status === 'error'
+        ? '계산된 신호 기반'
+        : generatedText
+          ? '온디바이스 생성 완료'
+          : isBusy
+            ? state.message || '모델 준비 중'
+            : '계산된 신호 기반';
+
+  return (
+    <div className="ai-glow-border rounded-lg">
+      <div className="ai-glass overflow-hidden rounded-lg">
+        <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/[0.03] px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold text-slate-400">AI 요약</p>
+            <p className="mt-1 truncate text-sm font-bold text-white">{title}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                'h-2.5 w-2.5 shrink-0 rounded-full',
+                isBusy
+                  ? 'animate-pulse bg-sky-300 shadow-[0_0_18px_rgb(125_211_252/0.85)]'
+                  : state.status === 'error'
+                    ? 'bg-amber-300'
+                    : state.status === 'done'
+                      ? 'bg-emerald-300'
+                      : 'bg-slate-500',
+              )}
+            />
+            <span className="max-w-[180px] truncate text-xs font-semibold text-slate-300/80">
+              {meta}
+            </span>
+          </div>
+        </div>
+
+        <div className="min-h-[300px] px-4 py-5 sm:px-5" aria-live="polite">
+          {shouldShowSkeleton ? (
+            <StatsInsightGeneratingState />
+          ) : (
+            <StatsInsightStructuredList
+              candidates={insightPack.candidates}
+              fallbackText={insightPack.fallbackText}
+              text={displayText}
+            />
+          )}
+        </div>
+
+        <StatsInsightStatusBar isBusy={isBusy} state={state} />
+      </div>
+    </div>
+  );
+};
+
+interface ParsedStatsInsightItem {
+  text: string;
+  title?: string;
+  tone: StatsInsightTone;
+}
+
+const isStatsInsightTone = (value: unknown): value is StatsInsightTone =>
+  value === 'neutral' || value === 'positive' || value === 'warning';
+
+const normalizeStatsInsightTone = (value: unknown): StatsInsightTone => {
+  if (isStatsInsightTone(value)) {
+    return value;
+  }
+
+  if (typeof value !== 'string') {
+    return 'neutral';
+  }
+
+  if (/강점|positive|good|best/i.test(value)) {
+    return 'positive';
+  }
+
+  if (/주의|warning|risk|weak|bad/i.test(value)) {
+    return 'warning';
+  }
+
+  return 'neutral';
+};
+
+const getStatsInsightToneFromText = (value: string): StatsInsightTone => {
+  if (/^\s*(?:\[[^\]]*주의[^\]]*\]|주의[:\s]|리스크|낮은|흔들)/.test(value)) {
+    return 'warning';
+  }
+
+  if (/^\s*(?:\[[^\]]*강점[^\]]*\]|강점[:\s]|높은|좋은|유리)/.test(value)) {
+    return 'positive';
+  }
+
+  return 'neutral';
+};
+
+const isUsableStatsInsightText = (value: string) => {
+  const trimmedValue = value.trim();
+
+  return (
+    trimmedValue.length > 0 &&
+    !trimmedValue.includes('\uFFFD') &&
+    !/^(?:최종\s*결론|결론|주요\s*전략)\s*[:：]?/i.test(stripInsightLineMarker(trimmedValue))
+  );
+};
+
+const extractStatsInsightJsonText = (value: string) => {
+  const cleanedValue = value
+    .replace(/```(?:json)?/gi, '')
+    .replace(/```/g, '')
+    .trim();
+  const startIndex = cleanedValue.indexOf('{');
+  const endIndex = cleanedValue.lastIndexOf('}');
+
+  if (startIndex < 0 || endIndex <= startIndex) {
+    return null;
+  }
+
+  return cleanedValue.slice(startIndex, endIndex + 1);
+};
+
+const getCandidateIdFromInsightValue = (value: unknown) => {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+
+  const valueRecord = value as { candidateId?: unknown; id?: unknown };
+  const candidateId = valueRecord.candidateId ?? valueRecord.id;
+
+  return typeof candidateId === 'string' ? candidateId : null;
+};
+
+const createStatsInsightCandidateMap = (candidates: StatsInsightCandidate[]) =>
+  new Map(candidates.map((candidate) => [candidate.id, candidate]));
+
+const parseStatsInsightSchema = (
+  value: string,
+  candidates: StatsInsightCandidate[],
+): ParsedStatsInsightItem[] => {
+  const jsonText = extractStatsInsightJsonText(value);
+
+  if (!jsonText) {
+    return [];
+  }
+
+  try {
+    const parsedValue = JSON.parse(jsonText) as unknown;
+    const candidateById = createStatsInsightCandidateMap(candidates);
+    const usedCandidateIds = new Set<string>();
+    const insightValues =
+      typeof parsedValue === 'object' && parsedValue !== null && 'insights' in parsedValue
+        ? (parsedValue as { insights?: unknown }).insights
+        : parsedValue;
+
+    if (!Array.isArray(insightValues)) {
+      return [];
+    }
+
+    return insightValues
+      .map((item): ParsedStatsInsightItem | null => {
+        const candidateId = getCandidateIdFromInsightValue(item);
+
+        if (candidateId) {
+          const candidate = candidateById.get(candidateId);
+
+          if (candidate && !usedCandidateIds.has(candidate.id)) {
+            usedCandidateIds.add(candidate.id);
+
+            return {
+              text: candidate.description,
+              title: candidate.title,
+              tone: candidate.tone,
+            };
+          }
+        }
+
+        if (candidates.length > 0) {
+          return null;
+        }
+
+        if (typeof item !== 'object' || item === null) {
+          return null;
+        }
+
+        const itemRecord = item as {
+          description?: unknown;
+          summary?: unknown;
+          text?: unknown;
+          title?: unknown;
+          tone?: unknown;
+        };
+        const textValue = itemRecord.text ?? itemRecord.summary ?? itemRecord.description;
+
+        if (typeof textValue !== 'string' || !isUsableStatsInsightText(textValue)) {
+          return null;
+        }
+
+        return {
+          text: stripInsightLineMarker(textValue),
+          title: typeof itemRecord.title === 'string' ? itemRecord.title.trim() : undefined,
+          tone: normalizeStatsInsightTone(itemRecord.tone),
+        };
+      })
+      .filter((item): item is ParsedStatsInsightItem => item !== null)
+      .slice(0, 5);
+  } catch {
+    return [];
+  }
+};
+
+const getStatsInsightTextLines = (value: string) => {
+  const normalizedValue = value.replace(/\r/g, '\n').trim();
+  const newlineLines = normalizedValue
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (newlineLines.length > 1) {
+    return mergeNumberOnlyInsightLines(newlineLines);
+  }
+
+  const inlineNumberedLines = normalizedValue
+    .split(/\s+(?=\d+[.)]\s+)/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (inlineNumberedLines.length > 1) {
+    return inlineNumberedLines;
+  }
+
+  return (
+    normalizedValue
+      .match(/[^.!?]+(?:[.!?]+|$)/g)
+      ?.map((line) => line.trim())
+      .filter(Boolean) ?? []
+  );
+};
+
+const stripInsightLineMarker = (value: string) =>
+  value
+    .replace(/^(?:[-*•]\s*|\d+[.)]\s*)/, '')
+    .replace(/^\*+\s*/, '')
+    .replace(/\*+$/g, '')
+    .replace(/^\[[^\]]+\]\s*/, '')
+    .trim();
+
+const mergeNumberOnlyInsightLines = (lines: string[]) => {
+  const mergedLines: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+
+    if (/^\d+[.)]?$/.test(line) && lines[index + 1]) {
+      mergedLines.push(`${line}. ${lines[index + 1]}`);
+      index += 1;
+      continue;
+    }
+
+    mergedLines.push(line);
+  }
+
+  return mergedLines;
+};
+
+const parseStatsInsightItems = (value: string, candidates: StatsInsightCandidate[]) => {
+  const schemaItems = parseStatsInsightSchema(value, candidates);
+
+  if (schemaItems.length > 0) {
+    return schemaItems;
+  }
+
+  return getStatsInsightTextLines(value)
+    .filter(isUsableStatsInsightText)
+    .map(
+      (line): ParsedStatsInsightItem => ({
+        text: stripInsightLineMarker(line),
+        tone: getStatsInsightToneFromText(line),
+      }),
+    )
+    .filter((item) => isUsableStatsInsightText(item.text))
+    .slice(0, 5);
+};
+
+const StatsInsightStructuredList = ({
+  candidates,
+  fallbackText,
+  text,
+}: {
+  candidates: StatsInsightCandidate[];
+  fallbackText: string;
+  text: string;
+}) => {
+  const parsedItems = parseStatsInsightItems(text, candidates);
+  const items =
+    parsedItems.length > 0 ? parsedItems : parseStatsInsightItems(fallbackText, candidates);
+
+  return (
+    <ol className="space-y-2.5">
+      {items.map((item, index) => (
+        <li
+          key={`${index}-${item.title ?? item.text}`}
+          className="group flex gap-3 rounded-md border border-white/10 bg-white/[0.045] px-3 py-2.5 transition-[border-color,background-color] duration-200 hover:border-sky-300/25 hover:bg-white/[0.07]"
+        >
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-sky-300/25 bg-sky-300/10 text-xs font-black text-sky-100">
+            {index + 1}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-2">
+              {item.title ? (
+                <span className="text-xs font-bold text-slate-200">{item.title}</span>
+              ) : null}
+              <Badge
+                variant="outline"
+                className={cn('h-5 px-1.5 text-[10px]', insightToneBadgeClassNames[item.tone])}
+              >
+                {insightToneLabels[item.tone]}
+              </Badge>
+            </span>
+            <span className="mt-1 block break-words text-sm font-semibold leading-6 text-slate-100 sm:text-[15px]">
+              {item.text}
+            </span>
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+};
+
+const StatsInsightGeneratingState = () => (
+  <div className="space-y-5">
+    <div className="flex items-center gap-3">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-sky-300/25 bg-sky-300/10 text-sky-100 shadow-[0_0_28px_rgb(56_189_248/0.2)]">
+        <Loader2 className="h-5 w-5 animate-spin" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <SkeletonBlock className="h-4 w-48 max-w-full" />
+        <SkeletonBlock className="mt-2 h-3 w-64 max-w-full" />
+      </div>
+    </div>
+    <div className="space-y-3">
+      <SkeletonBlock className="h-4 w-[94%]" />
+      <SkeletonBlock className="h-4 w-[88%]" />
+      <SkeletonBlock className="h-4 w-[72%]" />
+      <SkeletonBlock className="h-4 w-[82%]" />
+    </div>
+    <div className="grid gap-2 sm:grid-cols-3">
+      {Array.from({ length: 3 }, (_, index) => (
+        <div key={index} className="rounded-md border border-white/10 bg-white/[0.04] p-3">
+          <SkeletonBlock className="h-3 w-14" />
+          <SkeletonBlock className="mt-2 h-5 w-20" />
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const StatsInsightSignalPanel = ({
+  neutralCandidateCount,
+  positiveCandidateCount,
+  topCandidate,
+  totalCandidateCount,
+  warningCandidateCount,
+}: {
+  neutralCandidateCount: number;
+  positiveCandidateCount: number;
+  topCandidate: StatsInsightCandidate | null;
+  totalCandidateCount: number;
+  warningCandidateCount: number;
+}) => {
+  const getWidth = (count: number) =>
+    totalCandidateCount === 0 ? 0 : Math.round((count / totalCandidateCount) * 100);
+
+  return (
+    <aside className="border-t border-white/10 bg-black/20 p-4 sm:p-5 xl:border-l xl:border-t-0">
+      <div className="space-y-4">
+        <div className="ai-glass overflow-hidden rounded-lg">
+          <div className="flex items-start justify-between gap-3 border-b border-white/10 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold text-slate-400">최상위 신호</p>
+              <p className="mt-1 break-words text-sm font-bold text-white">
+                {topCandidate ? topCandidate.title : '표본 대기'}
+              </p>
+            </div>
+            <Badge
+              variant="outline"
+              className={cn(
+                'shrink-0',
+                topCandidate
+                  ? insightToneBadgeClassNames[topCandidate.tone]
+                  : 'border-white/15 bg-white/10 text-slate-300',
+              )}
+            >
+              {topCandidate ? insightToneLabels[topCandidate.tone] : '대기'}
+            </Badge>
+          </div>
+
+          <div className="p-4">
+            {topCandidate ? (
+              <div className="space-y-4">
+                <div className="flex gap-3">
+                  <div
+                    className={cn(
+                      'flex h-10 w-10 shrink-0 items-center justify-center rounded-md border',
+                      insightToneIconClassNames[topCandidate.tone],
+                    )}
+                  >
+                    {topCandidate.tone === 'warning' ? (
+                      <TriangleAlert className="h-5 w-5" />
+                    ) : topCandidate.tone === 'positive' ? (
+                      <Target className="h-5 w-5" />
+                    ) : (
+                      <Sparkles className="h-5 w-5" />
+                    )}
+                  </div>
+                  <p className="min-w-0 break-words text-sm font-semibold leading-7 text-slate-300/85">
+                    {topCandidate.description}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {topCandidate.details.map((detail) => (
+                    <div
+                      key={`${topCandidate.id}-${detail.label}`}
+                      className="min-w-0 rounded-md border border-white/10 bg-white/[0.05] px-3 py-2.5"
+                    >
+                      <p className="truncate text-[11px] font-semibold text-slate-400">
+                        {detail.label}
+                      </p>
+                      <p className="mt-1 truncate text-sm font-bold text-white">{detail.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-md border border-dashed border-white/15 bg-white/[0.04] p-4">
+                <p className="text-sm font-semibold text-slate-300/80">
+                  표본이 더 쌓이면 최상위 신호가 표시됩니다.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="ai-glass rounded-lg p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold text-slate-400">신호 분포</p>
+              <p className="mt-1 truncate text-sm font-bold text-white">
+                {totalCandidateCount}개 후보
+              </p>
+            </div>
+            <Sparkles className="h-4 w-4 shrink-0 text-sky-200" />
+          </div>
+          <div className="mt-4 flex h-2 overflow-hidden rounded-full bg-white/10">
+            {totalCandidateCount === 0 ? (
+              <div className="h-full w-full bg-slate-500/30" />
+            ) : (
+              <>
+                <div
+                  className="h-full bg-emerald-300 shadow-[0_0_18px_rgb(110_231_183/0.55)]"
+                  style={{ width: `${getWidth(positiveCandidateCount)}%` }}
+                />
+                <div
+                  className="h-full bg-amber-300 shadow-[0_0_18px_rgb(253_230_138/0.45)]"
+                  style={{ width: `${getWidth(warningCandidateCount)}%` }}
+                />
+                <div
+                  className="h-full bg-slate-400/50"
+                  style={{ width: `${getWidth(neutralCandidateCount)}%` }}
+                />
+              </>
+            )}
+          </div>
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <div className="rounded-md border border-emerald-300/20 bg-emerald-300/10 px-2.5 py-2">
+              <p className="text-[11px] font-semibold text-emerald-200">강점</p>
+              <p className="mt-1 text-sm font-bold text-white">{positiveCandidateCount}</p>
+            </div>
+            <div className="rounded-md border border-amber-300/25 bg-amber-300/10 px-2.5 py-2">
+              <p className="text-[11px] font-semibold text-amber-200">주의</p>
+              <p className="mt-1 text-sm font-bold text-white">{warningCandidateCount}</p>
+            </div>
+            <div className="rounded-md border border-white/10 bg-white/[0.05] px-2.5 py-2">
+              <p className="text-[11px] font-semibold text-slate-400">관찰</p>
+              <p className="mt-1 text-sm font-bold text-white">{neutralCandidateCount}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+};
+
+const StatsInsightScopeBar = ({ items }: { items: StatsInsightScopeItem[] }) => (
+  <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1">
+    {items.map((item) => (
+      <div
+        key={item.label}
+        className="min-w-[138px] rounded-md border border-white/10 bg-white/[0.055] px-3 py-2.5 shadow-[inset_0_1px_0_rgb(255_255_255/0.06)] transition-[border-color,background-color] duration-200 hover:border-sky-300/25 hover:bg-white/[0.08] lg:min-w-0 lg:flex-1"
+      >
+        <p className="truncate text-[11px] font-semibold text-slate-400">{item.label}</p>
+        <p className="mt-1 truncate text-sm font-bold text-slate-100">{item.value}</p>
+      </div>
+    ))}
+  </div>
+);
+
+const StatsInsightStatusBar = ({
+  isBusy,
+  state,
+}: {
+  isBusy: boolean;
+  state: ReturnType<typeof useQwenInsightNarrator>['state'];
+}) => {
+  if (!state.message && !state.error) {
+    return null;
+  }
+
+  const progress = state.progress ?? (state.status === 'done' ? 100 : 0);
+
+  return (
+    <div className="border-t border-white/10 bg-black/20 px-4 py-3 sm:px-5">
+      <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-300/80">
+        {isBusy ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-200" />
+        ) : state.status === 'error' ? (
+          <TriangleAlert className="h-3.5 w-3.5 text-amber-200" />
+        ) : (
+          <Sparkles className="h-3.5 w-3.5 text-sky-200" />
+        )}
+        <span>{state.error ?? state.message}</span>
+        {state.progress !== undefined ? <span>{state.progress}%</span> : null}
+      </div>
+      {isBusy || state.progress !== undefined ? (
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-sky-400 via-emerald-300 to-amber-300 shadow-[0_0_22px_rgb(56_189_248/0.45)] transition-[width]"
+            style={{ width: `${Math.max(4, Math.min(100, progress))}%` }}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+const StatsInsightCandidateCard = ({
+  candidate,
+  index,
+}: {
+  candidate: StatsInsightCandidate;
+  index: number;
+}) => (
+  <div
+    className={cn(
+      'group relative overflow-hidden rounded-lg border shadow-[0_16px_55px_-42px_rgb(2_6_23/0.9)] transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-sky-300/35 hover:shadow-[0_22px_80px_-48px_rgb(56_189_248/0.55)]',
+      insightToneClassNames[candidate.tone],
+    )}
+  >
+    <div
+      className={cn('absolute inset-x-0 top-0 h-1', insightToneAccentClassNames[candidate.tone])}
+    />
+    <div className="p-4">
+      <div className="flex items-start gap-3">
+        <div
+          className={cn(
+            'flex h-10 w-10 shrink-0 items-center justify-center rounded-md border',
+            insightToneIconClassNames[candidate.tone],
+          )}
+        >
+          {candidate.tone === 'warning' ? (
+            <TriangleAlert className="h-5 w-5" />
+          ) : candidate.tone === 'positive' ? (
+            <Target className="h-5 w-5" />
+          ) : (
+            <Sparkles className="h-5 w-5" />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold text-slate-400">#{index + 1}</span>
+            <Badge
+              variant="outline"
+              className={cn('shrink-0', insightToneBadgeClassNames[candidate.tone])}
+            >
+              {insightToneLabels[candidate.tone]}
+            </Badge>
+          </div>
+          <h3 className="mt-2 break-words text-sm font-bold leading-snug text-white">
+            {candidate.title}
+          </h3>
+          <p className="mt-2 break-words text-xs font-semibold leading-relaxed text-slate-300/80">
+            {candidate.description}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-1.5">
+        {candidate.details.slice(0, 4).map((detail) => (
+          <div
+            key={`${candidate.id}-${detail.label}`}
+            className="min-w-0 rounded-md border border-white/10 bg-white/[0.045] px-2.5 py-2"
+          >
+            <p className="truncate text-[11px] font-semibold text-slate-400">{detail.label}</p>
+            <p className="mt-0.5 truncate text-xs font-bold text-slate-100">{detail.value}</p>
+          </div>
+        ))}
+      </div>
+    </div>
   </div>
 );
 
@@ -2371,6 +3402,7 @@ const StatsSectionSkeleton = ({ section }: { section: StatsSection }) => (
     {section === 'heroes' ? <HeroStatsSkeleton /> : null}
     {section === 'time' ? <TimeStatsSkeleton /> : null}
     {section === 'order' ? <OrderStatsSkeleton /> : null}
+    {section === 'summary' ? <SummaryStatsSkeleton /> : null}
   </section>
 );
 
@@ -2486,6 +3518,37 @@ const OrderStatsSkeleton = () => (
       <StatsMetricStackSkeleton />
       <StatsListPanelSkeleton rows={3} />
     </aside>
+  </div>
+);
+
+const SummaryStatsSkeleton = () => (
+  <div className="space-y-4">
+    <StatsMetricGridSkeleton />
+    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+      <div className="border-b border-border/60 bg-[hsl(var(--surface-2))] px-4 py-4 sm:px-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <SkeletonBlock className="h-3 w-20" />
+            <SkeletonBlock className="mt-2 h-6 w-44" />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <SkeletonBlock className="h-8 w-24" />
+            <SkeletonBlock className="h-8 w-32" />
+            <SkeletonBlock className="h-8 w-28" />
+          </div>
+        </div>
+      </div>
+      <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <div className="border-b border-border/60 p-4 sm:p-5 xl:border-b-0 xl:border-r">
+          <SkeletonBlock className="h-[220px] w-full" />
+        </div>
+        <div className="grid gap-3 p-4 sm:p-5">
+          {Array.from({ length: 4 }, (_, index) => (
+            <SkeletonBlock key={index} className="h-28 w-full" />
+          ))}
+        </div>
+      </div>
+    </div>
   </div>
 );
 

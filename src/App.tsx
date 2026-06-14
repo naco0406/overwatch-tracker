@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 
+import { QwenInsightModelPreloader } from '@/components/common/QwenInsightModelPreloader';
 import { Toaster } from '@/components/ui/toaster';
 import { AuthProvider } from '@/hooks/useAuth';
 import { LiveCaptureProvider } from '@/hooks/useLiveCapture';
@@ -21,6 +22,7 @@ const App = () => (
       <AuthProvider>
         <LiveCaptureProvider>
           <AppRoutes />
+          <QwenInsightModelPreloader />
           <Toaster />
         </LiveCaptureProvider>
       </AuthProvider>
