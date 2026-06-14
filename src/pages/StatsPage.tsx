@@ -245,6 +245,17 @@ const formatShare = (value: number) => `${value}%`;
 const getShare = (count: number, total: number) =>
   total === 0 ? 0 : Math.round((count / total) * 100);
 
+const pushGrouped = <TKey, TValue>(groups: Map<TKey, TValue[]>, key: TKey, value: TValue) => {
+  const current = groups.get(key);
+
+  if (current) {
+    current.push(value);
+    return;
+  }
+
+  groups.set(key, [value]);
+};
+
 const getEmptyResultSummary = (): ResultSummary => ({
   decisive: 0,
   draws: 0,
@@ -286,6 +297,9 @@ const chartColors = {
 type HeroRole = keyof typeof roleLabels;
 
 const heroRoles = ['tank', 'damage', 'support'] as const satisfies HeroRole[];
+const mapsByMode = new Map(
+  modeOptions.map((mode) => [mode.value, mapOptions.filter((map) => map.modeId === mode.value)]),
+);
 
 const legendStyle = {
   fontFamily: chartFontFamily,
@@ -473,13 +487,65 @@ const StatsPage = () => {
     [matchRoleFilter, roleBaseMatches],
   );
 
+  const matchRoleMatchesByRole = useMemo(() => {
+    const byMatchRole = new Map<MatchRole, Match[]>();
+
+    for (const match of roleBaseMatches) {
+      pushGrouped(byMatchRole, match.matchRole, match);
+    }
+
+    return byMatchRole;
+  }, [roleBaseMatches]);
+
+  const filteredMatchGroups = useMemo(() => {
+    const byHero = new Map<string, Match[]>();
+    const byHeroRole = new Map<HeroRole, Match[]>();
+    const byMap = new Map<string, Match[]>();
+    const byMode = new Map<ModeId, Match[]>();
+    const byModeMap = new Map<ModeId, Map<string, Match[]>>();
+
+    for (const match of filteredMatches) {
+      pushGrouped(byMap, match.mapId, match);
+      pushGrouped(byMode, match.modeId, match);
+
+      let mapsForMode = byModeMap.get(match.modeId);
+      if (!mapsForMode) {
+        mapsForMode = new Map<string, Match[]>();
+        byModeMap.set(match.modeId, mapsForMode);
+      }
+      pushGrouped(mapsForMode, match.mapId, match);
+
+      const matchHeroRoles = new Set<HeroRole>();
+      for (const heroId of new Set(match.myHeroes)) {
+        pushGrouped(byHero, heroId, match);
+
+        const heroRole = heroRoleById.get(heroId);
+        if (heroRole) {
+          matchHeroRoles.add(heroRole);
+        }
+      }
+
+      for (const heroRole of matchHeroRoles) {
+        pushGrouped(byHeroRole, heroRole, match);
+      }
+    }
+
+    return {
+      byHero,
+      byHeroRole,
+      byMap,
+      byMode,
+      byModeMap,
+    };
+  }, [filteredMatches, heroRoleById]);
+
   const summary = useMemo(() => summarizeResults(filteredMatches), [filteredMatches]);
   const sessions = useMemo(() => groupMatchesBySession(filteredMatches), [filteredMatches]);
 
   const matchRoleStats = useMemo(
     () =>
       matchRoleOptions.map((role) => {
-        const roleMatches = roleBaseMatches.filter((match) => match.matchRole === role.value);
+        const roleMatches = matchRoleMatchesByRole.get(role.value) ?? [];
 
         return {
           ...summarizeResults(roleMatches),
@@ -488,14 +554,14 @@ const StatsPage = () => {
           value: role.value,
         };
       }),
-    [roleBaseMatches],
+    [matchRoleMatchesByRole, roleBaseMatches.length],
   );
 
   const modeStats = useMemo(
     () =>
       modeOptions
         .map((mode) => {
-          const modeMatches = filteredMatches.filter((match) => match.modeId === mode.value);
+          const modeMatches = filteredMatchGroups.byMode.get(mode.value) ?? [];
           return {
             ...summarizeResults(modeMatches),
             label: mode.label,
@@ -503,19 +569,19 @@ const StatsPage = () => {
           };
         })
         .filter((mode) => mode.total > 0),
-    [filteredMatches],
+    [filteredMatchGroups],
   );
 
   const modeMapStats = useMemo(
     () =>
       modeOptions
         .map((mode) => {
-          const modeMatches = filteredMatches.filter((match) => match.modeId === mode.value);
+          const modeMatches = filteredMatchGroups.byMode.get(mode.value) ?? [];
           const modeSummary = summarizeResults(modeMatches);
-          const maps = mapOptions
-            .filter((map) => map.modeId === mode.value)
+          const modeMapMatches = filteredMatchGroups.byModeMap.get(mode.value);
+          const maps = (mapsByMode.get(mode.value) ?? [])
             .map((map) => {
-              const mapMatches = modeMatches.filter((match) => match.mapId === map.value);
+              const mapMatches = modeMapMatches?.get(map.value) ?? [];
 
               return {
                 ...summarizeResults(mapMatches),
@@ -535,14 +601,14 @@ const StatsPage = () => {
           };
         })
         .filter((mode) => mode.total > 0),
-    [filteredMatches],
+    [filteredMatchGroups],
   );
 
   const mapStats = useMemo(
     () =>
       mapOptions
         .map((map) => {
-          const mapMatches = filteredMatches.filter((match) => match.mapId === map.value);
+          const mapMatches = filteredMatchGroups.byMap.get(map.value) ?? [];
           return {
             ...summarizeResults(mapMatches),
             label: map.label,
@@ -553,16 +619,14 @@ const StatsPage = () => {
         })
         .filter((map) => map.total > 0)
         .sort((a, b) => (b.winRate ?? -1) - (a.winRate ?? -1) || b.total - a.total),
-    [filteredMatches],
+    [filteredMatchGroups, filteredMatches.length],
   );
 
   const heroStats = useMemo(
     () =>
       heroOptions
         .map((hero) => {
-          const heroMatches = filteredMatches.filter((match) =>
-            match.myHeroes.includes(hero.value),
-          );
+          const heroMatches = filteredMatchGroups.byHero.get(hero.value) ?? [];
           return {
             ...summarizeResults(heroMatches),
             label: hero.label,
@@ -573,16 +637,14 @@ const StatsPage = () => {
         })
         .filter((hero) => hero.total > 0)
         .sort((a, b) => b.total - a.total || (b.winRate ?? -1) - (a.winRate ?? -1)),
-    [filteredMatches],
+    [filteredMatchGroups, filteredMatches.length],
   );
 
   const roleStats = useMemo(
     () =>
       heroRoles
         .map((role) => {
-          const roleMatches = filteredMatches.filter((match) =>
-            match.myHeroes.some((heroId) => heroRoleById.get(heroId) === role),
-          );
+          const roleMatches = filteredMatchGroups.byHeroRole.get(role) ?? [];
 
           return {
             ...summarizeResults(roleMatches),
@@ -592,7 +654,7 @@ const StatsPage = () => {
           };
         })
         .filter((role) => role.total > 0),
-    [filteredMatches, heroRoleById],
+    [filteredMatchGroups, filteredMatches.length],
   );
 
   const hourlyStats = useMemo(() => {
@@ -654,8 +716,7 @@ const StatsPage = () => {
   const modeRecentFormStats = useMemo(
     () =>
       modeWinRateStats.map((modeStat) => {
-        const recentMatches = filteredMatches
-          .filter((match) => match.modeId === modeStat.value)
+        const recentMatches = [...(filteredMatchGroups.byMode.get(modeStat.value) ?? [])]
           .sort(compareMatchesByTimelineDesc)
           .slice(0, 8);
         const recentSummary = summarizeResults(recentMatches);
@@ -672,7 +733,7 @@ const StatsPage = () => {
           value: modeStat.value,
         };
       }),
-    [filteredMatches, modeWinRateStats],
+    [filteredMatchGroups, modeWinRateStats],
   );
 
   const modeChartData = useMemo(
@@ -735,17 +796,29 @@ const StatsPage = () => {
   );
 
   const maxHourCount = Math.max(1, ...hourlyStats.map((stat) => stat.total));
-  const topMap = [...mapStats].sort((a, b) => b.total - a.total)[0] ?? null;
-  const topMode = [...modeStats].sort((a, b) => b.total - a.total)[0] ?? null;
-  const bestMap = getBestWinRate(mapStats);
-  const bestMode = getBestWinRate(modeStats, 2);
+  const topMap = useMemo(
+    () => [...mapStats].sort((a, b) => b.total - a.total)[0] ?? null,
+    [mapStats],
+  );
+  const topMode = useMemo(
+    () => [...modeStats].sort((a, b) => b.total - a.total)[0] ?? null,
+    [modeStats],
+  );
+  const bestMap = useMemo(() => getBestWinRate(mapStats), [mapStats]);
+  const bestMode = useMemo(() => getBestWinRate(modeStats, 2), [modeStats]);
   const topHero = heroStats[0] ?? null;
-  const bestHero = getBestWinRate(heroStats, 2);
-  const topHour = [...hourlyStats].sort((a, b) => b.total - a.total)[0] ?? null;
-  const bestHour = getBestWinRate(hourlyStats, 2);
-  const topOrder = [...orderStats].sort((a, b) => b.total - a.total)[0] ?? null;
-  const bestOrder = getBestWinRate(orderStats, 2);
-  const worstOrder = getWorstWinRate(orderStats, 2);
+  const bestHero = useMemo(() => getBestWinRate(heroStats, 2), [heroStats]);
+  const topHour = useMemo(
+    () => [...hourlyStats].sort((a, b) => b.total - a.total)[0] ?? null,
+    [hourlyStats],
+  );
+  const bestHour = useMemo(() => getBestWinRate(hourlyStats, 2), [hourlyStats]);
+  const topOrder = useMemo(
+    () => [...orderStats].sort((a, b) => b.total - a.total)[0] ?? null,
+    [orderStats],
+  );
+  const bestOrder = useMemo(() => getBestWinRate(orderStats, 2), [orderStats]);
+  const worstOrder = useMemo(() => getWorstWinRate(orderStats, 2), [orderStats]);
   const activeSectionMeta =
     statsSections.find((statsSection) => statsSection.value === activeSection) ?? statsSections[0];
   const activeFilterCount = [

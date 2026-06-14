@@ -97,6 +97,13 @@ const getDefaultAccountId = (accounts: PlayerAccount[], preferredAccountId?: str
   accounts[0]?.id ??
   '';
 
+const mapById = new Map(mapOptions.map((map) => [map.value, map] as const));
+const mapBaseOrder = new Map(mapOptions.map((map, index) => [map.value, index] as const));
+const searchableMapOptions = mapOptions.map((map) => ({
+  ...map,
+  searchText: `${map.label} ${map.value} ${getModeLabel(map.modeId)}`.toLowerCase(),
+}));
+
 interface QuickMatchEntryPreferences {
   accountId?: string;
   matchRole?: MatchRole;
@@ -187,7 +194,7 @@ const QuickMatchEntry = ({
     : defaultAccountId;
   const selectedAccount =
     accounts.find((account) => account.id === effectiveSelectedAccountId) ?? null;
-  const selectedMap = mapOptions.find((map) => map.value === mapId);
+  const selectedMap = mapById.get(mapId);
 
   useEffect(() => {
     if (!accountTouchedRef.current) {
@@ -241,18 +248,14 @@ const QuickMatchEntry = ({
 
   const visibleMaps = useMemo(() => {
     const normalizedQuery = mapQuery.trim().toLowerCase();
-    const baseOrder = new Map(mapOptions.map((map, index) => [map.value, index]));
     const activeCounts =
       modeFilter === 'all' ? mapPickCounts.all : (mapPickCounts.byMode.get(modeFilter) ?? null);
 
-    return mapOptions
+    return searchableMapOptions
       .filter((map) => {
         const modeMatches = modeFilter === 'all' || map.modeId === modeFilter;
         const queryMatches =
-          normalizedQuery.length === 0 ||
-          map.label.toLowerCase().includes(normalizedQuery) ||
-          map.value.toLowerCase().includes(normalizedQuery) ||
-          getModeLabel(map.modeId).toLowerCase().includes(normalizedQuery);
+          normalizedQuery.length === 0 || map.searchText.includes(normalizedQuery);
 
         return modeMatches && queryMatches;
       })
@@ -264,7 +267,7 @@ const QuickMatchEntry = ({
           return pickDelta;
         }
 
-        return (baseOrder.get(left.value) ?? 0) - (baseOrder.get(right.value) ?? 0);
+        return (mapBaseOrder.get(left.value) ?? 0) - (mapBaseOrder.get(right.value) ?? 0);
       });
   }, [mapPickCounts, mapQuery, modeFilter]);
 
@@ -273,7 +276,7 @@ const QuickMatchEntry = ({
   }
 
   const selectMap = (nextMapId: string) => {
-    const nextMap = mapOptions.find((map) => map.value === nextMapId);
+    const nextMap = mapById.get(nextMapId);
 
     if (!nextMap) return;
 

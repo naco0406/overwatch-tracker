@@ -32,6 +32,14 @@ const modeCounts = modeOptions.map((mode) => ({
   ...mode,
   count: mapOptions.filter((map) => map.modeId === mode.value).length,
 }));
+const searchableHeroOptions = heroOptions.map((hero) => ({
+  ...hero,
+  searchText: `${hero.label} ${hero.value}`.toLowerCase(),
+}));
+const searchableMapOptions = mapOptions.map((map) => ({
+  ...map,
+  searchText: `${map.label} ${map.value}`.toLowerCase(),
+}));
 
 const seasonDateFormatter = new Intl.DateTimeFormat('ko-KR', {
   day: 'numeric',
@@ -97,12 +105,9 @@ const MasterDataPage = () => {
   const filteredHeroes = useMemo(() => {
     const query = heroQuery.trim().toLowerCase();
 
-    return heroOptions.filter((hero) => {
+    return searchableHeroOptions.filter((hero) => {
       const roleMatches = roleFilter === 'all' || hero.role === roleFilter;
-      const queryMatches =
-        query.length === 0 ||
-        hero.label.toLowerCase().includes(query) ||
-        hero.value.toLowerCase().includes(query);
+      const queryMatches = query.length === 0 || hero.searchText.includes(query);
 
       return roleMatches && queryMatches;
     });
@@ -111,12 +116,9 @@ const MasterDataPage = () => {
   const filteredMaps = useMemo(() => {
     const query = mapQuery.trim().toLowerCase();
 
-    return mapOptions.filter((map) => {
+    return searchableMapOptions.filter((map) => {
       const modeMatches = modeFilter === 'all' || map.modeId === modeFilter;
-      const queryMatches =
-        query.length === 0 ||
-        map.label.toLowerCase().includes(query) ||
-        map.value.toLowerCase().includes(query);
+      const queryMatches = query.length === 0 || map.searchText.includes(query);
 
       return modeMatches && queryMatches;
     });

@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ChevronDown, ChevronUp, Minus, Plus, RotateCcw, Save, Search, X } from 'lucide-react';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useForm, useWatch } from 'react-hook-form';
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useForm, useFormState, useWatch, type UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
 
 import { MatchRoleLabel } from '@/components/match/MatchRoleBadge';
@@ -41,6 +41,16 @@ import type { UserSettings } from '@/types/userSettings';
 
 const modeValues = modeOptions.map((option) => option.value);
 const resultValues = resultOptions.map((option) => option.value);
+const heroRoleById = new Map(heroOptions.map((hero) => [hero.value, hero.role] as const));
+const mapById = new Map(mapOptions.map((map) => [map.value, map] as const));
+const searchableMapOptions = mapOptions.map((map) => ({
+  ...map,
+  searchText: `${map.label} ${map.value} ${getModeLabel(map.modeId)}`.toLowerCase(),
+}));
+const searchableHeroOptions = heroOptions.map((hero) => ({
+  ...hero,
+  searchText: `${hero.label} ${hero.value}`.toLowerCase(),
+}));
 type CurrentModeId = (typeof modeOptions)[number]['value'];
 
 const isModeValue = (value: string): value is CurrentModeId =>
@@ -150,7 +160,6 @@ const getDefaultFormValues = (
   initialMatch?: Match,
   initialDraft?: Partial<MatchCreateInput>,
 ) => {
-  const heroRoleById = new Map(heroOptions.map((hero) => [hero.value, hero.role]));
   const inferredRole = (initialDraft?.myHeroes ?? [])
     .map((heroId) => heroRoleById.get(heroId))
     .find((role): role is MatchRole => Boolean(role));
@@ -200,12 +209,18 @@ const MatchEntryForm = ({
   submitLabel,
 }: MatchEntryFormProps) => {
   const isDialogLayout = layout === 'dialog';
-  const mainAccount = accounts.find((account) => account.isMain);
-  const defaultPlayerAccount = accounts.find(
-    (account) => account.id === defaultSettings?.defaultPlayerAccountId,
+  const fallbackAccountId = useMemo(() => {
+    const mainAccount = accounts.find((account) => account.isMain);
+    const defaultPlayerAccount = accounts.find(
+      (account) => account.id === defaultSettings?.defaultPlayerAccountId,
+    );
+
+    return defaultPlayerAccount?.id ?? mainAccount?.id ?? accounts[0]?.id ?? '';
+  }, [accounts, defaultSettings?.defaultPlayerAccountId]);
+  const initialFormValues = useMemo(
+    () => getDefaultFormValues(defaultSettings, initialMatch, initialDraft),
+    [defaultSettings, initialDraft, initialMatch],
   );
-  const fallbackAccountId = defaultPlayerAccount?.id ?? mainAccount?.id ?? accounts[0]?.id ?? '';
-  const initialFormValues = getDefaultFormValues(defaultSettings, initialMatch, initialDraft);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
     initialMatch ? (initialMatch.accountId ?? '') : (initialDraft?.accountId ?? null),
   );
@@ -224,46 +239,175 @@ const MatchEntryForm = ({
     resolver: zodResolver(matchEntrySchema),
   });
 
+  const effectiveSelectedAccountId = selectedAccountId ?? fallbackAccountId;
+  const selectedAccount = useMemo(
+    () => accounts.find((account) => account.id === effectiveSelectedAccountId),
+    [accounts, effectiveSelectedAccountId],
+  );
+
+  const toggleHero = useCallback((heroId: string) => {
+    setSelectedHeroes((current) =>
+      current.includes(heroId)
+        ? current.filter((selectedHero) => selectedHero !== heroId)
+        : [...current, heroId],
+    );
+  }, []);
+
+  const toggleHeroPicker = useCallback(() => {
+    if (!showHeroPicker) {
+      setRoleFilter(form.getValues('matchRole'));
+    }
+    setShowHeroPicker((current) => !current);
+  }, [form, showHeroPicker]);
+
+  const resetForm = useCallback(() => {
+    const defaultValues = getDefaultFormValues(defaultSettings, initialMatch, initialDraft);
+
+    form.reset(defaultValues);
+    setSelectedAccountId(
+      initialMatch ? (initialMatch.accountId ?? '') : (initialDraft?.accountId ?? null),
+    );
+    setSelectedHeroes(initialMatch?.myHeroes ?? initialDraft?.myHeroes ?? []);
+    setHeroQuery('');
+    setMapQuery('');
+    setRoleFilter(defaultValues.matchRole);
+    setShowHeroPicker(Boolean(initialMatch?.myHeroes?.length || initialDraft?.myHeroes?.length));
+  }, [defaultSettings, form, initialDraft, initialMatch]);
+
+  const updateScore = useCallback(
+    (fieldName: 'teamScore' | 'enemyScore', value: string) => {
+      form.setValue(fieldName, sanitizeScoreValue(value), { shouldValidate: true });
+    },
+    [form],
+  );
+
+  const adjustScore = useCallback(
+    (fieldName: 'teamScore' | 'enemyScore', delta: number) => {
+      const current = Number(form.getValues(fieldName)) || 0;
+      const nextValue = Math.max(0, Math.min(10, current + delta));
+
+      form.setValue(fieldName, String(nextValue), { shouldValidate: true });
+    },
+    [form],
+  );
+
+  const submit = form.handleSubmit(async (values) => {
+    const didSubmit = await onSubmit({
+      account: selectedAccount?.isMain === false ? 'sub' : 'main',
+      accountId: selectedAccount?.id ?? null,
+      enemyScore: Number(values.enemyScore),
+      mapId: values.mapId,
+      memo: '',
+      modeId: values.modeId as MatchCreateInput['modeId'],
+      matchRole: values.matchRole,
+      myHeroes: selectedHeroes,
+      playedAt: new Date(values.playedAt).toISOString(),
+      queueType: values.queueType,
+      result: values.result as MatchCreateInput['result'],
+      source: source ?? initialMatch?.source ?? initialDraft?.source ?? 'manual',
+      tags: [],
+      teamScore: Number(values.teamScore),
+    });
+
+    if (didSubmit === false) {
+      return;
+    }
+
+    if (!initialMatch) {
+      resetForm();
+    }
+    onSaved?.();
+  });
+
+  return (
+    <Form {...form}>
+      <form className={cn(isDialogLayout && 'flex min-h-0 flex-1 flex-col')} onSubmit={submit}>
+        <div
+          className={cn(
+            'space-y-4',
+            isDialogLayout && 'min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5',
+          )}
+        >
+          {headerContent}
+
+          <MatchFormEffects
+            defaultSettings={defaultSettings}
+            form={form}
+            initialDraft={initialDraft}
+            initialMatch={initialMatch}
+          />
+          <MapAndScoreSection
+            form={form}
+            mapQuery={mapQuery}
+            onAdjustScore={adjustScore}
+            onMapQueryChange={setMapQuery}
+            onUpdateScore={updateScore}
+          />
+          <MatchMetadataSection
+            accounts={accounts}
+            effectiveSelectedAccountId={effectiveSelectedAccountId}
+            form={form}
+            onAccountChange={setSelectedAccountId}
+            selectedAccountId={selectedAccountId}
+            setRoleFilter={setRoleFilter}
+            showHeroPicker={showHeroPicker}
+          />
+          <HeroPickerSection
+            heroQuery={heroQuery}
+            onHeroQueryChange={setHeroQuery}
+            onRoleFilterChange={setRoleFilter}
+            onToggleHero={toggleHero}
+            onTogglePicker={toggleHeroPicker}
+            roleFilter={roleFilter}
+            selectedHeroes={selectedHeroes}
+            showHeroPicker={showHeroPicker}
+          />
+        </div>
+
+        <div
+          className={cn(
+            'flex flex-col-reverse gap-2 border-t border-border/70 sm:flex-row sm:items-center sm:justify-end',
+            isDialogLayout
+              ? 'shrink-0 bg-card px-4 py-3 shadow-[0_-18px_42px_-34px_hsl(var(--foreground)/0.45)] sm:px-5 sm:py-4'
+              : 'pt-4',
+          )}
+        >
+          <Button type="button" variant="outline" onClick={resetForm}>
+            <RotateCcw className="h-4 w-4" />
+            초기화
+          </Button>
+          <Button disabled={isSubmitting} type="submit">
+            <Save className="h-4 w-4" />
+            {isSubmitting ? '저장 중' : (submitLabel ?? '저장')}
+          </Button>
+        </div>
+      </form>
+    </Form>
+  );
+};
+
+interface MatchFormSectionProps {
+  form: UseFormReturn<MatchEntryFormValues>;
+}
+
+interface MatchFormEffectsProps extends MatchFormSectionProps {
+  defaultSettings?: UserSettings;
+  initialDraft?: Partial<MatchCreateInput>;
+  initialMatch?: Match;
+}
+
+const MatchFormEffects = ({
+  defaultSettings,
+  form,
+  initialDraft,
+  initialMatch,
+}: MatchFormEffectsProps) => {
   const watchedModeId = useWatch({ control: form.control, name: 'modeId' });
   const watchedResult = useWatch({ control: form.control, name: 'result' });
   const watchedMapId = useWatch({ control: form.control, name: 'mapId' });
   const watchedTeamScore = useWatch({ control: form.control, name: 'teamScore' });
   const watchedEnemyScore = useWatch({ control: form.control, name: 'enemyScore' });
   const selectedModeId = isModeValue(watchedModeId) ? watchedModeId : null;
-
-  const filteredMaps = useMemo(() => {
-    const query = mapQuery.trim().toLowerCase();
-
-    return mapOptions.filter((map) => {
-      const modeMatches = selectedModeId ? map.modeId === selectedModeId : true;
-      const queryMatches =
-        query.length === 0 ||
-        map.label.toLowerCase().includes(query) ||
-        map.value.toLowerCase().includes(query) ||
-        getModeLabel(map.modeId).toLowerCase().includes(query);
-
-      return modeMatches && queryMatches;
-    });
-  }, [mapQuery, selectedModeId]);
-  const filteredHeroes = useMemo(() => {
-    const query = heroQuery.trim().toLowerCase();
-
-    return heroOptions.filter((hero) => {
-      const roleMatches = roleFilter === 'all' || hero.role === roleFilter;
-      const queryMatches =
-        query.length === 0 ||
-        hero.label.toLowerCase().includes(query) ||
-        hero.value.toLowerCase().includes(query);
-
-      return roleMatches && queryMatches;
-    });
-  }, [heroQuery, roleFilter]);
-  const availableResultOptions = selectedModeId
-    ? getResultOptionsForMode(selectedModeId)
-    : resultOptions;
-  const effectiveSelectedAccountId = selectedAccountId ?? fallbackAccountId;
-  const selectedAccount = accounts.find((account) => account.id === effectiveSelectedAccountId);
-  const selectedMap = mapOptions.find((map) => map.value === watchedMapId);
 
   useEffect(() => {
     const currentMapIsAvailable = mapOptions.some(
@@ -329,497 +473,518 @@ const MatchEntryForm = ({
     initialMatch,
   ]);
 
-  const toggleHero = (heroId: string) => {
-    setSelectedHeroes((current) =>
-      current.includes(heroId)
-        ? current.filter((selectedHero) => selectedHero !== heroId)
-        : [...current, heroId],
-    );
-  };
+  return null;
+};
 
-  const toggleHeroPicker = () => {
-    if (!showHeroPicker) {
-      setRoleFilter(form.getValues('matchRole'));
-    }
-    setShowHeroPicker((current) => !current);
-  };
+interface MapAndScoreSectionProps extends MatchFormSectionProps {
+  mapQuery: string;
+  onAdjustScore: (fieldName: 'teamScore' | 'enemyScore', delta: number) => void;
+  onMapQueryChange: (value: string) => void;
+  onUpdateScore: (fieldName: 'teamScore' | 'enemyScore', value: string) => void;
+}
 
-  const resetForm = () => {
-    const defaultValues = getDefaultFormValues(defaultSettings, initialMatch, initialDraft);
+const MapAndScoreSection = memo(
+  ({ form, mapQuery, onAdjustScore, onMapQueryChange, onUpdateScore }: MapAndScoreSectionProps) => (
+    <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_310px] lg:items-start">
+      <MapPickerPanel form={form} mapQuery={mapQuery} onMapQueryChange={onMapQueryChange} />
+      <ScoreResultPanel form={form} onAdjustScore={onAdjustScore} onUpdateScore={onUpdateScore} />
+    </section>
+  ),
+);
+MapAndScoreSection.displayName = 'MapAndScoreSection';
 
-    form.reset(defaultValues);
-    setSelectedAccountId(
-      initialMatch ? (initialMatch.accountId ?? '') : (initialDraft?.accountId ?? null),
-    );
-    setSelectedHeroes(initialMatch?.myHeroes ?? initialDraft?.myHeroes ?? []);
-    setHeroQuery('');
-    setMapQuery('');
-    setRoleFilter(defaultValues.matchRole);
-    setShowHeroPicker(Boolean(initialMatch?.myHeroes?.length || initialDraft?.myHeroes?.length));
-  };
+interface MapPickerPanelProps extends MatchFormSectionProps {
+  mapQuery: string;
+  onMapQueryChange: (value: string) => void;
+}
 
-  const updateScore = (fieldName: 'teamScore' | 'enemyScore', value: string) => {
-    form.setValue(fieldName, sanitizeScoreValue(value), { shouldValidate: true });
-  };
+const MapPickerPanel = memo(({ form, mapQuery, onMapQueryChange }: MapPickerPanelProps) => {
+  const watchedModeId = useWatch({ control: form.control, name: 'modeId' });
+  const watchedMapId = useWatch({ control: form.control, name: 'mapId' });
+  const { errors } = useFormState({ control: form.control, name: 'mapId' });
+  const selectedModeId = isModeValue(watchedModeId) ? watchedModeId : null;
+  const filteredMaps = useMemo(() => {
+    const query = mapQuery.trim().toLowerCase();
 
-  const adjustScore = (fieldName: 'teamScore' | 'enemyScore', delta: number) => {
-    const current = Number(form.getValues(fieldName)) || 0;
-    const nextValue = Math.max(0, Math.min(10, current + delta));
+    return searchableMapOptions.filter((map) => {
+      const modeMatches = selectedModeId ? map.modeId === selectedModeId : true;
+      const queryMatches = query.length === 0 || map.searchText.includes(query);
 
-    form.setValue(fieldName, String(nextValue), { shouldValidate: true });
-  };
-
-  const submit = form.handleSubmit(async (values) => {
-    const didSubmit = await onSubmit({
-      account: selectedAccount?.isMain === false ? 'sub' : 'main',
-      accountId: selectedAccount?.id ?? null,
-      enemyScore: Number(values.enemyScore),
-      mapId: values.mapId,
-      memo: '',
-      modeId: values.modeId as MatchCreateInput['modeId'],
-      matchRole: values.matchRole,
-      myHeroes: selectedHeroes,
-      playedAt: new Date(values.playedAt).toISOString(),
-      queueType: values.queueType,
-      result: values.result as MatchCreateInput['result'],
-      source: source ?? initialMatch?.source ?? initialDraft?.source ?? 'manual',
-      tags: [],
-      teamScore: Number(values.teamScore),
+      return modeMatches && queryMatches;
     });
-
-    if (didSubmit === false) {
-      return;
-    }
-
-    if (!initialMatch) {
-      resetForm();
-    }
-    onSaved?.();
-  });
+  }, [mapQuery, selectedModeId]);
 
   return (
-    <Form {...form}>
-      <form className={cn(isDialogLayout && 'flex min-h-0 flex-1 flex-col')} onSubmit={submit}>
-        <div
-          className={cn(
-            'space-y-4',
-            isDialogLayout && 'min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5',
-          )}
-        >
-          {headerContent}
+    <div className="min-w-0">
+      <div className="mb-3 grid gap-2 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)] lg:items-center">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            aria-label="맵 검색"
+            className="h-9 pl-9 text-sm font-semibold"
+            placeholder="맵 검색"
+            value={mapQuery}
+            onChange={(event) => onMapQueryChange(event.target.value)}
+          />
+        </div>
+        <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1">
+          {modeOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={cn(
+                'h-9 shrink-0 rounded-md border px-3 text-xs font-bold transition-colors',
+                watchedModeId === option.value
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-card text-muted-foreground hover:bg-secondary',
+              )}
+              onClick={() => form.setValue('modeId', option.value, { shouldValidate: true })}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-          <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_310px] lg:items-start">
-            <div className="min-w-0">
-              <div className="mb-3 grid gap-2 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)] lg:items-center">
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    aria-label="맵 검색"
-                    className="h-9 pl-9 text-sm font-semibold"
-                    placeholder="맵 검색"
-                    value={mapQuery}
-                    onChange={(event) => setMapQuery(event.target.value)}
-                  />
-                </div>
-                <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1">
-                  {modeOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={cn(
-                        'h-9 shrink-0 rounded-md border px-3 text-xs font-bold transition-colors',
-                        watchedModeId === option.value
-                          ? 'border-primary bg-primary text-primary-foreground'
-                          : 'border-border bg-card text-muted-foreground hover:bg-secondary',
-                      )}
-                      onClick={() =>
-                        form.setValue('modeId', option.value, { shouldValidate: true })
-                      }
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+      <div className="mobile-scroll h-[228px] overflow-x-auto pb-2 sm:h-[244px]">
+        {filteredMaps.length > 0 ? (
+          <div className="grid h-full auto-cols-[144px] grid-flow-col grid-rows-2 gap-2 sm:auto-cols-[164px]">
+            {filteredMaps.map((map) => {
+              const selected = watchedMapId === map.value;
 
-              <div className="mobile-scroll h-[228px] overflow-x-auto pb-2 sm:h-[244px]">
-                {filteredMaps.length > 0 ? (
-                  <div className="grid h-full auto-cols-[144px] grid-flow-col grid-rows-2 gap-2 sm:auto-cols-[164px]">
-                    {filteredMaps.map((map) => {
-                      const selected = watchedMapId === map.value;
-
-                      return (
-                        <button
-                          key={map.value}
-                          type="button"
-                          className={cn(
-                            'overflow-hidden rounded-md border bg-card text-left transition-[background-color,border-color,color] hover:border-primary/35 hover:bg-secondary',
-                            selected && 'border-primary bg-primary/[0.06] text-primary',
-                          )}
-                          onClick={() => {
-                            form.setValue('modeId', map.modeId, { shouldValidate: true });
-                            form.setValue('mapId', map.value, { shouldValidate: true });
-                          }}
-                        >
-                          <span className="block h-16 overflow-hidden bg-secondary">
-                            <img
-                              alt={map.label}
-                              className="h-full w-full object-cover"
-                              loading="lazy"
-                              src={getMapScreenshotPath(map.value)}
-                            />
-                          </span>
-                          <span className="block min-w-0 px-2 py-1.5">
-                            <span className="block truncate text-xs font-bold">{map.label}</span>
-                            <span
-                              className={cn(
-                                'mt-0.5 block truncate text-[11px] font-semibold',
-                                selected ? 'text-primary/70' : 'text-muted-foreground',
-                              )}
-                            >
-                              {getModeLabel(map.modeId)}
-                            </span>
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="flex h-full items-center justify-center rounded-md border border-dashed border-border bg-[hsl(var(--surface-2))] px-4 text-center text-sm font-semibold text-muted-foreground">
-                    검색 결과 없음
-                  </div>
-                )}
-              </div>
-              {form.formState.errors.mapId ? (
-                <p className="mt-2 text-sm font-medium text-destructive">
-                  {form.formState.errors.mapId.message}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="border-t border-border/70 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
-              <div className="mb-4 min-h-12">
-                <p className="metric-label">맵</p>
-                <div className="mt-1 flex items-start justify-between gap-3">
-                  <p className="min-w-0 truncate text-base font-bold">
-                    {selectedMap ? selectedMap.label : '선택'}
-                  </p>
-                  {selectedMap ? (
-                    <Badge variant="outline" className="shrink-0 bg-transparent">
-                      {getModeLabel(selectedMap.modeId)}
-                    </Badge>
-                  ) : null}
-                </div>
-              </div>
-
-              <section className="space-y-3">
-                <Label>스코어</Label>
-                <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
-                  <FormField
-                    control={form.control}
-                    name="teamScore"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <ScoreStepper
-                            label="우리"
-                            value={field.value}
-                            onAdjust={(delta) => adjustScore('teamScore', delta)}
-                            onChange={(value) => updateScore('teamScore', value)}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="pt-9 text-lg font-bold text-muted-foreground">:</div>
-                  <FormField
-                    control={form.control}
-                    name="enemyScore"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <ScoreStepper
-                            label="상대"
-                            value={field.value}
-                            onAdjust={(delta) => adjustScore('enemyScore', delta)}
-                            onChange={(value) => updateScore('enemyScore', value)}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </section>
-
-              <section className="mt-4 space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <Label>결과</Label>
-                  {selectedModeId && !modeAllowsDraw(selectedModeId) ? (
-                    <span className="text-xs font-semibold text-muted-foreground">무승부 없음</span>
-                  ) : null}
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {availableResultOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={cn(
-                        'h-11 rounded-md border px-3 text-sm font-bold transition-colors',
-                        getResultTone(option.value, watchedResult === option.value),
-                      )}
-                      onClick={() =>
-                        form.setValue('result', option.value, { shouldValidate: true })
-                      }
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-                {form.formState.errors.result ? (
-                  <p className="text-sm font-medium text-destructive">
-                    {form.formState.errors.result.message}
-                  </p>
-                ) : null}
-              </section>
-            </div>
-          </section>
-
-          <section className="rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] p-3 sm:p-4">
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px_220px]">
-              <FormField
-                control={form.control}
-                name="playedAt"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>플레이 시간</FormLabel>
-                    <FormControl>
-                      <Input className="bg-card" type="datetime-local" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="queueType"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>큐</FormLabel>
-                    <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5 lg:grid-cols-1">
-                      {queueOptions.map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          className={cn(
-                            'h-9 rounded-md border px-2 text-xs font-bold transition-colors',
-                            field.value === option.value
-                              ? 'border-primary bg-primary text-primary-foreground'
-                              : 'border-border bg-card text-muted-foreground hover:bg-secondary',
-                          )}
-                          onClick={() => field.onChange(option.value)}
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="matchRole"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>포지션</FormLabel>
-                    <div className="grid grid-cols-3 gap-1.5 lg:grid-cols-1">
-                      {matchRoleOptions.map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          className={cn(
-                            'h-9 rounded-md border px-2 text-xs font-bold transition-colors',
-                            field.value === option.value
-                              ? 'border-primary bg-primary text-primary-foreground'
-                              : 'border-border bg-card text-muted-foreground hover:bg-secondary',
-                          )}
-                          onClick={() => {
-                            field.onChange(option.value);
-                            if (showHeroPicker) {
-                              setRoleFilter(option.value);
-                            }
-                          }}
-                        >
-                          <MatchRoleLabel className="justify-center" role={option.value} />
-                        </button>
-                      ))}
-                    </div>
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <Label>계정</Label>
-              <div className="flex flex-wrap gap-2">
+              return (
                 <button
+                  key={map.value}
                   type="button"
                   className={cn(
-                    'h-9 rounded-md border px-3 text-sm font-bold transition-colors',
-                    effectiveSelectedAccountId === ''
-                      ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-border bg-card text-muted-foreground hover:bg-secondary',
+                    'overflow-hidden rounded-md border bg-card text-left transition-[background-color,border-color,color] hover:border-primary/35 hover:bg-secondary',
+                    selected && 'border-primary bg-primary/[0.06] text-primary',
                   )}
-                  onClick={() => setSelectedAccountId('')}
+                  onClick={() => {
+                    form.setValue('modeId', map.modeId, { shouldValidate: true });
+                    form.setValue('mapId', map.value, { shouldValidate: true });
+                  }}
                 >
-                  미지정
+                  <span className="block h-16 overflow-hidden bg-secondary">
+                    <img
+                      alt={map.label}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                      src={getMapScreenshotPath(map.value)}
+                    />
+                  </span>
+                  <span className="block min-w-0 px-2 py-1.5">
+                    <span className="block truncate text-xs font-bold">{map.label}</span>
+                    <span
+                      className={cn(
+                        'mt-0.5 block truncate text-[11px] font-semibold',
+                        selected ? 'text-primary/70' : 'text-muted-foreground',
+                      )}
+                    >
+                      {getModeLabel(map.modeId)}
+                    </span>
+                  </span>
                 </button>
-                {accounts.map((account) => (
+              );
+            })}
+          </div>
+        ) : (
+          <div className="flex h-full items-center justify-center rounded-md border border-dashed border-border bg-[hsl(var(--surface-2))] px-4 text-center text-sm font-semibold text-muted-foreground">
+            검색 결과 없음
+          </div>
+        )}
+      </div>
+      {errors.mapId ? (
+        <p className="mt-2 text-sm font-medium text-destructive">{errors.mapId.message}</p>
+      ) : null}
+    </div>
+  );
+});
+MapPickerPanel.displayName = 'MapPickerPanel';
+
+interface ScoreResultPanelProps extends MatchFormSectionProps {
+  onAdjustScore: (fieldName: 'teamScore' | 'enemyScore', delta: number) => void;
+  onUpdateScore: (fieldName: 'teamScore' | 'enemyScore', value: string) => void;
+}
+
+const ScoreResultPanel = memo(({ form, onAdjustScore, onUpdateScore }: ScoreResultPanelProps) => {
+  const watchedModeId = useWatch({ control: form.control, name: 'modeId' });
+  const watchedResult = useWatch({ control: form.control, name: 'result' });
+  const watchedMapId = useWatch({ control: form.control, name: 'mapId' });
+  const { errors } = useFormState({ control: form.control, name: 'result' });
+  const selectedModeId = isModeValue(watchedModeId) ? watchedModeId : null;
+  const selectedMap = mapById.get(watchedMapId);
+  const availableResultOptions = selectedModeId
+    ? getResultOptionsForMode(selectedModeId)
+    : resultOptions;
+
+  return (
+    <div className="border-t border-border/70 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+      <div className="mb-4 min-h-12">
+        <p className="metric-label">맵</p>
+        <div className="mt-1 flex items-start justify-between gap-3">
+          <p className="min-w-0 truncate text-base font-bold">
+            {selectedMap ? selectedMap.label : '선택'}
+          </p>
+          {selectedMap ? (
+            <Badge variant="outline" className="shrink-0 bg-transparent">
+              {getModeLabel(selectedMap.modeId)}
+            </Badge>
+          ) : null}
+        </div>
+      </div>
+
+      <section className="space-y-3">
+        <Label>스코어</Label>
+        <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
+          <FormField
+            control={form.control}
+            name="teamScore"
+            render={({ field }) => (
+              <FormItem>
+                <FormControl>
+                  <ScoreStepper
+                    label="우리"
+                    value={field.value}
+                    onAdjust={(delta) => onAdjustScore('teamScore', delta)}
+                    onChange={(value) => onUpdateScore('teamScore', value)}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <div className="pt-9 text-lg font-bold text-muted-foreground">:</div>
+          <FormField
+            control={form.control}
+            name="enemyScore"
+            render={({ field }) => (
+              <FormItem>
+                <FormControl>
+                  <ScoreStepper
+                    label="상대"
+                    value={field.value}
+                    onAdjust={(delta) => onAdjustScore('enemyScore', delta)}
+                    onChange={(value) => onUpdateScore('enemyScore', value)}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+      </section>
+
+      <section className="mt-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <Label>결과</Label>
+          {selectedModeId && !modeAllowsDraw(selectedModeId) ? (
+            <span className="text-xs font-semibold text-muted-foreground">무승부 없음</span>
+          ) : null}
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {availableResultOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={cn(
+                'h-11 rounded-md border px-3 text-sm font-bold transition-colors',
+                getResultTone(option.value, watchedResult === option.value),
+              )}
+              onClick={() => form.setValue('result', option.value, { shouldValidate: true })}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        {errors.result ? (
+          <p className="text-sm font-medium text-destructive">{errors.result.message}</p>
+        ) : null}
+      </section>
+    </div>
+  );
+});
+ScoreResultPanel.displayName = 'ScoreResultPanel';
+
+interface MatchMetadataSectionProps extends MatchFormSectionProps {
+  accounts: PlayerAccount[];
+  effectiveSelectedAccountId: string;
+  onAccountChange: (accountId: string | null) => void;
+  selectedAccountId: string | null;
+  setRoleFilter: (role: HeroRoleFilter) => void;
+  showHeroPicker: boolean;
+}
+
+const MatchMetadataSection = memo(
+  ({
+    accounts,
+    effectiveSelectedAccountId,
+    form,
+    onAccountChange,
+    selectedAccountId,
+    setRoleFilter,
+    showHeroPicker,
+  }: MatchMetadataSectionProps) => (
+    <section className="rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] p-3 sm:p-4">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px_220px]">
+        <FormField
+          control={form.control}
+          name="playedAt"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>플레이 시간</FormLabel>
+              <FormControl>
+                <Input className="bg-card" type="datetime-local" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="queueType"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>큐</FormLabel>
+              <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5 lg:grid-cols-1">
+                {queueOptions.map((option) => (
                   <button
-                    key={account.id}
+                    key={option.value}
                     type="button"
                     className={cn(
-                      'h-9 rounded-md border px-3 text-sm font-bold transition-colors',
-                      effectiveSelectedAccountId === account.id && selectedAccountId !== ''
+                      'h-9 rounded-md border px-2 text-xs font-bold transition-colors',
+                      field.value === option.value
                         ? 'border-primary bg-primary text-primary-foreground'
                         : 'border-border bg-card text-muted-foreground hover:bg-secondary',
                     )}
-                    onClick={() => setSelectedAccountId(account.id)}
+                    onClick={() => field.onChange(option.value)}
                   >
-                    {getPlayerAccountLabel(account)}
-                    {account.isMain ? ' · 본계' : ''}
-                    {!account.isActive ? ' · 비활성' : ''}
+                    {option.label}
                   </button>
                 ))}
               </div>
-            </div>
-          </section>
+            </FormItem>
+          )}
+        />
 
-          <section className="rounded-lg border border-border/70 bg-card">
-            <button
-              type="button"
-              className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left sm:px-4"
-              aria-expanded={showHeroPicker}
-              onClick={toggleHeroPicker}
-            >
-              <div className="min-w-0">
-                <p className="metric-label">선택 영웅</p>
-                <p className="mt-1 truncate text-sm font-bold">
-                  {selectedHeroes.length > 0
-                    ? selectedHeroes.map((heroId) => getHeroLabel(heroId)).join(', ')
-                    : '없음'}
-                </p>
-              </div>
-              {showHeroPicker ? (
-                <ChevronUp className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              )}
-            </button>
-
-            {selectedHeroes.length > 0 ? (
-              <div className="flex flex-wrap gap-2 border-t border-border/70 px-3 py-3 sm:px-4">
-                {selectedHeroes.map((heroId) => (
-                  <Badge
-                    key={heroId}
-                    className="gap-1 border-primary/20 bg-primary/[0.08] text-primary hover:bg-primary/10"
-                    variant="outline"
+        <FormField
+          control={form.control}
+          name="matchRole"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>포지션</FormLabel>
+              <div className="grid grid-cols-3 gap-1.5 lg:grid-cols-1">
+                {matchRoleOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={cn(
+                      'h-9 rounded-md border px-2 text-xs font-bold transition-colors',
+                      field.value === option.value
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border bg-card text-muted-foreground hover:bg-secondary',
+                    )}
+                    onClick={() => {
+                      field.onChange(option.value);
+                      if (showHeroPicker) {
+                        setRoleFilter(option.value);
+                      }
+                    }}
                   >
-                    {getHeroLabel(heroId)}
-                    <button
-                      aria-label={`${getHeroLabel(heroId)} 제거`}
-                      className="rounded-sm p-0.5 hover:bg-primary/10"
-                      type="button"
-                      onClick={() => toggleHero(heroId)}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
+                    <MatchRoleLabel className="justify-center" role={option.value} />
+                  </button>
                 ))}
               </div>
-            ) : null}
-
-            {showHeroPicker ? (
-              <div className="space-y-3 border-t border-border/70 p-3 sm:p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                  <div className="flex flex-wrap gap-1.5">
-                    {roleOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        className={cn(
-                          'h-8 rounded-md border px-2.5 text-xs font-bold transition-colors',
-                          roleFilter === option.value
-                            ? 'border-primary bg-primary text-primary-foreground'
-                            : 'border-border bg-card text-muted-foreground hover:bg-secondary',
-                        )}
-                        onClick={() => setRoleFilter(option.value)}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                  <Input
-                    className="sm:w-56"
-                    placeholder="영웅 검색"
-                    value={heroQuery}
-                    onChange={(event) => setHeroQuery(event.target.value)}
-                  />
-                </div>
-
-                <div className="grid max-h-52 gap-2 overflow-y-auto rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {filteredHeroes.map((hero) => {
-                    const selected = selectedHeroes.includes(hero.value);
-
-                    return (
-                      <button
-                        key={hero.value}
-                        type="button"
-                        className={cn(
-                          'min-h-10 rounded-md border px-3 py-2 text-left text-sm font-bold transition-colors',
-                          selected
-                            ? 'border-primary bg-primary text-primary-foreground'
-                            : 'border-border bg-card text-foreground hover:bg-secondary',
-                        )}
-                        onClick={() => toggleHero(hero.value)}
-                      >
-                        {hero.label}
-                        <span className="ml-2 text-xs font-semibold opacity-70">
-                          {roleLabels[hero.role]}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
-          </section>
-        </div>
-
-        <div
-          className={cn(
-            'flex flex-col-reverse gap-2 border-t border-border/70 sm:flex-row sm:items-center sm:justify-end',
-            isDialogLayout
-              ? 'shrink-0 bg-card px-4 py-3 shadow-[0_-18px_42px_-34px_hsl(var(--foreground)/0.45)] sm:px-5 sm:py-4'
-              : 'pt-4',
+            </FormItem>
           )}
-        >
-          <Button type="button" variant="outline" onClick={resetForm}>
-            <RotateCcw className="h-4 w-4" />
-            초기화
-          </Button>
-          <Button disabled={isSubmitting} type="submit">
-            <Save className="h-4 w-4" />
-            {isSubmitting ? '저장 중' : (submitLabel ?? '저장')}
-          </Button>
+        />
+      </div>
+
+      <div className="mt-4 space-y-3">
+        <Label>계정</Label>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className={cn(
+              'h-9 rounded-md border px-3 text-sm font-bold transition-colors',
+              effectiveSelectedAccountId === ''
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border bg-card text-muted-foreground hover:bg-secondary',
+            )}
+            onClick={() => onAccountChange('')}
+          >
+            미지정
+          </button>
+          {accounts.map((account) => (
+            <button
+              key={account.id}
+              type="button"
+              className={cn(
+                'h-9 rounded-md border px-3 text-sm font-bold transition-colors',
+                effectiveSelectedAccountId === account.id && selectedAccountId !== ''
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-card text-muted-foreground hover:bg-secondary',
+              )}
+              onClick={() => onAccountChange(account.id)}
+            >
+              {getPlayerAccountLabel(account)}
+              {account.isMain ? ' · 본계' : ''}
+              {!account.isActive ? ' · 비활성' : ''}
+            </button>
+          ))}
         </div>
-      </form>
-    </Form>
-  );
-};
+      </div>
+    </section>
+  ),
+);
+MatchMetadataSection.displayName = 'MatchMetadataSection';
+
+interface HeroPickerSectionProps {
+  heroQuery: string;
+  onHeroQueryChange: (value: string) => void;
+  onRoleFilterChange: (role: HeroRoleFilter) => void;
+  onToggleHero: (heroId: string) => void;
+  onTogglePicker: () => void;
+  roleFilter: HeroRoleFilter;
+  selectedHeroes: string[];
+  showHeroPicker: boolean;
+}
+
+const HeroPickerSection = memo(
+  ({
+    heroQuery,
+    onHeroQueryChange,
+    onRoleFilterChange,
+    onToggleHero,
+    onTogglePicker,
+    roleFilter,
+    selectedHeroes,
+    showHeroPicker,
+  }: HeroPickerSectionProps) => {
+    const selectedHeroSet = useMemo(() => new Set(selectedHeroes), [selectedHeroes]);
+    const selectedHeroLabel = useMemo(
+      () =>
+        selectedHeroes.length > 0
+          ? selectedHeroes.map((heroId) => getHeroLabel(heroId)).join(', ')
+          : '없음',
+      [selectedHeroes],
+    );
+    const filteredHeroes = useMemo(() => {
+      const query = heroQuery.trim().toLowerCase();
+
+      return searchableHeroOptions.filter((hero) => {
+        const roleMatches = roleFilter === 'all' || hero.role === roleFilter;
+        const queryMatches = query.length === 0 || hero.searchText.includes(query);
+
+        return roleMatches && queryMatches;
+      });
+    }, [heroQuery, roleFilter]);
+
+    return (
+      <section className="rounded-lg border border-border/70 bg-card">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left sm:px-4"
+          aria-expanded={showHeroPicker}
+          onClick={onTogglePicker}
+        >
+          <div className="min-w-0">
+            <p className="metric-label">선택 영웅</p>
+            <p className="mt-1 truncate text-sm font-bold">{selectedHeroLabel}</p>
+          </div>
+          {showHeroPicker ? (
+            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          )}
+        </button>
+
+        {selectedHeroes.length > 0 ? (
+          <div className="flex flex-wrap gap-2 border-t border-border/70 px-3 py-3 sm:px-4">
+            {selectedHeroes.map((heroId) => {
+              const heroLabel = getHeroLabel(heroId);
+
+              return (
+                <Badge
+                  key={heroId}
+                  className="gap-1 border-primary/20 bg-primary/[0.08] text-primary hover:bg-primary/10"
+                  variant="outline"
+                >
+                  {heroLabel}
+                  <button
+                    aria-label={`${heroLabel} 제거`}
+                    className="rounded-sm p-0.5 hover:bg-primary/10"
+                    type="button"
+                    onClick={() => onToggleHero(heroId)}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {showHeroPicker ? (
+          <div className="space-y-3 border-t border-border/70 p-3 sm:p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className="flex flex-wrap gap-1.5">
+                {roleOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={cn(
+                      'h-8 rounded-md border px-2.5 text-xs font-bold transition-colors',
+                      roleFilter === option.value
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border bg-card text-muted-foreground hover:bg-secondary',
+                    )}
+                    onClick={() => onRoleFilterChange(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <Input
+                className="sm:w-56"
+                placeholder="영웅 검색"
+                value={heroQuery}
+                onChange={(event) => onHeroQueryChange(event.target.value)}
+              />
+            </div>
+
+            <div className="grid max-h-52 gap-2 overflow-y-auto rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-2 sm:grid-cols-2 lg:grid-cols-3">
+              {filteredHeroes.map((hero) => {
+                const selected = selectedHeroSet.has(hero.value);
+
+                return (
+                  <button
+                    key={hero.value}
+                    type="button"
+                    className={cn(
+                      'min-h-10 rounded-md border px-3 py-2 text-left text-sm font-bold transition-colors',
+                      selected
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border bg-card text-foreground hover:bg-secondary',
+                    )}
+                    onClick={() => onToggleHero(hero.value)}
+                  >
+                    {hero.label}
+                    <span className="ml-2 text-xs font-semibold opacity-70">
+                      {roleLabels[hero.role]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+      </section>
+    );
+  },
+);
+HeroPickerSection.displayName = 'HeroPickerSection';
 
 interface ScoreStepperProps {
   label: string;
