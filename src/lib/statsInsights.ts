@@ -16,7 +16,6 @@ import { groupMatchesBySession } from '@/lib/session';
 import type { Match, ModeId } from '@/types/match';
 
 export const QWEN_STATS_INSIGHT_MODEL = 'onnx-community/Qwen3.5-2B-ONNX-OPT';
-export const QWEN_STATS_INSIGHT_SOURCE_MODEL = 'Qwen3.5-2B ONNX OPT';
 
 export type StatsInsightTone = 'neutral' | 'positive' | 'warning';
 

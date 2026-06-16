@@ -5,7 +5,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
-  Cpu,
   ListOrdered,
   Loader2,
   MapIcon,
@@ -70,7 +69,6 @@ import {
 } from '@/lib/matchStats';
 import { groupMatchesBySession } from '@/lib/session';
 import {
-  QWEN_STATS_INSIGHT_SOURCE_MODEL,
   buildStatsInsightPack,
   type StatsInsightCandidate,
   type StatsInsightPack,
@@ -848,63 +846,6 @@ const StatsPage = () => {
     queueFilter !== 'all',
     accountFilter !== 'all',
   ].filter(Boolean).length;
-  const summaryScopeItems = useMemo(() => {
-    const periodLabel =
-      periodFilter === 'custom'
-        ? customPeriodStartDate || customPeriodEndDate
-          ? `${customPeriodStartDate ? formatDateLabel(customPeriodStartDate) : '처음'} - ${customPeriodEndDate ? formatDateLabel(customPeriodEndDate) : '오늘'}`
-          : '직접'
-        : (periodOptions.find((period) => period.value === periodFilter)?.label ?? '전체');
-    const accountLabel =
-      accountFilter === 'all'
-        ? '전체'
-        : accountFilter === 'unassigned'
-          ? '미지정'
-          : getPlayerAccountLabel(playerAccounts.find((account) => account.id === accountFilter));
-
-    return [
-      {
-        label: '시즌',
-        value: getSeasonFilterLabel(seasons, seasonFilter, currentSeasonId),
-      },
-      {
-        label: '기간',
-        value: periodLabel,
-      },
-      {
-        label: '포지션',
-        value: matchRoleFilter === 'all' ? '전체' : getMatchRoleLabel(matchRoleFilter),
-      },
-      {
-        label: '모드',
-        value: modeFilter === 'all' ? '전체' : getModeLabel(modeFilter),
-      },
-      {
-        label: '큐',
-        value:
-          queueFilter === 'all'
-            ? '전체'
-            : (queueOptions.find((queue) => queue.value === queueFilter)?.label ?? queueFilter),
-      },
-      {
-        label: '계정',
-        value: accountLabel,
-      },
-    ];
-  }, [
-    accountFilter,
-    currentSeasonId,
-    customPeriodEndDate,
-    customPeriodStartDate,
-    matchRoleFilter,
-    modeFilter,
-    periodFilter,
-    playerAccounts,
-    queueFilter,
-    seasonFilter,
-    seasons,
-  ]);
-
   const resetFilters = () => {
     setPeriodFilter('all');
     setCustomPeriodStartDate('');
@@ -1764,7 +1705,7 @@ const StatsPage = () => {
               onRoleChange={setMatchRoleFilter}
             />
             <MetricGrid metrics={sectionMetrics.summary} />
-            <StatsInsightSummaryPanel insightPack={insightPack} scopeItems={summaryScopeItems} />
+            <StatsInsightSummaryPanel insightPack={insightPack} />
           </div>
         ) : null}
       </section>
@@ -1861,22 +1802,11 @@ const insightToneIconClassNames = {
   warning: 'border-amber-300/30 bg-amber-300/10 text-amber-100',
 } satisfies Record<StatsInsightTone, string>;
 
-interface StatsInsightScopeItem {
-  label: string;
-  value: string;
-}
-
-const StatsInsightSummaryPanel = ({
-  insightPack,
-  scopeItems,
-}: {
-  insightPack: StatsInsightPack;
-  scopeItems: StatsInsightScopeItem[];
-}) => {
-  const { generate, isSupported, runtimeLabel, state } = useQwenInsightNarrator(
-    insightPack.signature,
-  );
-  const isBusy = state.status === 'loading' || state.status === 'generating';
+const StatsInsightSummaryPanel = ({ insightPack }: { insightPack: StatsInsightPack }) => {
+  const { generate, isSupported, state } = useQwenInsightNarrator(insightPack.signature);
+  const shouldAutoGenerate =
+    isSupported && insightPack.summary.total > 0 && state.status === 'idle';
+  const isBusy = state.status === 'loading' || state.status === 'generating' || shouldAutoGenerate;
   const generatedText = state.text.trim();
   const displayText = generatedText || insightPack.fallbackText;
   const topCandidate = insightPack.candidates[0] ?? null;
@@ -1889,34 +1819,13 @@ const StatsInsightSummaryPanel = ({
   const neutralCandidateCount = insightPack.candidates.filter(
     (candidate) => candidate.tone === 'neutral',
   ).length;
-  const runtimeValue =
-    state.device && state.dtype ? `${state.device.toUpperCase()} · ${state.dtype}` : runtimeLabel;
-  const modelValue = state.model ?? QWEN_STATS_INSIGHT_SOURCE_MODEL;
-  const shouldAutoGenerate =
-    isSupported && insightPack.summary.total > 0 && state.status === 'idle';
-  const statusLabel =
-    insightPack.summary.total === 0
-      ? '기록 없음'
-      : !isSupported
-        ? '미지원'
-        : isBusy
-          ? '분석 중'
-          : state.status === 'done'
-            ? '완료'
-            : state.status === 'error'
-              ? '기본 분석'
-              : '준비 중';
 
   useEffect(() => {
     if (!shouldAutoGenerate) {
       return;
     }
 
-    const timeoutId = window.setTimeout(() => {
-      generate(insightPack.prompt);
-    }, 450);
-
-    return () => window.clearTimeout(timeoutId);
+    generate(insightPack.prompt);
   }, [generate, insightPack.prompt, shouldAutoGenerate]);
 
   return (
@@ -1924,7 +1833,7 @@ const StatsInsightSummaryPanel = ({
       <div className="ai-scanline" />
       <div className="relative z-10 overflow-hidden border-b border-white/10">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-sky-400/25 via-emerald-300/55 to-amber-300/45" />
-        <div className="grid gap-5 px-4 py-6 sm:px-5 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-end">
+        <div className="px-4 py-6 sm:px-5">
           <div className="min-w-0">
             <Badge
               variant="outline"
@@ -1934,26 +1843,17 @@ const StatsInsightSummaryPanel = ({
               AI 분석
             </Badge>
             <h2 className="ai-gradient-text text-2xl font-black tracking-normal sm:text-3xl">
-              현재 필터 기준 요약
+              경기 흐름 요약
             </h2>
             <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-slate-300/85">
-              전장, 모드, 영웅, 시간대, 세션 순서, 전장·영웅 조합 신호를 한 화면에서 정리합니다.
+              눈에 띄는 강점과 점검 포인트를 간결하게 정리합니다.
             </p>
           </div>
-
-          <StatsInsightRuntimePanel
-            isBusy={isBusy}
-            modelValue={modelValue}
-            runtimeValue={runtimeValue}
-            state={state}
-            statusLabel={statusLabel}
-          />
         </div>
       </div>
 
       <div className="relative z-10 grid xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 space-y-4 p-4 sm:p-5">
-          <StatsInsightScopeBar items={scopeItems} />
           <StatsInsightNarrativePanel
             displayText={displayText}
             generatedText={generatedText}
@@ -2018,81 +1918,6 @@ const StatsInsightSummaryPanel = ({
   );
 };
 
-const StatsInsightRuntimePanel = ({
-  isBusy,
-  modelValue,
-  runtimeValue,
-  state,
-  statusLabel,
-}: {
-  isBusy: boolean;
-  modelValue: string;
-  runtimeValue: string;
-  state: ReturnType<typeof useQwenInsightNarrator>['state'];
-  statusLabel: string;
-}) => {
-  const progress = state.progress ?? (state.status === 'done' ? 100 : 0);
-
-  return (
-    <div className="ai-glass overflow-hidden rounded-lg">
-      <div className="flex items-center justify-between gap-3 border-b border-white/10 px-3.5 py-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-sky-300/25 bg-sky-300/10 text-sky-100 shadow-[0_0_28px_rgb(56_189_248/0.2)]">
-            {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cpu className="h-4 w-4" />}
-          </div>
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold text-slate-400">모델 상태</p>
-            <p className="mt-0.5 truncate text-sm font-bold text-white">{statusLabel}</p>
-          </div>
-        </div>
-        <Badge
-          variant="outline"
-          className={cn(
-            'shrink-0',
-            isBusy
-              ? 'border-sky-300/25 bg-sky-300/10 text-sky-100'
-              : state.status === 'done'
-                ? 'border-emerald-300/25 bg-emerald-300/10 text-emerald-100'
-                : state.status === 'error'
-                  ? 'border-amber-300/30 bg-amber-300/10 text-amber-100'
-                  : 'border-white/15 bg-white/10 text-slate-300',
-          )}
-        >
-          {state.status === 'done' ? 'LIVE' : statusLabel}
-        </Badge>
-      </div>
-
-      <div className="grid grid-cols-2 gap-0">
-        <div className="min-w-0 border-r border-white/10 px-3.5 py-3">
-          <p className="text-[11px] font-semibold text-slate-400">런타임</p>
-          <p className="mt-1 truncate text-sm font-bold text-slate-100">{runtimeValue}</p>
-        </div>
-        <div className="min-w-0 px-3.5 py-3">
-          <p className="text-[11px] font-semibold text-slate-400">모델</p>
-          <p className="mt-1 truncate text-sm font-bold text-slate-100" title={modelValue}>
-            {modelValue}
-          </p>
-        </div>
-      </div>
-
-      {isBusy || state.progress !== undefined ? (
-        <div className="border-t border-white/10 px-3.5 py-3">
-          <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-300/80">
-            <span className="truncate">{state.message || 'AI 분석 준비 중'}</span>
-            <span className="shrink-0">{Math.round(progress)}%</span>
-          </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-sky-400 via-emerald-300 to-amber-300 shadow-[0_0_22px_rgb(56_189_248/0.45)] transition-[width]"
-              style={{ width: `${Math.max(4, Math.min(100, progress))}%` }}
-            />
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-};
-
 const StatsInsightNarrativePanel = ({
   displayText,
   generatedText,
@@ -2107,17 +1932,19 @@ const StatsInsightNarrativePanel = ({
   state: ReturnType<typeof useQwenInsightNarrator>['state'];
 }) => {
   const shouldShowSkeleton = isBusy;
-  const title = isBusy ? 'AI 분석 생성 중' : generatedText ? 'AI 분석 결과' : '기본 분석 결과';
+  const title = isBusy ? '요약을 준비하는 중' : generatedText ? 'AI 요약' : '기본 요약';
   const meta =
     insightPack.summary.total === 0
       ? '기록 없음'
-      : state.status === 'error'
-        ? '계산된 신호 기반'
-        : generatedText
-          ? '온디바이스 생성 완료'
-          : isBusy
-            ? state.message || '모델 준비 중'
-            : '계산된 신호 기반';
+      : state.status === 'unsupported'
+        ? 'PC에서 사용 가능'
+        : state.status === 'error'
+          ? '기본 요약'
+          : generatedText
+            ? '요약 완료'
+            : isBusy
+              ? getStatsInsightLoadingLabel(state)
+              : '기본 요약';
 
   return (
     <div className="ai-glow-border rounded-lg">
@@ -2146,6 +1973,8 @@ const StatsInsightNarrativePanel = ({
           </div>
         </div>
 
+        {shouldShowSkeleton ? <StatsInsightProgress state={state} /> : null}
+
         <div className="min-h-[300px] px-4 py-5 sm:px-5" aria-live="polite">
           {shouldShowSkeleton ? (
             <StatsInsightGeneratingState />
@@ -2157,8 +1986,44 @@ const StatsInsightNarrativePanel = ({
             />
           )}
         </div>
+      </div>
+    </div>
+  );
+};
 
-        <StatsInsightStatusBar isBusy={isBusy} state={state} />
+const getStatsInsightLoadingLabel = (state: ReturnType<typeof useQwenInsightNarrator>['state']) =>
+  state.status === 'generating' ? '요약을 정리하고 있습니다.' : '분석을 준비하고 있습니다.';
+
+const getStatsInsightProgress = (state: ReturnType<typeof useQwenInsightNarrator>['state']) => {
+  if (state.status === 'generating') {
+    return Math.max(90, state.progress ?? 90);
+  }
+
+  if (state.status === 'loading') {
+    return state.progress ?? 8;
+  }
+
+  return 6;
+};
+
+const StatsInsightProgress = ({
+  state,
+}: {
+  state: ReturnType<typeof useQwenInsightNarrator>['state'];
+}) => {
+  const progress = Math.round(Math.min(96, Math.max(6, getStatsInsightProgress(state))));
+
+  return (
+    <div className="border-b border-white/10 bg-black/10 px-4 py-3 sm:px-5">
+      <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-300/85">
+        <span className="truncate">{getStatsInsightLoadingLabel(state)}</span>
+        <span className="shrink-0 tabular-nums">{progress}%</span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-sky-400 via-emerald-300 to-amber-300 shadow-[0_0_22px_rgb(56_189_248/0.35)] transition-[width] duration-300"
+          style={{ width: `${progress}%` }}
+        />
       </div>
     </div>
   );
@@ -2223,26 +2088,87 @@ const extractStatsInsightJsonText = (value: string) => {
   const startIndex = cleanedValue.indexOf('{');
   const endIndex = cleanedValue.lastIndexOf('}');
 
-  if (startIndex < 0 || endIndex <= startIndex) {
-    return null;
+  if (startIndex >= 0 && endIndex > startIndex) {
+    return cleanedValue.slice(startIndex, endIndex + 1);
   }
 
-  return cleanedValue.slice(startIndex, endIndex + 1);
+  const arrayStartIndex = cleanedValue.indexOf('[');
+  const arrayEndIndex = cleanedValue.lastIndexOf(']');
+
+  if (arrayStartIndex >= 0 && arrayEndIndex > arrayStartIndex) {
+    return cleanedValue.slice(arrayStartIndex, arrayEndIndex + 1);
+  }
+
+  return null;
+};
+
+const normalizeStatsInsightCandidateId = (value: string) =>
+  value
+    .trim()
+    .replace(/^["'`]+/, '')
+    .replace(/["'`,.;\s]+$/g, '');
+
+const toParsedStatsInsightItem = (candidate: StatsInsightCandidate): ParsedStatsInsightItem => ({
+  text: candidate.description,
+  title: candidate.title,
+  tone: candidate.tone,
+});
+
+const parseStatsInsightCandidateReferences = (
+  value: string,
+  candidates: StatsInsightCandidate[],
+) => {
+  if (candidates.length === 0) {
+    return [];
+  }
+
+  const cleanedValue = value
+    .replace(/```(?:json)?/gi, '')
+    .replace(/```/g, '')
+    .trim();
+  const usedCandidateIds = new Set<string>();
+
+  return candidates
+    .map((candidate) => ({
+      candidate,
+      index: cleanedValue.indexOf(candidate.id),
+    }))
+    .filter(({ index }) => index >= 0)
+    .sort((left, right) => left.index - right.index)
+    .map(({ candidate }) => {
+      if (usedCandidateIds.has(candidate.id)) {
+        return null;
+      }
+
+      usedCandidateIds.add(candidate.id);
+      return toParsedStatsInsightItem(candidate);
+    })
+    .filter((item): item is ParsedStatsInsightItem => item !== null)
+    .slice(0, 5);
 };
 
 const getCandidateIdFromInsightValue = (value: unknown) => {
   if (typeof value === 'string') {
-    return value;
+    return normalizeStatsInsightCandidateId(value);
   }
 
   if (typeof value !== 'object' || value === null) {
     return null;
   }
 
-  const valueRecord = value as { candidateId?: unknown; id?: unknown };
-  const candidateId = valueRecord.candidateId ?? valueRecord.id;
+  const valueRecord = value as {
+    candidate_id?: unknown;
+    candidateId?: unknown;
+    candidateID?: unknown;
+    id?: unknown;
+  };
+  const candidateId =
+    valueRecord.candidateId ??
+    valueRecord.candidate_id ??
+    valueRecord.candidateID ??
+    valueRecord.id;
 
-  return typeof candidateId === 'string' ? candidateId : null;
+  return typeof candidateId === 'string' ? normalizeStatsInsightCandidateId(candidateId) : null;
 };
 
 const createStatsInsightCandidateMap = (candidates: StatsInsightCandidate[]) =>
@@ -2281,11 +2207,7 @@ const parseStatsInsightSchema = (
           if (candidate && !usedCandidateIds.has(candidate.id)) {
             usedCandidateIds.add(candidate.id);
 
-            return {
-              text: candidate.description,
-              title: candidate.title,
-              tone: candidate.tone,
-            };
+            return toParsedStatsInsightItem(candidate);
           }
         }
 
@@ -2382,6 +2304,16 @@ const parseStatsInsightItems = (value: string, candidates: StatsInsightCandidate
 
   if (schemaItems.length > 0) {
     return schemaItems;
+  }
+
+  const candidateReferenceItems = parseStatsInsightCandidateReferences(value, candidates);
+
+  if (candidateReferenceItems.length > 0) {
+    return candidateReferenceItems;
+  }
+
+  if (candidates.length > 0) {
+    return [];
   }
 
   return getStatsInsightTextLines(value)
@@ -2602,58 +2534,6 @@ const StatsInsightSignalPanel = ({
         </div>
       </div>
     </aside>
-  );
-};
-
-const StatsInsightScopeBar = ({ items }: { items: StatsInsightScopeItem[] }) => (
-  <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1">
-    {items.map((item) => (
-      <div
-        key={item.label}
-        className="min-w-[138px] rounded-md border border-white/10 bg-white/[0.055] px-3 py-2.5 shadow-[inset_0_1px_0_rgb(255_255_255/0.06)] transition-[border-color,background-color] duration-200 hover:border-sky-300/25 hover:bg-white/[0.08] lg:min-w-0 lg:flex-1"
-      >
-        <p className="truncate text-[11px] font-semibold text-slate-400">{item.label}</p>
-        <p className="mt-1 truncate text-sm font-bold text-slate-100">{item.value}</p>
-      </div>
-    ))}
-  </div>
-);
-
-const StatsInsightStatusBar = ({
-  isBusy,
-  state,
-}: {
-  isBusy: boolean;
-  state: ReturnType<typeof useQwenInsightNarrator>['state'];
-}) => {
-  if (!state.message && !state.error) {
-    return null;
-  }
-
-  const progress = state.progress ?? (state.status === 'done' ? 100 : 0);
-
-  return (
-    <div className="border-t border-white/10 bg-black/20 px-4 py-3 sm:px-5">
-      <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-300/80">
-        {isBusy ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-200" />
-        ) : state.status === 'error' ? (
-          <TriangleAlert className="h-3.5 w-3.5 text-amber-200" />
-        ) : (
-          <Sparkles className="h-3.5 w-3.5 text-sky-200" />
-        )}
-        <span>{state.error ?? state.message}</span>
-        {state.progress !== undefined ? <span>{state.progress}%</span> : null}
-      </div>
-      {isBusy || state.progress !== undefined ? (
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-sky-400 via-emerald-300 to-amber-300 shadow-[0_0_22px_rgb(56_189_248/0.45)] transition-[width]"
-            style={{ width: `${Math.max(4, Math.min(100, progress))}%` }}
-          />
-        </div>
-      ) : null}
-    </div>
   );
 };
 

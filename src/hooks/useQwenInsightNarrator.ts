@@ -26,6 +26,11 @@ export interface QwenInsightNarratorState {
 }
 
 type QwenInsightWorkerListener = (message: QwenInsightWorkerOutboundMessage) => void;
+type NavigatorWithUserAgentData = Navigator & {
+  userAgentData?: {
+    mobile?: boolean;
+  };
+};
 
 const workerListeners = new Set<QwenInsightWorkerListener>();
 const activeRequestIds = new Set<string>();
@@ -36,13 +41,38 @@ let preloadStarted = false;
 const createInitialState = (signature: string): QwenInsightNarratorState => ({
   message: '',
   signature,
-  status: typeof Worker === 'undefined' ? 'unsupported' : 'idle',
+  status: canUseQwenInsightNarrator() ? 'idle' : 'unsupported',
   text: '',
 });
 
+const isMobileLikeRuntime = () => {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+
+  const navigatorWithUserAgentData = navigator as NavigatorWithUserAgentData;
+
+  if (navigatorWithUserAgentData.userAgentData?.mobile) {
+    return true;
+  }
+
+  const userAgent = navigator.userAgent.toLowerCase();
+
+  if (
+    /android|iphone|ipad|ipod|mobile|windows phone|blackberry|opera mini|iemobile/.test(userAgent)
+  ) {
+    return true;
+  }
+
+  return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+};
+
+export const canUseQwenInsightNarrator = () =>
+  typeof Worker !== 'undefined' && !isMobileLikeRuntime();
+
 const getWorkerRuntimeLabel = () => {
-  if (typeof Worker === 'undefined') {
-    return 'Worker 없음';
+  if (!canUseQwenInsightNarrator()) {
+    return '미지원';
   }
 
   if (
@@ -75,7 +105,7 @@ const dispatchWorkerMessage = (message: QwenInsightWorkerOutboundMessage) => {
 };
 
 const getSharedWorker = () => {
-  if (typeof Worker === 'undefined') {
+  if (!canUseQwenInsightNarrator()) {
     return null;
   }
 
@@ -109,6 +139,10 @@ const getSharedWorker = () => {
 };
 
 export const preloadQwenInsightNarrator = () => {
+  if (!canUseQwenInsightNarrator()) {
+    return;
+  }
+
   if (preloadStarted) {
     return;
   }
@@ -135,7 +169,7 @@ export const useQwenInsightNarrator = (signature: string) => {
   const signatureRef = useRef(signature);
   const [state, setState] = useState<QwenInsightNarratorState>(() => createInitialState(signature));
   const runtimeLabel = useMemo(() => getWorkerRuntimeLabel(), []);
-  const isSupported = runtimeLabel !== 'Worker 없음';
+  const isSupported = canUseQwenInsightNarrator();
 
   useEffect(() => {
     signatureRef.current = signature;
@@ -159,7 +193,10 @@ export const useQwenInsightNarrator = (signature: string) => {
           dtype: message.dtype ?? current.dtype,
           message: message.message,
           model: message.model ?? current.model,
-          progress: message.progress ?? current.progress,
+          progress:
+            message.progress === undefined
+              ? current.progress
+              : Math.max(current.progress ?? 0, message.progress),
           status: message.status === 'generating' ? 'generating' : 'loading',
         }));
         return;
@@ -192,7 +229,7 @@ export const useQwenInsightNarrator = (signature: string) => {
       setState((current) => ({
         ...current,
         error: message.error,
-        message: 'AI 분석 실패',
+        message: '기본 요약으로 표시합니다.',
         status: 'error',
       }));
     };
@@ -211,7 +248,7 @@ export const useQwenInsightNarrator = (signature: string) => {
       if (!worker) {
         setState((current) => ({
           ...current,
-          message: '이 브라우저는 Worker를 지원하지 않습니다.',
+          message: 'PC 환경에서 AI 요약을 사용할 수 있습니다.',
           status: 'unsupported',
         }));
         return;
@@ -224,8 +261,8 @@ export const useQwenInsightNarrator = (signature: string) => {
       setState((current) => ({
         ...current,
         error: undefined,
-        message: 'AI 분석 모델을 준비 중입니다.',
-        progress: undefined,
+        message: '분석을 준비하고 있습니다.',
+        progress: 6,
         signature,
         status: 'loading',
         text: '',

@@ -1,6 +1,9 @@
 import { useEffect } from 'react';
 
-import { preloadQwenInsightNarrator } from '@/hooks/useQwenInsightNarrator';
+import {
+  canUseQwenInsightNarrator,
+  preloadQwenInsightNarrator,
+} from '@/hooks/useQwenInsightNarrator';
 
 type WindowWithIdleCallback = Window & {
   cancelIdleCallback?: (handle: number) => void;
@@ -11,6 +14,10 @@ const preloadDelayMs = 1800;
 
 const QwenInsightModelPreloader = () => {
   useEffect(() => {
+    if (!canUseQwenInsightNarrator()) {
+      return;
+    }
+
     const startPreload = () => {
       preloadQwenInsightNarrator();
     };

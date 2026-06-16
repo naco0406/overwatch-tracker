@@ -84,27 +84,24 @@ const getPreferredDtype = async (modelId: string) => {
 const getProgressMessage = (progress: ProgressInfo) => {
   if (progress.status === 'progress_total') {
     return {
-      message: `모델 다운로드 ${Math.round(progress.progress)}%`,
-      progress: Math.round(progress.progress),
+      message: '분석을 준비하고 있습니다.',
+      progress: Math.round(12 + progress.progress * 0.68),
     };
   }
 
   if (progress.status === 'progress') {
-    return {
-      message: `${progress.file} ${Math.round(progress.progress)}%`,
-      progress: Math.round(progress.progress),
-    };
+    return { message: '분석을 준비하고 있습니다.', progress: undefined };
   }
 
   if (progress.status === 'download') {
-    return { message: `${progress.file} 다운로드 중`, progress: undefined };
+    return { message: '분석을 준비하고 있습니다.', progress: undefined };
   }
 
   if (progress.status === 'ready') {
-    return { message: '모델 준비 완료', progress: 100 };
+    return { message: '요약을 준비하고 있습니다.', progress: 84 };
   }
 
-  return { message: '모델 준비 중', progress: undefined };
+  return { message: '분석을 준비하고 있습니다.', progress: undefined };
 };
 
 const loadGeneratorForDevice = async ({
@@ -120,12 +117,13 @@ const loadGeneratorForDevice = async ({
 }) => {
   postStatus(
     id,
-    `${device.toUpperCase()} 런타임으로 모델을 준비 중입니다.`,
+    '분석을 준비하고 있습니다.',
     'loading',
     {
       device,
       dtype,
       model: modelId,
+      progress: 10,
     },
     true,
   );
@@ -160,13 +158,13 @@ const loadGeneratorForDevice = async ({
 
   postStatus(
     id,
-    `${device.toUpperCase()} 런타임으로 모델 준비가 끝났습니다.`,
+    '요약을 준비하고 있습니다.',
     'ready',
     {
       device,
       dtype,
       model: modelId,
-      progress: 100,
+      progress: 86,
     },
     true,
   );
@@ -182,7 +180,7 @@ const loadGeneratorForDevice = async ({
 
 const loadGenerator = async (id: string): Promise<LoadedGenerator> => {
   modelStatusSubscriberIds.add(id);
-  postStatus(id, '모델 양자화 정보를 확인 중입니다.', 'checking', undefined, true);
+  postStatus(id, '분석을 준비하고 있습니다.', 'checking', { progress: 8 }, true);
 
   const primaryDevice = hasNavigatorGpu() ? 'webgpu' : 'wasm';
   let lastError: unknown = null;
@@ -203,17 +201,19 @@ const loadGenerator = async (id: string): Promise<LoadedGenerator> => {
       lastError = error;
 
       if (primaryDevice !== 'webgpu') {
-        postStatus(id, `${modelId} 로드에 실패해 다음 모델을 확인합니다.`, 'loading', {
+        postStatus(id, '분석을 계속 준비하고 있습니다.', 'loading', {
           dtype,
           model: modelId,
+          progress: 18,
         });
         continue;
       }
     }
 
-    postStatus(id, 'WebGPU 초기화에 실패해 WASM으로 다시 시도합니다.', 'loading', {
+    postStatus(id, '분석을 계속 준비하고 있습니다.', 'loading', {
       dtype,
       model: modelId,
+      progress: 18,
     });
 
     try {
@@ -227,9 +227,10 @@ const loadGenerator = async (id: string): Promise<LoadedGenerator> => {
       return loadedGenerator;
     } catch (error) {
       lastError = error;
-      postStatus(id, `${modelId} 로드에 실패해 다음 모델을 확인합니다.`, 'loading', {
+      postStatus(id, '분석을 계속 준비하고 있습니다.', 'loading', {
         dtype,
         model: modelId,
+        progress: 18,
       });
     }
   }
@@ -266,6 +267,10 @@ const removeLikelyTruncatedTrailingLine = (value: string, hitTokenLimit: boolean
 
   if (lines.length === 0) {
     return '';
+  }
+
+  if (lines.join('\n').includes('{')) {
+    return lines.join('\n');
   }
 
   const lastLine = lines.at(-1) ?? '';
@@ -329,7 +334,7 @@ const generateInsight = async (message: QwenInsightWorkerInboundMessage) => {
     device,
     dtype,
     model,
-    progress: 100,
+    progress: 92,
   });
 
   if (!processor.tokenizer) {
