@@ -59,7 +59,8 @@ const primaryNavItems: NavItem[] = [
       { to: '/stats/heroes', label: '영웅' },
       { to: '/stats/time', label: '시간' },
       { to: '/stats/order', label: '순서' },
-      { to: '/stats/summary', label: '요약(beta)' },
+      { to: '/stats/summary', label: '요약' },
+      { to: '/stats/external', label: '외부 데이터(beta)' },
     ],
   },
   {

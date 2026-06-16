@@ -5,10 +5,15 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Database,
+  ExternalLink,
+  Globe2,
   ListOrdered,
   Loader2,
   MapIcon,
+  RefreshCw,
   RotateCcw,
+  ShieldCheck,
   Sparkles,
   Swords,
   Target,
@@ -33,7 +38,7 @@ import {
 } from 'recharts';
 
 import { EmptyState } from '@/components/common/EmptyState';
-import { SkeletonBlock } from '@/components/common/DataState';
+import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { MatchRoleIcon, MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Badge } from '@/components/ui/badge';
@@ -58,9 +63,11 @@ import {
 } from '@/data/matchOptions';
 import { getHeroPortraitPath, getMapScreenshotPath } from '@/data/masterAssets';
 import { useCompetitiveSeasons } from '@/hooks/useCompetitiveSeasons';
+import { useExternalDataOverview } from '@/hooks/useExternalData';
 import { useMatches } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useQwenInsightNarrator } from '@/hooks/useQwenInsightNarrator';
+import { isExternalDataApiConfigured } from '@/lib/externalDataApi';
 import {
   compareMatchesByTimelineDesc,
   formatWinRate,
@@ -81,6 +88,7 @@ import {
   type CompetitiveSeason,
   type SeasonFilterValue,
 } from '@/types/competitiveSeason';
+import type { ExternalDataOverview, ExternalSource } from '@/types/externalData';
 import type { Match, MatchRole, ModeId, QueueType } from '@/types/match';
 import { getPlayerAccountLabel, type PlayerAccount } from '@/types/playerAccount';
 
@@ -128,8 +136,14 @@ const statsSections = [
   {
     description: '현재 필터의 전장, 모드, 영웅, 시간, 순서, 조합 신호를 한 번에 요약합니다.',
     eyebrow: '인사이트',
-    title: '요약(beta)',
+    title: '요약',
     value: 'summary',
+  },
+  {
+    description: 'Cloudflare Worker를 통해 가져온 외부 보조 데이터와 수집 상태를 확인합니다.',
+    eyebrow: '보조 데이터',
+    title: '외부 데이터(beta)',
+    value: 'external',
   },
 ] as const;
 
@@ -185,6 +199,80 @@ const formatMonthLabel = (date: Date) =>
     month: 'long',
     year: 'numeric',
   }).format(date);
+
+const externalSourceTypeLabels = {
+  official_api: '공식 API',
+  official_web: '공식 웹',
+  third_party_api: '서드파티 API',
+  third_party_web: '서드파티 웹',
+} satisfies Record<ExternalSource['sourceType'], string>;
+
+const externalEventStatusLabels = {
+  canceled: '취소',
+  completed: '종료',
+  live: '진행 중',
+  postponed: '연기',
+  scheduled: '예정',
+} as const;
+
+const formatExternalDateTime = (value: string) => {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return '--';
+  }
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    month: 'short',
+  }).format(date);
+};
+
+const getLatestExternalTimestamp = (values: string[]) => {
+  const latestTime = values.reduce((latest, value) => {
+    const time = new Date(value).getTime();
+
+    return Number.isFinite(time) ? Math.max(latest, time) : latest;
+  }, Number.NEGATIVE_INFINITY);
+
+  return Number.isFinite(latestTime) ? new Date(latestTime).toISOString() : null;
+};
+
+const formatExternalTtl = (seconds: number) => {
+  if (seconds >= 86400) {
+    return `${Math.round(seconds / 86400)}일`;
+  }
+
+  if (seconds >= 3600) {
+    return `${Math.round(seconds / 3600)}시간`;
+  }
+
+  return `${Math.max(1, Math.round(seconds / 60))}분`;
+};
+
+const formatExternalPercent = (value: number | null) =>
+  value === null ? '--' : `${value.toFixed(1)}%`;
+
+const getExternalSourceTypeLabel = (value: ExternalSource['sourceType']) =>
+  externalSourceTypeLabels[value] ?? value;
+
+const getExternalHeroLabel = (heroId: string) =>
+  heroOptions.find((hero) => hero.value === heroId)?.label ?? heroId;
+
+const getExternalRoleLabel = (role: string) => {
+  if (role === 'all') {
+    return '전체';
+  }
+
+  return role in roleLabels ? roleLabels[role as keyof typeof roleLabels] : role;
+};
+
+const getExternalEventStatusLabel = (status: string) =>
+  status in externalEventStatusLabels
+    ? externalEventStatusLabels[status as keyof typeof externalEventStatusLabels]
+    : status;
 
 const getMonthStart = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1);
 
@@ -417,6 +505,14 @@ const StatsPage = () => {
   const { data: matches = [], isLoading: isMatchesLoading } = useMatches();
   const { data: seasons = [], isLoading: isSeasonsLoading } = useCompetitiveSeasons();
   const { data: playerAccounts = [], isLoading: isAccountsLoading } = usePlayerAccounts();
+  const externalDataConfigured = isExternalDataApiConfigured();
+  const {
+    data: externalDataOverview,
+    error: externalDataError,
+    isFetching: isExternalDataFetching,
+    isLoading: isExternalDataLoading,
+    refetch: refetchExternalData,
+  } = useExternalDataOverview(activeSection === 'external');
   const currentSeason = useMemo(() => getCurrentCompetitiveSeason(seasons), [seasons]);
   const currentSeasonId = currentSeason?.id ?? null;
   const isStatsLoading = isMatchesLoading || isAccountsLoading || isSeasonsLoading;
@@ -856,8 +952,69 @@ const StatsPage = () => {
     setQueueFilter('all');
     setAccountFilter('all');
   };
+  const externalSources = externalDataOverview?.sources ?? [];
+  const externalHeroRates = externalDataOverview?.heroRates ?? [];
+  const externalEsportsEvents = externalDataOverview?.esportsEvents ?? [];
+  const externalOfficialSourceCount = externalSources.filter((source) => source.isOfficial).length;
+  const latestHeroRateFetchedAt = getLatestExternalTimestamp(
+    externalHeroRates.map((snapshot) => snapshot.fetchedAt),
+  );
+  const latestEsportsFetchedAt = getLatestExternalTimestamp(
+    externalEsportsEvents.map((event) => event.fetchedAt),
+  );
 
   const sectionMetrics = {
+    external: [
+      {
+        detail: externalDataConfigured
+          ? `${externalOfficialSourceCount}개 공식 · ${Math.max(
+              0,
+              externalSources.length - externalOfficialSourceCount,
+            )}개 서드파티`
+          : '환경 변수 설정 필요',
+        icon: Globe2,
+        label: '연결 소스',
+        value: externalDataConfigured
+          ? isExternalDataLoading
+            ? '...'
+            : externalSources.length.toLocaleString('ko-KR')
+          : '--',
+      },
+      {
+        detail: externalSources.length > 0 ? '활성화된 소스 기준' : '소스 조회 대기',
+        icon: ShieldCheck,
+        label: '공식 소스',
+        value: externalDataConfigured
+          ? isExternalDataLoading
+            ? '...'
+            : externalOfficialSourceCount.toLocaleString('ko-KR')
+          : '--',
+      },
+      {
+        detail: latestHeroRateFetchedAt
+          ? `최근 수집 ${formatExternalDateTime(latestHeroRateFetchedAt)}`
+          : '영웅 메타 수집 대기',
+        icon: Database,
+        label: '영웅 메타',
+        value: externalDataConfigured
+          ? isExternalDataLoading
+            ? '...'
+            : externalHeroRates.length.toLocaleString('ko-KR')
+          : '--',
+      },
+      {
+        detail: latestEsportsFetchedAt
+          ? `최근 수집 ${formatExternalDateTime(latestEsportsFetchedAt)}`
+          : '일정 수집 대기',
+        icon: CalendarDays,
+        label: 'e스포츠',
+        value: externalDataConfigured
+          ? isExternalDataLoading
+            ? '...'
+            : externalEsportsEvents.length.toLocaleString('ko-KR')
+          : '--',
+      },
+    ],
     heroes: [
       {
         detail: '기록에 등장한 영웅',
@@ -1024,7 +1181,7 @@ const StatsPage = () => {
     return <Navigate to="/stats/maps" replace />;
   }
 
-  if (isStatsLoading) {
+  if (isStatsLoading && activeSection !== 'external') {
     return (
       <div className="page-stack">
         <PageHeader
@@ -1051,15 +1208,17 @@ const StatsPage = () => {
         title={activeSectionMeta.title}
         description={activeSectionMeta.description}
         actions={
-          <Button
-            variant="outline"
-            className="bg-transparent"
-            disabled={activeFilterCount === 0}
-            onClick={resetFilters}
-          >
-            <RotateCcw className="h-4 w-4" />
-            초기화
-          </Button>
+          activeSection === 'external' ? null : (
+            <Button
+              variant="outline"
+              className="bg-transparent"
+              disabled={activeFilterCount === 0}
+              onClick={resetFilters}
+            >
+              <RotateCcw className="h-4 w-4" />
+              초기화
+            </Button>
+          )
         }
       />
 
@@ -1708,6 +1867,18 @@ const StatsPage = () => {
             <StatsInsightSummaryPanel insightPack={insightPack} />
           </div>
         ) : null}
+
+        {activeSection === 'external' ? (
+          <ExternalDataOverviewPanel
+            error={externalDataError}
+            isConfigured={externalDataConfigured}
+            isFetching={isExternalDataFetching}
+            isLoading={isExternalDataLoading}
+            metrics={sectionMetrics.external}
+            overview={externalDataOverview}
+            onRefresh={() => void refetchExternalData()}
+          />
+        ) : null}
       </section>
     </div>
   );
@@ -1768,6 +1939,399 @@ const SectionMetricStack = ({ metrics }: { metrics: MetricCellProps[] }) => (
         {...metric}
         className="border-b border-border/60 last:border-b-0"
       />
+    ))}
+  </div>
+);
+
+type ExternalHeroRateItem = ExternalDataOverview['heroRates'][number];
+type ExternalEsportsEventItem = ExternalDataOverview['esportsEvents'][number];
+
+interface ExternalDataOverviewPanelProps {
+  error: unknown;
+  isConfigured: boolean;
+  isFetching: boolean;
+  isLoading: boolean;
+  metrics: MetricCellProps[];
+  overview?: ExternalDataOverview;
+  onRefresh: () => void;
+}
+
+const ExternalDataOverviewPanel = ({
+  error,
+  isConfigured,
+  isFetching,
+  isLoading,
+  metrics,
+  onRefresh,
+  overview,
+}: ExternalDataOverviewPanelProps) => {
+  const sources = overview?.sources ?? [];
+  const heroRates = overview?.heroRates ?? [];
+  const esportsEvents = overview?.esportsEvents ?? [];
+  const warnings = overview?.warnings ?? [];
+
+  if (!isConfigured) {
+    return (
+      <div className="space-y-4">
+        <MetricGrid metrics={metrics} />
+        <EmptyState
+          icon={Database}
+          title="외부 데이터 API 주소가 없습니다."
+          description="Cloudflare Pages 환경 변수 VITE_EXTERNAL_DATA_API_URL을 설정하면 이 화면에서 Worker 데이터를 확인할 수 있습니다."
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <MetricGrid metrics={metrics} />
+
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="metric-label">연결 상태</p>
+          <p className="mt-1 text-sm font-semibold text-muted-foreground">
+            Cloudflare Worker에서 Supabase에 저장된 외부 보조 데이터를 읽어옵니다.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          className="w-full bg-transparent sm:w-auto"
+          disabled={isFetching}
+          onClick={onRefresh}
+        >
+          {isFetching ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4" />
+          )}
+          새로고침
+        </Button>
+      </div>
+
+      {error ? (
+        <EmptyState
+          action={
+            <Button variant="outline" className="bg-transparent" onClick={onRefresh}>
+              <RefreshCw className="h-4 w-4" />
+              다시 시도
+            </Button>
+          }
+          icon={TriangleAlert}
+          title="외부 데이터를 불러오지 못했습니다."
+          description={error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.'}
+        />
+      ) : (
+        <>
+          {warnings.length > 0 ? <ExternalDataWarningsPanel warnings={warnings} /> : null}
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
+            <ExternalSourcesPanel isLoading={isLoading} sources={sources} />
+            <ExternalCollectionStatusPanel
+              esportsEvents={esportsEvents}
+              heroRates={heroRates}
+              isFetching={isFetching}
+              sources={sources}
+            />
+          </div>
+
+          <ExternalLoadedDataPanel
+            esportsEvents={esportsEvents}
+            heroRates={heroRates}
+            isLoading={isLoading}
+          />
+        </>
+      )}
+    </div>
+  );
+};
+
+const ExternalDataWarningsPanel = ({
+  warnings,
+}: {
+  warnings: NonNullable<ExternalDataOverview['warnings']>;
+}) => (
+  <div className="rounded-lg border border-amber-300/30 bg-amber-300/[0.08] px-4 py-3 sm:px-5">
+    <div className="flex items-start gap-3">
+      <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-200" />
+      <div className="min-w-0">
+        <p className="text-sm font-bold text-amber-100">
+          일부 외부 데이터 경로가 아직 준비되지 않았습니다.
+        </p>
+        <div className="mt-2 grid gap-1.5">
+          {warnings.map((warning) => (
+            <p
+              key={`${warning.endpoint}-${warning.status ?? 'unknown'}`}
+              className="break-words text-xs font-semibold text-amber-100/80"
+            >
+              {warning.endpoint}
+              {warning.status ? ` · ${warning.status}` : ''} · {warning.message}
+            </p>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const ExternalSourcesPanel = ({
+  isLoading,
+  sources,
+}: {
+  isLoading: boolean;
+  sources: ExternalSource[];
+}) => (
+  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="flex flex-col gap-3 border-b border-border/60 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:px-5">
+      <div className="min-w-0">
+        <p className="metric-label">데이터 소스</p>
+        <h2 className="mt-1 text-lg font-bold">활성화된 외부 연결</h2>
+      </div>
+      <Badge variant="outline" className="w-fit bg-transparent">
+        {isLoading ? '확인 중' : `${sources.length.toLocaleString('ko-KR')}개`}
+      </Badge>
+    </div>
+    <div className="grid gap-px bg-border/60 sm:grid-cols-2">
+      {isLoading ? (
+        Array.from({ length: 4 }, (_, index) => (
+          <div key={index} className="bg-card p-4 sm:p-5">
+            <SkeletonBlock className="h-3 w-24" />
+            <SkeletonBlock className="mt-3 h-5 w-40 max-w-full" />
+            <SkeletonBlock className="mt-3 h-3 w-full" />
+            <SkeletonBlock className="mt-2 h-3 w-2/3" />
+          </div>
+        ))
+      ) : sources.length > 0 ? (
+        sources.map((source) => (
+          <div key={source.id} className="min-w-0 bg-card p-4 sm:p-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="bg-transparent">
+                {source.isOfficial ? '공식' : '서드파티'}
+              </Badge>
+              <span className="text-xs font-bold text-muted-foreground">
+                {getExternalSourceTypeLabel(source.sourceType)}
+              </span>
+            </div>
+            <h3 className="mt-3 break-words text-base font-bold">{source.displayName}</h3>
+            <p className="mt-1 break-all text-xs font-semibold text-muted-foreground">
+              {source.baseUrl}
+            </p>
+            <p className="mt-3 text-sm font-semibold leading-relaxed text-muted-foreground">
+              {source.notes || '보조 데이터 소스로 등록되어 있습니다.'}
+            </p>
+            <div className="mt-4 flex items-center justify-between gap-3 border-t border-border/60 pt-3">
+              <span className="text-xs font-bold text-muted-foreground">
+                TTL {formatExternalTtl(source.defaultTtlSeconds)}
+              </span>
+              <Button asChild variant="ghost" size="sm">
+                <a href={source.baseUrl} target="_blank" rel="noreferrer">
+                  <ExternalLink className="h-4 w-4" />
+                  열기
+                </a>
+              </Button>
+            </div>
+          </div>
+        ))
+      ) : (
+        <div className="bg-card p-4 sm:col-span-2 sm:p-5">
+          <InlineEmptyState
+            title="활성화된 외부 소스가 없습니다."
+            description="Supabase external_sources 테이블의 enabled 상태를 확인해주세요."
+          />
+        </div>
+      )}
+    </div>
+  </div>
+);
+
+const ExternalCollectionStatusPanel = ({
+  esportsEvents,
+  heroRates,
+  isFetching,
+  sources,
+}: {
+  esportsEvents: ExternalEsportsEventItem[];
+  heroRates: ExternalHeroRateItem[];
+  isFetching: boolean;
+  sources: ExternalSource[];
+}) => {
+  const latestHeroRateFetchedAt = getLatestExternalTimestamp(
+    heroRates.map((snapshot) => snapshot.fetchedAt),
+  );
+  const latestEsportsFetchedAt = getLatestExternalTimestamp(
+    esportsEvents.map((event) => event.fetchedAt),
+  );
+  const statusItems = [
+    {
+      detail: latestHeroRateFetchedAt
+        ? formatExternalDateTime(latestHeroRateFetchedAt)
+        : '아직 저장된 스냅샷 없음',
+      label: '영웅 메타',
+      value: heroRates.length > 0 ? `${heroRates.length.toLocaleString('ko-KR')}개` : '대기',
+    },
+    {
+      detail: latestEsportsFetchedAt
+        ? formatExternalDateTime(latestEsportsFetchedAt)
+        : '아직 저장된 일정 없음',
+      label: 'e스포츠',
+      value:
+        esportsEvents.length > 0 ? `${esportsEvents.length.toLocaleString('ko-KR')}개` : '대기',
+    },
+    {
+      detail: sources.some((source) => source.id === 'overfast')
+        ? 'OverFast 소스 연결됨'
+        : '소스 연결 대기',
+      label: '플레이어 프로필',
+      value: '다음 단계',
+    },
+  ];
+
+  return (
+    <aside className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+      <div className="flex items-start justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
+        <div className="min-w-0">
+          <p className="metric-label">수집 상태</p>
+          <h2 className="mt-1 text-lg font-bold">저장된 외부 데이터</h2>
+        </div>
+        <Badge variant="outline" className="bg-transparent">
+          {isFetching ? '동기화 중' : '조회됨'}
+        </Badge>
+      </div>
+      <div className="px-4 py-1 sm:px-5">
+        {statusItems.map((item) => (
+          <div key={item.label} className="border-b border-border/60 py-4 last:border-b-0">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-bold">{item.label}</p>
+                <p className="mt-1 text-xs font-semibold text-muted-foreground">{item.detail}</p>
+              </div>
+              <Badge variant="outline" className="shrink-0 bg-transparent">
+                {item.value}
+              </Badge>
+            </div>
+          </div>
+        ))}
+      </div>
+    </aside>
+  );
+};
+
+const ExternalLoadedDataPanel = ({
+  esportsEvents,
+  heroRates,
+  isLoading,
+}: {
+  esportsEvents: ExternalEsportsEventItem[];
+  heroRates: ExternalHeroRateItem[];
+  isLoading: boolean;
+}) => (
+  <div className="grid gap-4 xl:grid-cols-2">
+    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+      <div className="border-b border-border/60 px-4 py-3 sm:px-5">
+        <p className="metric-label">영웅 메타</p>
+        <h2 className="mt-1 text-lg font-bold">최근 글로벌 스냅샷</h2>
+      </div>
+      <div className="px-4 py-1 sm:px-5">
+        {isLoading ? (
+          <ExternalRowsSkeleton rows={5} />
+        ) : heroRates.length > 0 ? (
+          heroRates
+            .slice(0, 8)
+            .map((snapshot) => <ExternalHeroRateRow key={snapshot.id} snapshot={snapshot} />)
+        ) : (
+          <InlineEmptyState
+            className="my-4"
+            title="영웅 메타 스냅샷이 없습니다."
+            description="수집 작업이 추가되면 Blizzard Hero Statistics 기반 데이터가 여기에 표시됩니다."
+          />
+        )}
+      </div>
+    </div>
+
+    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+      <div className="border-b border-border/60 px-4 py-3 sm:px-5">
+        <p className="metric-label">e스포츠</p>
+        <h2 className="mt-1 text-lg font-bold">최근 일정 데이터</h2>
+      </div>
+      <div className="px-4 py-1 sm:px-5">
+        {isLoading ? (
+          <ExternalRowsSkeleton rows={5} />
+        ) : esportsEvents.length > 0 ? (
+          esportsEvents
+            .slice(0, 8)
+            .map((event) => <ExternalEsportsEventRow key={event.id} event={event} />)
+        ) : (
+          <InlineEmptyState
+            className="my-4"
+            title="e스포츠 일정 데이터가 없습니다."
+            description="공식 e스포츠 소스 수집 작업이 추가되면 일정과 경기 상태가 표시됩니다."
+          />
+        )}
+      </div>
+    </div>
+  </div>
+);
+
+const ExternalHeroRateRow = ({ snapshot }: { snapshot: ExternalHeroRateItem }) => (
+  <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-3 border-b border-border/60 py-4 last:border-b-0">
+    <div className="min-w-0">
+      <p className="truncate text-sm font-bold">{getExternalHeroLabel(snapshot.heroId)}</p>
+      <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+        {getExternalRoleLabel(snapshot.role)} · {snapshot.gamemode} · {snapshot.tier}
+      </p>
+      <p className="mt-2 truncate text-xs font-semibold text-muted-foreground">
+        {formatExternalDateTime(snapshot.fetchedAt)}
+      </p>
+    </div>
+    <div className="grid grid-cols-2 gap-2 text-right">
+      <div>
+        <p className="metric-label">픽률</p>
+        <p className="mt-1 text-sm font-bold">{formatExternalPercent(snapshot.pickRate)}</p>
+      </div>
+      <div>
+        <p className="metric-label">승률</p>
+        <p className="mt-1 text-sm font-bold">{formatExternalPercent(snapshot.winRate)}</p>
+      </div>
+    </div>
+  </div>
+);
+
+const ExternalEsportsEventRow = ({ event }: { event: ExternalEsportsEventItem }) => (
+  <div className="border-b border-border/60 py-4 last:border-b-0">
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="truncate text-sm font-bold">
+          {event.teamA && event.teamB
+            ? `${event.teamA} vs ${event.teamB}`
+            : event.tournament || '일정 이름 없음'}
+        </p>
+        <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+          {[event.tournament, event.stage, event.series].filter(Boolean).join(' · ') ||
+            '대회 정보 없음'}
+        </p>
+        <p className="mt-2 text-xs font-semibold text-muted-foreground">
+          {event.startsAt ? formatExternalDateTime(event.startsAt) : '일정 미정'}
+        </p>
+      </div>
+      <Badge variant="outline" className="shrink-0 bg-transparent">
+        {getExternalEventStatusLabel(event.status)}
+      </Badge>
+    </div>
+  </div>
+);
+
+const ExternalRowsSkeleton = ({ rows }: { rows: number }) => (
+  <div>
+    {Array.from({ length: rows }, (_, index) => (
+      <div key={index} className="border-b border-border/60 py-4 last:border-b-0">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <SkeletonBlock className="h-4 w-36 max-w-full" />
+            <SkeletonBlock className="mt-2 h-3 w-52 max-w-full" />
+          </div>
+          <SkeletonBlock className="h-6 w-16" />
+        </div>
+      </div>
     ))}
   </div>
 );
@@ -3274,17 +3838,23 @@ const chartSkeletonWidths = [
   'w-[63%]',
 ];
 
-const StatsSectionSkeleton = ({ section }: { section: StatsSection }) => (
-  <section className="min-w-0 space-y-4">
-    <StatsFilterPanelSkeleton includeMode={section !== 'modes'} />
-    {section === 'maps' ? <MapStatsSkeleton /> : null}
-    {section === 'modes' ? <ModeStatsSkeleton /> : null}
-    {section === 'heroes' ? <HeroStatsSkeleton /> : null}
-    {section === 'time' ? <TimeStatsSkeleton /> : null}
-    {section === 'order' ? <OrderStatsSkeleton /> : null}
-    {section === 'summary' ? <SummaryStatsSkeleton /> : null}
-  </section>
-);
+const StatsSectionSkeleton = ({ section }: { section: StatsSection }) => {
+  if (section === 'external') {
+    return <ExternalDataStatsSkeleton />;
+  }
+
+  return (
+    <section className="min-w-0 space-y-4">
+      <StatsFilterPanelSkeleton includeMode={section !== 'modes'} />
+      {section === 'maps' ? <MapStatsSkeleton /> : null}
+      {section === 'modes' ? <ModeStatsSkeleton /> : null}
+      {section === 'heroes' ? <HeroStatsSkeleton /> : null}
+      {section === 'time' ? <TimeStatsSkeleton /> : null}
+      {section === 'order' ? <OrderStatsSkeleton /> : null}
+      {section === 'summary' ? <SummaryStatsSkeleton /> : null}
+    </section>
+  );
+};
 
 const StatsFilterPanelSkeleton = ({ includeMode }: { includeMode: boolean }) => (
   <div className="overflow-hidden rounded-lg border border-border/70 bg-card">
@@ -3430,6 +4000,20 @@ const SummaryStatsSkeleton = () => (
       </div>
     </div>
   </div>
+);
+
+const ExternalDataStatsSkeleton = () => (
+  <section className="min-w-0 space-y-4">
+    <StatsMetricGridSkeleton />
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
+      <StatsMediaRowsSkeleton />
+      <StatsListPanelSkeleton rows={3} />
+    </div>
+    <div className="grid gap-4 xl:grid-cols-2">
+      <StatsListPanelSkeleton rows={5} />
+      <StatsListPanelSkeleton rows={5} />
+    </div>
+  </section>
 );
 
 const StatsMetricGridSkeleton = () => (
