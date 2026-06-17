@@ -60,7 +60,17 @@ const primaryNavItems: NavItem[] = [
       { to: '/stats/time', label: '시간' },
       { to: '/stats/order', label: '순서' },
       { to: '/stats/summary', label: '요약' },
-      { to: '/stats/external', label: '외부 데이터(beta)' },
+    ],
+  },
+  {
+    to: '/external-data/overview',
+    label: '외부 데이터',
+    icon: Database,
+    children: [
+      { to: '/external-data/overview', label: '개요' },
+      { to: '/external-data/esports', label: 'e스포츠 일정' },
+      { to: '/external-data/heroes', label: '영웅 메타' },
+      { to: '/external-data/sources', label: '데이터 소스' },
     ],
   },
   {
@@ -343,7 +353,7 @@ const AppLayout = () => {
         <main className="safe-page-bottom mx-auto flex min-h-screen w-full max-w-none flex-col px-3.5 pt-4 sm:px-6 sm:pt-5 xl:px-8 xl:py-8">
           <Outlet />
         </main>
-        <nav className="safe-bottom-nav fixed inset-x-2 z-40 grid grid-cols-4 rounded-lg border border-border/70 bg-card/95 p-1 backdrop-blur-xl xl:hidden">
+        <nav className="safe-bottom-nav fixed inset-x-2 z-40 grid grid-cols-5 rounded-lg border border-border/70 bg-card/95 p-1 backdrop-blur-xl xl:hidden">
           {mobileNavItems.map((item) => {
             const active = isNavItemActive(item, location.pathname);
 

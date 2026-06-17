@@ -2,8 +2,10 @@ const DEFAULT_ALLOWED_ORIGINS = 'http://localhost:5173';
 const DEFAULT_CACHE_TTL_SECONDS = 300;
 const BLIZZARD_HERO_RATES_URL = 'https://overwatch.blizzard.com/en-us/rates/';
 const ESPORTS_SCHEDULE_URL = 'https://esports.overwatch.com/en-us/schedule';
+const OWTICS_CALENDAR_URL = 'https://owtics.gg/en-US/esports/calendar';
 const OVERFAST_HERO_STATS_URL = 'https://overfast-api.tekrop.fr/heroes/stats';
 const HERO_RATE_REGIONS = ['americas', 'asia', 'europe'];
+const OWTICS_ESPORTS_REGIONS = new Set(['asia', 'china', 'japan', 'korea', 'pacific']);
 
 const SOURCE_ALLOWLIST = new Set([
   'esports.overwatch.com',
@@ -45,6 +47,7 @@ const COLLECTOR_JOB_NAMES = {
   all: 'external_collect_all',
   blizzardHeroRates: 'external_collect_blizzard_hero_rates',
   esportsEvents: 'external_collect_esports_events',
+  owticsEsportsEvents: 'external_collect_owtics_esports_events',
   overfastHeroRates: 'external_collect_overfast_hero_rates',
 };
 
@@ -623,6 +626,200 @@ const parseOfficialEsportsEvents = (html, fetchedAt = new Date().toISOString()) 
     .filter(Boolean);
 };
 
+const decodeReactRouterStreamChunks = (html) => {
+  const chunks = [];
+  const pattern = /streamController\.enqueue\("((?:\\.|[^"\\])*)"\)/g;
+  let match;
+
+  while ((match = pattern.exec(html))) {
+    try {
+      chunks.push(JSON.parse(`"${match[1]}"`));
+    } catch {
+      // Ignore malformed script chunks and let the caller fail if no records are parsed.
+    }
+  }
+
+  return chunks;
+};
+
+const parseStreamChunkJson = (chunk) => {
+  const json = chunk.replace(/^P\d+:/, '').trim();
+
+  if (!json) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+};
+
+const collectJsonObjects = (value, predicate, results = []) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+
+    if ((trimmed.startsWith('{') || trimmed.startsWith('[')) && trimmed.includes('"__typename"')) {
+      try {
+        collectJsonObjects(JSON.parse(trimmed), predicate, results);
+      } catch {
+        // Ignore non-JSON strings in the React Router stream.
+      }
+    }
+
+    return results;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectJsonObjects(item, predicate, results));
+    return results;
+  }
+
+  if (value && typeof value === 'object') {
+    if (predicate(value)) {
+      results.push(value);
+    }
+
+    Object.values(value).forEach((item) => collectJsonObjects(item, predicate, results));
+  }
+
+  return results;
+};
+
+const extractOwticsMatches = (html) =>
+  decodeReactRouterStreamChunks(html)
+    .map(parseStreamChunkJson)
+    .filter(Boolean)
+    .flatMap((chunk) =>
+      collectJsonObjects(
+        chunk,
+        (value) => value?.__typename === 'Match' && typeof value?.id === 'string',
+      ),
+    );
+
+const normalizeOwticsRegion = (value) =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+const normalizeOwticsStatus = (value) => {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase();
+
+  if (normalized === 'completed') {
+    return 'completed';
+  }
+
+  if (normalized === 'ongoing' || normalized === 'live') {
+    return 'live';
+  }
+
+  if (normalized === 'postponed') {
+    return 'postponed';
+  }
+
+  if (normalized === 'canceled' || normalized === 'cancelled') {
+    return 'canceled';
+  }
+
+  return 'scheduled';
+};
+
+const parseOwticsScore = (value) => {
+  const parsed = Number(value);
+
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+};
+
+const getOwticsTeamLabel = (team) => String(team?.name || team?.abbreviation || '').trim();
+
+const getOwticsMatchUrl = (detailsUrl) => {
+  if (typeof detailsUrl !== 'string' || !detailsUrl) {
+    return '';
+  }
+
+  if (detailsUrl.startsWith('https://')) {
+    return detailsUrl;
+  }
+
+  return `https://owtics.gg/en-US${detailsUrl.startsWith('/') ? detailsUrl : `/${detailsUrl}`}`;
+};
+
+const parseOwticsEsportsEvents = (html, fetchedAt = new Date().toISOString()) => {
+  const matches = extractOwticsMatches(html);
+  const seen = new Set();
+
+  return matches
+    .map((match) => {
+      if (seen.has(match.id)) {
+        return null;
+      }
+
+      seen.add(match.id);
+
+      const competition =
+        match.competition && typeof match.competition === 'object' ? match.competition : {};
+      const region = normalizeOwticsRegion(competition.region);
+
+      if (!OWTICS_ESPORTS_REGIONS.has(region)) {
+        return null;
+      }
+
+      const detailsUrl = getOwticsMatchUrl(match.detailsUrl);
+      const result = match.result && typeof match.result === 'object' ? match.result : {};
+      const status = normalizeOwticsStatus(match.status);
+      const scoreA =
+        status === 'completed'
+          ? parseOwticsScore(result.teamAScore)
+          : status === 'live'
+            ? parseOwticsScore(match.liveScoreA)
+            : null;
+      const scoreB =
+        status === 'completed'
+          ? parseOwticsScore(result.teamBScore)
+          : status === 'live'
+            ? parseOwticsScore(match.liveScoreB)
+            : null;
+      const teamA = getOwticsTeamLabel(match.teamA);
+      const teamB = getOwticsTeamLabel(match.teamB);
+
+      if (!teamA && !teamB && !match.scheduledAt) {
+        return null;
+      }
+
+      return {
+        external_event_id: match.id,
+        fetched_at: fetchedAt,
+        metadata: {
+          competitionId: competition.id ?? '',
+          competitionLogoUrl: competition.logoUrl ?? '',
+          competitionSlug: competition.slug ?? '',
+          detailsUrl,
+          source: 'owtics_calendar',
+          teamALogoUrl: match.teamA?.logoUrl ?? '',
+          teamBLogoUrl: match.teamB?.logoUrl ?? '',
+        },
+        region,
+        score_a: scoreA,
+        score_b: scoreB,
+        series: String(competition.title ?? ''),
+        source_id: 'owtics',
+        stage: String(competition.series ?? ''),
+        starts_at: typeof match.scheduledAt === 'string' ? match.scheduledAt : null,
+        status,
+        team_a: teamA,
+        team_b: teamB,
+        tournament: String(competition.title ?? 'OWTICS.GG'),
+        watch_urls: detailsUrl ? [detailsUrl] : [],
+      };
+    })
+    .filter(Boolean);
+};
+
 const handleHealth = (origin) =>
   jsonResponse(
     {
@@ -684,7 +881,7 @@ const getLimitParam = (request, fallback, max) => {
 };
 
 const handleGlobalHeroRates = async (request, env, origin) => {
-  const limit = getLimitParam(request, 48, 200);
+  const limit = getLimitParam(request, 96, 300);
   const rows = await supabaseRestFetch(
     env,
     `global_hero_rate_snapshots?select=${GLOBAL_HERO_RATE_SELECT_COLUMNS}&order=fetched_at.desc&limit=${limit}`,
@@ -704,7 +901,7 @@ const handleGlobalHeroRates = async (request, env, origin) => {
 };
 
 const handleEsportsEvents = async (request, env, origin) => {
-  const limit = getLimitParam(request, 24, 100);
+  const limit = getLimitParam(request, 160, 300);
   const url = new URL(request.url);
   const fromParam = url.searchParams.get('from');
   const fromFilter =
@@ -912,7 +1109,7 @@ const collectOverfastHeroRates = async (env, trigger) => {
   return results;
 };
 
-const collectEsportsEvents = (env, trigger) =>
+const collectOfficialEsportsEvents = (env, trigger) =>
   collectWithFetchRun(env, {
     jobKey: COLLECTOR_JOB_NAMES.esportsEvents,
     requestUrl: ESPORTS_SCHEDULE_URL,
@@ -933,6 +1130,37 @@ const collectEsportsEvents = (env, trigger) =>
     trigger,
   });
 
+const collectOwticsEsportsEvents = (env, trigger) =>
+  collectWithFetchRun(env, {
+    jobKey: COLLECTOR_JOB_NAMES.owticsEsportsEvents,
+    requestUrl: OWTICS_CALENDAR_URL,
+    run: async (startedAt) => {
+      const html = await fetchAllowedText(OWTICS_CALENDAR_URL);
+      const rows = parseOwticsEsportsEvents(html, startedAt);
+      const inserted = await upsertEsportsEvents(env, rows);
+
+      return {
+        insertedCount: inserted.length,
+        metadata: {
+          parsedCount: rows.length,
+          regions: Array.from(new Set(rows.map((row) => row.region))).sort(),
+          trigger,
+        },
+      };
+    },
+    sourceId: 'owtics',
+    trigger,
+  });
+
+const collectEsportsEvents = async (env, trigger) => {
+  const results = await Promise.all([
+    collectOfficialEsportsEvents(env, trigger),
+    collectOwticsEsportsEvents(env, trigger),
+  ]);
+
+  return results;
+};
+
 const collectGlobalHeroRates = async (env, trigger = 'manual') => {
   const [blizzardResult, overfastResults] = await Promise.all([
     collectBlizzardHeroRates(env, trigger),
@@ -943,12 +1171,12 @@ const collectGlobalHeroRates = async (env, trigger = 'manual') => {
 };
 
 const collectAllExternalData = async (env, trigger = 'manual') => {
-  const [heroRateResults, esportsResult] = await Promise.all([
+  const [heroRateResults, esportsResults] = await Promise.all([
     collectGlobalHeroRates(env, trigger),
     collectEsportsEvents(env, trigger),
   ]);
 
-  return [...heroRateResults, esportsResult];
+  return [...heroRateResults, ...esportsResults];
 };
 
 const summarizeCollectionResults = (results) => ({
@@ -972,7 +1200,7 @@ const handleCollect = async (request, env, origin) => {
   } else if (target === 'global-hero-rates') {
     results = await collectGlobalHeroRates(env, trigger);
   } else if (target === 'esports-events') {
-    results = [await collectEsportsEvents(env, trigger)];
+    results = await collectEsportsEvents(env, trigger);
   } else {
     return jsonResponse({ error: 'Unknown collection target.' }, { status: 404 }, origin);
   }
@@ -1091,5 +1319,6 @@ export {
   assertAllowedSourceUrl,
   collectAllExternalData,
   parseBlizzardHeroRates,
+  parseOwticsEsportsEvents,
   parseOfficialEsportsEvents,
 };

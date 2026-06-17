@@ -26,6 +26,10 @@ const StatsPage = lazy(() =>
   import('@/pages/StatsPage').then((module) => ({ default: module.StatsPage })),
 );
 
+const ExternalDataPage = lazy(() =>
+  import('@/pages/ExternalDataPage').then((module) => ({ default: module.ExternalDataPage })),
+);
+
 const LazyPage = ({ children }: { children: ReactNode }) => (
   <Suspense
     fallback={<div className="text-sm font-semibold text-muted-foreground">불러오는 중</div>}
@@ -82,11 +86,21 @@ const AppRoutes = () => (
           }
         />
         <Route path="/stats" element={<Navigate to="/stats/maps" replace />} />
+        <Route path="/stats/external" element={<Navigate to="/external-data/overview" replace />} />
         <Route
           path="/stats/:section"
           element={
             <LazyPage>
               <StatsPage />
+            </LazyPage>
+          }
+        />
+        <Route path="/external-data" element={<Navigate to="/external-data/overview" replace />} />
+        <Route
+          path="/external-data/:section"
+          element={
+            <LazyPage>
+              <ExternalDataPage />
             </LazyPage>
           }
         />

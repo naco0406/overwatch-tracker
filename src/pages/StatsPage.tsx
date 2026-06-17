@@ -1,23 +1,31 @@
 import type { LucideIcon } from 'lucide-react';
 import {
+  Activity,
   BarChart3,
+  CalendarCheck2,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
   Clock3,
   Database,
   ExternalLink,
+  Gauge,
   Globe2,
+  Layers3,
   ListOrdered,
   Loader2,
   MapIcon,
   RefreshCw,
   RotateCcw,
+  Search,
   ShieldCheck,
   Sparkles,
   Swords,
   Target,
+  Trophy,
   TriangleAlert,
+  UsersRound,
+  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
@@ -43,6 +51,7 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { MatchRoleIcon, MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -63,11 +72,9 @@ import {
 } from '@/data/matchOptions';
 import { getHeroPortraitPath, getMapScreenshotPath } from '@/data/masterAssets';
 import { useCompetitiveSeasons } from '@/hooks/useCompetitiveSeasons';
-import { useExternalDataOverview } from '@/hooks/useExternalData';
 import { useMatches } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useQwenInsightNarrator } from '@/hooks/useQwenInsightNarrator';
-import { isExternalDataApiConfigured } from '@/lib/externalDataApi';
 import {
   compareMatchesByTimelineDesc,
   formatWinRate,
@@ -139,12 +146,6 @@ const statsSections = [
     title: '요약',
     value: 'summary',
   },
-  {
-    description: 'Cloudflare Worker를 통해 가져온 외부 보조 데이터와 수집 상태를 확인합니다.',
-    eyebrow: '보조 데이터',
-    title: '외부 데이터(beta)',
-    value: 'external',
-  },
 ] as const;
 
 type StatsSection = (typeof statsSections)[number]['value'];
@@ -215,7 +216,31 @@ const externalEventStatusLabels = {
   scheduled: '예정',
 } as const;
 
-const formatExternalDateTime = (value: string) => {
+const externalRegionLabels = {
+  all: '전체',
+  americas: '미주',
+  asia: '아시아',
+  china: '중국',
+  europe: '유럽',
+  emea: 'EMEA',
+  global: '글로벌',
+  japan: '일본',
+  korea: '한국',
+  na: '북미',
+  north_america: '북미',
+  owwc: '월드컵',
+  pacific: '퍼시픽',
+} as const;
+
+const externalSourcePriority = {
+  blizzard_hero_rates: 0,
+  overfast: 1,
+  official_esports: 2,
+  owtics: 3,
+  blizzard_heroes: 4,
+} satisfies Record<string, number>;
+
+export const formatExternalDateTime = (value: string) => {
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
@@ -230,7 +255,7 @@ const formatExternalDateTime = (value: string) => {
   }).format(date);
 };
 
-const getLatestExternalTimestamp = (values: string[]) => {
+export const getLatestExternalTimestamp = (values: string[]) => {
   const latestTime = values.reduce((latest, value) => {
     const time = new Date(value).getTime();
 
@@ -258,8 +283,22 @@ const formatExternalPercent = (value: number | null) =>
 const getExternalSourceTypeLabel = (value: ExternalSource['sourceType']) =>
   externalSourceTypeLabels[value] ?? value;
 
+const getExternalRegionLabel = (value: string) =>
+  value in externalRegionLabels
+    ? externalRegionLabels[value as keyof typeof externalRegionLabels]
+    : value || '미지정';
+
 const getExternalHeroLabel = (heroId: string) =>
   heroOptions.find((hero) => hero.value === heroId)?.label ?? heroId;
+
+const getExternalHeroOption = (heroId: string) =>
+  heroOptions.find((hero) => hero.value === heroId) ?? null;
+
+const getExternalHeroPortraitSrc = (heroId: string) => {
+  const hero = getExternalHeroOption(heroId);
+
+  return hero ? getHeroPortraitPath(hero.value) : null;
+};
 
 const getExternalRoleLabel = (role: string) => {
   if (role === 'all') {
@@ -273,6 +312,643 @@ const getExternalEventStatusLabel = (status: string) =>
   status in externalEventStatusLabels
     ? externalEventStatusLabels[status as keyof typeof externalEventStatusLabels]
     : status;
+
+const getExternalSourcePriority = (sourceId: string) =>
+  sourceId in externalSourcePriority
+    ? externalSourcePriority[sourceId as keyof typeof externalSourcePriority]
+    : 99;
+
+const getExternalSourceLabel = (sourceId: string, sources: ExternalSource[]) =>
+  sources.find((source) => source.id === sourceId)?.displayName ?? sourceId;
+
+const getExternalCompactSourceLabel = (sourceId: string) => {
+  if (sourceId === 'official_esports') {
+    return '공식';
+  }
+
+  if (sourceId === 'owtics') {
+    return 'OWTICS';
+  }
+
+  if (sourceId === 'blizzard_hero_rates') {
+    return '공식 메타';
+  }
+
+  return sourceId;
+};
+
+const getExternalFreshnessLabel = (value: string | null) => {
+  if (!value) {
+    return '수집 대기';
+  }
+
+  const diffMs = Date.now() - new Date(value).getTime();
+
+  if (!Number.isFinite(diffMs) || diffMs < 0) {
+    return formatExternalDateTime(value);
+  }
+
+  const diffMinutes = Math.floor(diffMs / 60000);
+
+  if (diffMinutes < 60) {
+    return `${Math.max(1, diffMinutes)}분 전`;
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60);
+
+  if (diffHours < 24) {
+    return `${diffHours}시간 전`;
+  }
+
+  return `${Math.floor(diffHours / 24)}일 전`;
+};
+
+const compareExternalTimestampAsc = (left: string | null, right: string | null) =>
+  new Date(left ?? 0).getTime() - new Date(right ?? 0).getTime();
+
+const formatExternalFullDate = (value: string) => {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value) ? parseDateValue(value) : new Date(value);
+
+  if (!date || Number.isNaN(date.getTime())) {
+    return '--';
+  }
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    day: 'numeric',
+    month: 'long',
+    weekday: 'short',
+    year: 'numeric',
+  }).format(date);
+};
+
+const formatExternalEventTime = (value: string | null) => {
+  if (!value) {
+    return '시간 미정';
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return '시간 미정';
+  }
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+};
+
+const formatExternalMonthYear = (date: Date) =>
+  new Intl.DateTimeFormat('ko-KR', {
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
+
+const formatExternalWeekRange = (start: Date) => {
+  const end = addDays(start, 6);
+
+  return `${formatExternalFullDate(formatDateValue(start))} - ${formatExternalFullDate(
+    formatDateValue(end),
+  )}`;
+};
+
+const getExternalWatchLinkLabel = (value: string) => {
+  if (/twitch\.tv/i.test(value)) {
+    return 'Twitch';
+  }
+
+  if (/youtu\.?be|youtube\.com/i.test(value)) {
+    return 'YouTube';
+  }
+
+  if (/owtics\.gg/i.test(value)) {
+    return 'OWTICS';
+  }
+
+  return '보기';
+};
+
+const getExternalHeroRole = (heroId: string, fallbackRole?: string) => {
+  const hero = getExternalHeroOption(heroId);
+
+  if (hero) {
+    return hero.role;
+  }
+
+  return fallbackRole === 'tank' || fallbackRole === 'damage' || fallbackRole === 'support'
+    ? fallbackRole
+    : null;
+};
+
+const getExternalRoleFilterLabel = (value: ExternalHeroRoleFilter) =>
+  value === 'all' ? '전체' : getExternalRoleLabel(value);
+
+const getExternalEventDateKey = (event: ExternalEsportsEventItem) => {
+  if (!event.startsAt) {
+    return null;
+  }
+
+  const date = new Date(event.startsAt);
+
+  return Number.isNaN(date.getTime()) ? null : formatDateValue(date);
+};
+
+const getExternalEventStatusCounts = (events: ExternalEsportsEventItem[]) =>
+  events.reduce(
+    (counts, event) => {
+      if (event.status === 'completed') {
+        counts.completed += 1;
+      } else if (event.status === 'live') {
+        counts.live += 1;
+      } else {
+        counts.scheduled += 1;
+      }
+
+      return counts;
+    },
+    { completed: 0, live: 0, scheduled: 0 },
+  );
+
+const formatExternalTimeUntil = (value: string | null, now: number) => {
+  if (!value) {
+    return '시간 미정';
+  }
+
+  const startsAt = new Date(value).getTime();
+
+  if (!Number.isFinite(startsAt)) {
+    return '시간 미정';
+  }
+
+  const diffMinutes = Math.round((startsAt - now) / 60000);
+
+  if (diffMinutes <= 0) {
+    return '곧 시작';
+  }
+
+  if (diffMinutes < 60) {
+    return `${diffMinutes}분 후`;
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  const remainingMinutes = diffMinutes % 60;
+
+  if (diffHours < 24) {
+    return remainingMinutes > 0
+      ? `${diffHours}시간 ${remainingMinutes}분 후`
+      : `${diffHours}시간 후`;
+  }
+
+  const diffDays = Math.floor(diffHours / 24);
+  const remainingHours = diffHours % 24;
+
+  return remainingHours > 0 ? `${diffDays}일 ${remainingHours}시간 후` : `${diffDays}일 후`;
+};
+
+const getExternalEventSourceSummary = (events: ExternalEsportsEventItem[]) => {
+  if (events.length === 0) {
+    return '소스 없음';
+  }
+
+  const counts = events.reduce((map, event) => {
+    map.set(event.sourceId, (map.get(event.sourceId) ?? 0) + 1);
+
+    return map;
+  }, new Map<string, number>());
+
+  return Array.from(counts, ([sourceId, count]) => ({
+    count,
+    label: getExternalCompactSourceLabel(sourceId),
+  }))
+    .sort(
+      (left, right) => right.count - left.count || left.label.localeCompare(right.label, 'ko-KR'),
+    )
+    .slice(0, 2)
+    .map((item) => `${item.label} ${item.count.toLocaleString('ko-KR')}`)
+    .join(' · ');
+};
+
+const getExternalBusiestScheduleDate = (events: ExternalEsportsEventItem[]) => {
+  const counts = events.reduce((map, event) => {
+    const dateKey = getExternalEventDateKey(event);
+
+    if (!dateKey) {
+      return map;
+    }
+
+    map.set(dateKey, (map.get(dateKey) ?? 0) + 1);
+
+    return map;
+  }, new Map<string, number>());
+  const busiest = Array.from(counts, ([dateKey, count]) => ({ count, dateKey })).sort(
+    (left, right) => right.count - left.count || left.dateKey.localeCompare(right.dateKey),
+  )[0];
+
+  return busiest ?? null;
+};
+
+const addDays = (date: Date, amount: number) => {
+  const next = new Date(date);
+  next.setDate(date.getDate() + amount);
+
+  return next;
+};
+
+const getWeekStart = (date: Date) => {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(date.getDate() - date.getDay());
+
+  return start;
+};
+
+const getExternalCalendarDays = (visibleDate: Date, mode: ExternalScheduleViewMode) => {
+  if (mode === 'week') {
+    const weekStart = getWeekStart(visibleDate);
+
+    return Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
+  }
+
+  return getCalendarMonthDays(visibleDate);
+};
+
+const formatExternalDateRangeLabel = (visibleDate: Date, mode: ExternalScheduleViewMode) =>
+  mode === 'week'
+    ? formatExternalWeekRange(getWeekStart(visibleDate))
+    : formatExternalMonthYear(visibleDate);
+
+const getExternalEventSortTime = (event: ExternalEsportsEventItem) => {
+  const time = new Date(event.startsAt ?? 0).getTime();
+
+  return Number.isFinite(time) ? time : Number.MAX_SAFE_INTEGER;
+};
+
+const getExternalScheduleRegionValue = (event: ExternalEsportsEventItem) =>
+  event.region?.trim() || 'unknown';
+
+const getExternalScheduleRegionPriority = (value: ExternalScheduleRegionFilter) => {
+  const regionOrder = [
+    'all',
+    'korea',
+    'japan',
+    'pacific',
+    'china',
+    'asia',
+    'na',
+    'north_america',
+    'emea',
+    'europe',
+    'americas',
+    'owwc',
+    'global',
+    'unknown',
+  ];
+  const index = regionOrder.indexOf(value);
+
+  return index >= 0 ? index : regionOrder.length;
+};
+
+const createExternalScheduleRegionOptions = (
+  events: ExternalEsportsEventItem[],
+  now: number,
+): ExternalScheduleRegionOption[] => {
+  const regions = events.reduce((map, event) => {
+    const value = getExternalScheduleRegionValue(event);
+    const current = map.get(value) ?? { count: 0, upcomingCount: 0 };
+    const startsAt = event.startsAt ? new Date(event.startsAt).getTime() : null;
+
+    current.count += 1;
+
+    if (startsAt !== null && Number.isFinite(startsAt) && startsAt >= now) {
+      current.upcomingCount += 1;
+    }
+
+    map.set(value, current);
+
+    return map;
+  }, new Map<string, { count: number; upcomingCount: number }>());
+
+  const regionOptions = Array.from(regions, ([value, counts]) => ({
+    count: counts.count,
+    label: value === 'unknown' ? '미지정' : getExternalRegionLabel(value),
+    upcomingCount: counts.upcomingCount,
+    value,
+  })).sort((left, right) => {
+    const priorityDelta =
+      getExternalScheduleRegionPriority(left.value) -
+      getExternalScheduleRegionPriority(right.value);
+
+    if (priorityDelta !== 0) {
+      return priorityDelta;
+    }
+
+    return left.label.localeCompare(right.label, 'ko-KR');
+  });
+
+  return [
+    {
+      count: events.length,
+      label: '전체',
+      upcomingCount: regionOptions.reduce((sum, option) => sum + option.upcomingCount, 0),
+      value: 'all',
+    },
+    ...regionOptions,
+  ];
+};
+
+const createExternalScheduleSourceOptions = (
+  events: ExternalEsportsEventItem[],
+): ExternalScheduleSourceOption[] => {
+  const sourceOptions = Array.from(
+    events.reduce((map, event) => {
+      map.set(event.sourceId, (map.get(event.sourceId) ?? 0) + 1);
+
+      return map;
+    }, new Map<string, number>()),
+    ([value, count]) => ({
+      count,
+      label: getExternalCompactSourceLabel(value),
+      value,
+    }),
+  ).sort(
+    (left, right) =>
+      getExternalSourcePriority(left.value) - getExternalSourcePriority(right.value) ||
+      left.label.localeCompare(right.label, 'ko-KR'),
+  );
+
+  return [
+    {
+      count: events.length,
+      label: '전체',
+      value: 'all',
+    },
+    ...sourceOptions,
+  ];
+};
+
+const filterExternalScheduleEvents = (
+  events: ExternalEsportsEventItem[],
+  regionFilter: ExternalScheduleRegionFilter,
+) =>
+  regionFilter === 'all'
+    ? events
+    : events.filter((event) => getExternalScheduleRegionValue(event) === regionFilter);
+
+const filterExternalScheduleEventsBySource = (
+  events: ExternalEsportsEventItem[],
+  sourceFilter: ExternalScheduleSourceFilter,
+) => (sourceFilter === 'all' ? events : events.filter((event) => event.sourceId === sourceFilter));
+
+const filterExternalScheduleEventsByQuery = (events: ExternalEsportsEventItem[], query: string) => {
+  const normalizedQuery = query.trim().toLocaleLowerCase('ko-KR');
+
+  if (!normalizedQuery) {
+    return events;
+  }
+
+  return events.filter((event) =>
+    [
+      event.teamA,
+      event.teamB,
+      event.stage,
+      event.series,
+      event.tournament,
+      event.region ? getExternalRegionLabel(event.region) : '',
+      getExternalCompactSourceLabel(event.sourceId),
+    ].some((value) => value.toLocaleLowerCase('ko-KR').includes(normalizedQuery)),
+  );
+};
+
+const getExternalScheduleStatusFilterValue = (
+  status: string,
+): Exclude<ExternalScheduleStatusFilter, 'all'> => {
+  if (status === 'completed') {
+    return 'completed';
+  }
+
+  if (status === 'live') {
+    return 'live';
+  }
+
+  return 'scheduled';
+};
+
+const filterExternalScheduleEventsByStatus = (
+  events: ExternalEsportsEventItem[],
+  statusFilter: ExternalScheduleStatusFilter,
+) =>
+  statusFilter === 'all'
+    ? events
+    : events.filter((event) => getExternalScheduleStatusFilterValue(event.status) === statusFilter);
+
+const getExternalScheduleStatusFilterLabel = (value: ExternalScheduleStatusFilter) => {
+  if (value === 'completed') {
+    return '종료';
+  }
+
+  if (value === 'live') {
+    return '진행';
+  }
+
+  if (value === 'scheduled') {
+    return '예정';
+  }
+
+  return '전체';
+};
+
+const getExternalUpcomingEvents = (events: ExternalEsportsEventItem[], now: number, limit = 8) =>
+  events
+    .filter((event) => event.startsAt && new Date(event.startsAt).getTime() >= now)
+    .sort((left, right) => compareExternalTimestampAsc(left.startsAt, right.startsAt))
+    .slice(0, limit);
+
+const sortExternalHeroRows = (rows: ExternalHeroMetaRow[], sortMode: ExternalHeroSortMode) =>
+  [...rows].sort((left, right) => {
+    if (sortMode === 'name') {
+      return left.name.localeCompare(right.name, 'ko-KR');
+    }
+
+    if (sortMode === 'win') {
+      const winDelta = (right.winRate ?? -1) - (left.winRate ?? -1);
+
+      if (winDelta !== 0) {
+        return winDelta;
+      }
+
+      return (right.pickRate ?? -1) - (left.pickRate ?? -1);
+    }
+
+    const pickDelta = (right.pickRate ?? -1) - (left.pickRate ?? -1);
+
+    if (pickDelta !== 0) {
+      return pickDelta;
+    }
+
+    return (right.winRate ?? -1) - (left.winRate ?? -1);
+  });
+
+const filterExternalHeroRows = (rows: ExternalHeroMetaRow[], query: string) => {
+  const normalizedQuery = query.trim().toLocaleLowerCase('ko-KR');
+
+  if (!normalizedQuery) {
+    return rows;
+  }
+
+  return rows.filter((hero) =>
+    [hero.heroId, hero.name, hero.regionLabel, hero.roleLabel, hero.sourceLabel].some((value) =>
+      value.toLocaleLowerCase('ko-KR').includes(normalizedQuery),
+    ),
+  );
+};
+
+const createExternalHeroRoleSummaries = (rows: ExternalHeroMetaRow[]): ExternalHeroRoleSummary[] =>
+  matchRoleOptions.map((option) => {
+    const roleRows = rows.filter((hero) => hero.role === option.value);
+    const topPick =
+      [...roleRows]
+        .filter((hero) => hero.pickRate !== null)
+        .sort((left, right) => (right.pickRate ?? -1) - (left.pickRate ?? -1))[0] ??
+      roleRows[0] ??
+      null;
+
+    return {
+      avgPickRate: roundExternalMetric(getExternalAverage(roleRows.map((hero) => hero.pickRate))),
+      avgWinRate: roundExternalMetric(getExternalAverage(roleRows.map((hero) => hero.winRate))),
+      count: roleRows.length,
+      role: option.value,
+      topPick,
+    };
+  });
+
+const getExternalHeroScatterRoleClassName = (role: MatchRole | null) => {
+  if (role === 'tank') {
+    return 'border-amber-200 bg-amber-300 shadow-[0_0_0_3px_rgb(252_211_77/0.14)]';
+  }
+
+  if (role === 'damage') {
+    return 'border-rose-200 bg-rose-300 shadow-[0_0_0_3px_rgb(251_113_133/0.14)]';
+  }
+
+  if (role === 'support') {
+    return 'border-emerald-200 bg-emerald-300 shadow-[0_0_0_3px_rgb(52_211_153/0.14)]';
+  }
+
+  return 'border-slate-200 bg-slate-300';
+};
+
+const getExternalHeroScatterPosition = (value: number, minValue: number, maxValue: number) => {
+  if (maxValue <= minValue) {
+    return 50;
+  }
+
+  return Math.min(96, Math.max(4, ((value - minValue) / (maxValue - minValue)) * 92 + 4));
+};
+
+const getExternalHeroMetricRank = (
+  rows: ExternalHeroMetaRow[],
+  heroId: string,
+  metric: 'pickRate' | 'winRate',
+) => {
+  const sortedRows = [...rows]
+    .filter((hero) => hero[metric] !== null)
+    .sort((left, right) => (right[metric] ?? -1) - (left[metric] ?? -1));
+  const index = sortedRows.findIndex((hero) => hero.heroId === heroId);
+
+  return index >= 0 ? index + 1 : null;
+};
+
+const getExternalHeroSignalKey = (
+  hero: ExternalHeroMetaRow,
+  rows: ExternalHeroMetaRow[],
+): Exclude<ExternalHeroSignalFilter, 'all'> => {
+  const avgPickRate = getExternalAverage(rows.map((row) => row.pickRate));
+  const avgWinRate = getExternalAverage(rows.map((row) => row.winRate));
+
+  if (
+    hero.pickRate === null ||
+    hero.winRate === null ||
+    avgPickRate === null ||
+    avgWinRate === null
+  ) {
+    return 'watch';
+  }
+
+  if (hero.pickRate >= avgPickRate && hero.winRate >= avgWinRate) {
+    return 'core';
+  }
+
+  if (hero.pickRate < avgPickRate && hero.winRate >= avgWinRate) {
+    return 'efficient';
+  }
+
+  if (hero.pickRate >= avgPickRate && hero.winRate < avgWinRate) {
+    return 'overheated';
+  }
+
+  return 'watch';
+};
+
+const externalHeroSignalLabels = {
+  all: '전체',
+  core: '핵심 메타',
+  efficient: '고효율 픽',
+  overheated: '과열 픽',
+  watch: '관찰 구간',
+} satisfies Record<ExternalHeroSignalFilter, string>;
+
+const getExternalHeroSignalLabel = (hero: ExternalHeroMetaRow, rows: ExternalHeroMetaRow[]) =>
+  externalHeroSignalLabels[getExternalHeroSignalKey(hero, rows)];
+
+const filterExternalHeroRowsBySignal = (
+  rows: ExternalHeroMetaRow[],
+  signalFilter: ExternalHeroSignalFilter,
+  contextRows = rows,
+) =>
+  signalFilter === 'all'
+    ? rows
+    : rows.filter((hero) => getExternalHeroSignalKey(hero, contextRows) === signalFilter);
+
+const getExternalHeroSignalCounts = (rows: ExternalHeroMetaRow[]) =>
+  rows.reduce(
+    (counts, hero) => {
+      counts[getExternalHeroSignalKey(hero, rows)] += 1;
+
+      return counts;
+    },
+    { core: 0, efficient: 0, overheated: 0, watch: 0 },
+  );
+
+const getExternalHeroPeerRows = (hero: ExternalHeroMetaRow, rows: ExternalHeroMetaRow[]) =>
+  rows
+    .filter((row) => row.heroId !== hero.heroId && row.role === hero.role)
+    .map((row) => ({
+      distance:
+        Math.abs((row.pickRate ?? 0) - (hero.pickRate ?? 0)) +
+        Math.abs((row.winRate ?? 0) - (hero.winRate ?? 0)),
+      row,
+    }))
+    .sort(
+      (left, right) =>
+        left.distance - right.distance || (right.row.pickRate ?? -1) - (left.row.pickRate ?? -1),
+    )
+    .slice(0, 3)
+    .map((item) => item.row);
+
+const getExternalHeroCoverageLabel = (hero: ExternalHeroMetaRow) => {
+  if (hero.snapshotCount >= 4 && hero.sourceCount >= 2) {
+    return '표본 양호';
+  }
+
+  if (hero.snapshotCount >= 2) {
+    return '표본 보통';
+  }
+
+  return '표본 적음';
+};
+
+const roundExternalMetric = (value: number | null) =>
+  value === null ? null : Number(value.toFixed(1));
 
 const getMonthStart = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1);
 
@@ -416,7 +1092,7 @@ const getAxisTick = (fontSize = 12) => ({
   fontSize,
 });
 
-const percentageTooltipKeys = new Set(['승률', '선택률']);
+const percentageTooltipKeys = new Set(['승률', '선택률', '픽률']);
 
 const tooltipCursorStyle = {
   fill: 'hsl(var(--primary) / 0.07)',
@@ -487,6 +1163,33 @@ const getTooltipExtraRows = (value: unknown, renderedNames: Set<string>) => {
     rows.push({ label: '선택률', value: String(formatTooltipValue(datum.선택률, '선택률')) });
   }
 
+  if (!renderedNames.has('픽률') && typeof datum.픽률 === 'number') {
+    rows.push({ label: '픽률', value: String(formatTooltipValue(datum.픽률, '픽률')) });
+  }
+
+  if (typeof datum.sourceLabel === 'string') {
+    rows.push({ label: '소스', value: datum.sourceLabel });
+  }
+
+  if (typeof datum.regionLabel === 'string') {
+    rows.push({ label: '지역', value: datum.regionLabel });
+  }
+
+  if (typeof datum.roleLabel === 'string') {
+    rows.push({ label: '포지션', value: datum.roleLabel });
+  }
+
+  if (typeof datum.snapshotCount === 'number') {
+    rows.push({
+      label: '표본',
+      value: datum.snapshotCount.toLocaleString('ko-KR'),
+    });
+  }
+
+  if (typeof datum.상태 === 'string') {
+    rows.push({ label: '상태', value: datum.상태 });
+  }
+
   return rows;
 };
 
@@ -505,14 +1208,6 @@ const StatsPage = () => {
   const { data: matches = [], isLoading: isMatchesLoading } = useMatches();
   const { data: seasons = [], isLoading: isSeasonsLoading } = useCompetitiveSeasons();
   const { data: playerAccounts = [], isLoading: isAccountsLoading } = usePlayerAccounts();
-  const externalDataConfigured = isExternalDataApiConfigured();
-  const {
-    data: externalDataOverview,
-    error: externalDataError,
-    isFetching: isExternalDataFetching,
-    isLoading: isExternalDataLoading,
-    refetch: refetchExternalData,
-  } = useExternalDataOverview(activeSection === 'external');
   const currentSeason = useMemo(() => getCurrentCompetitiveSeason(seasons), [seasons]);
   const currentSeasonId = currentSeason?.id ?? null;
   const isStatsLoading = isMatchesLoading || isAccountsLoading || isSeasonsLoading;
@@ -952,69 +1647,7 @@ const StatsPage = () => {
     setQueueFilter('all');
     setAccountFilter('all');
   };
-  const externalSources = externalDataOverview?.sources ?? [];
-  const externalHeroRates = externalDataOverview?.heroRates ?? [];
-  const externalEsportsEvents = externalDataOverview?.esportsEvents ?? [];
-  const externalOfficialSourceCount = externalSources.filter((source) => source.isOfficial).length;
-  const latestHeroRateFetchedAt = getLatestExternalTimestamp(
-    externalHeroRates.map((snapshot) => snapshot.fetchedAt),
-  );
-  const latestEsportsFetchedAt = getLatestExternalTimestamp(
-    externalEsportsEvents.map((event) => event.fetchedAt),
-  );
-
   const sectionMetrics = {
-    external: [
-      {
-        detail: externalDataConfigured
-          ? `${externalOfficialSourceCount}개 공식 · ${Math.max(
-              0,
-              externalSources.length - externalOfficialSourceCount,
-            )}개 서드파티`
-          : '환경 변수 설정 필요',
-        icon: Globe2,
-        label: '연결 소스',
-        value: externalDataConfigured
-          ? isExternalDataLoading
-            ? '...'
-            : externalSources.length.toLocaleString('ko-KR')
-          : '--',
-      },
-      {
-        detail: externalSources.length > 0 ? '활성화된 소스 기준' : '소스 조회 대기',
-        icon: ShieldCheck,
-        label: '공식 소스',
-        value: externalDataConfigured
-          ? isExternalDataLoading
-            ? '...'
-            : externalOfficialSourceCount.toLocaleString('ko-KR')
-          : '--',
-      },
-      {
-        detail: latestHeroRateFetchedAt
-          ? `최근 수집 ${formatExternalDateTime(latestHeroRateFetchedAt)}`
-          : '영웅 메타 수집 대기',
-        icon: Database,
-        label: '영웅 메타',
-        value: externalDataConfigured
-          ? isExternalDataLoading
-            ? '...'
-            : externalHeroRates.length.toLocaleString('ko-KR')
-          : '--',
-      },
-      {
-        detail: latestEsportsFetchedAt
-          ? `최근 수집 ${formatExternalDateTime(latestEsportsFetchedAt)}`
-          : '일정 수집 대기',
-        icon: CalendarDays,
-        label: 'e스포츠',
-        value: externalDataConfigured
-          ? isExternalDataLoading
-            ? '...'
-            : externalEsportsEvents.length.toLocaleString('ko-KR')
-          : '--',
-      },
-    ],
     heroes: [
       {
         detail: '기록에 등장한 영웅',
@@ -1181,7 +1814,7 @@ const StatsPage = () => {
     return <Navigate to="/stats/maps" replace />;
   }
 
-  if (isStatsLoading && activeSection !== 'external') {
+  if (isStatsLoading) {
     return (
       <div className="page-stack">
         <PageHeader
@@ -1208,17 +1841,15 @@ const StatsPage = () => {
         title={activeSectionMeta.title}
         description={activeSectionMeta.description}
         actions={
-          activeSection === 'external' ? null : (
-            <Button
-              variant="outline"
-              className="bg-transparent"
-              disabled={activeFilterCount === 0}
-              onClick={resetFilters}
-            >
-              <RotateCcw className="h-4 w-4" />
-              초기화
-            </Button>
-          )
+          <Button
+            variant="outline"
+            className="bg-transparent"
+            disabled={activeFilterCount === 0}
+            onClick={resetFilters}
+          >
+            <RotateCcw className="h-4 w-4" />
+            초기화
+          </Button>
         }
       />
 
@@ -1867,24 +2498,12 @@ const StatsPage = () => {
             <StatsInsightSummaryPanel insightPack={insightPack} />
           </div>
         ) : null}
-
-        {activeSection === 'external' ? (
-          <ExternalDataOverviewPanel
-            error={externalDataError}
-            isConfigured={externalDataConfigured}
-            isFetching={isExternalDataFetching}
-            isLoading={isExternalDataLoading}
-            metrics={sectionMetrics.external}
-            overview={externalDataOverview}
-            onRefresh={() => void refetchExternalData()}
-          />
-        ) : null}
       </section>
     </div>
   );
 };
 
-interface MetricCellProps {
+export interface MetricCellProps {
   detail: string;
   icon: LucideIcon;
   label: string;
@@ -1914,7 +2533,13 @@ const MetricCard = ({ className, detail, icon: Icon, label, value }: MetricCardP
   </div>
 );
 
-const MetricGrid = ({ className, metrics }: { className?: string; metrics: MetricCellProps[] }) => (
+export const MetricGrid = ({
+  className,
+  metrics,
+}: {
+  className?: string;
+  metrics: MetricCellProps[];
+}) => (
   <div
     className={cn(
       'grid grid-cols-2 overflow-hidden rounded-lg border border-border/70 bg-card/55 md:grid-cols-4',
@@ -1943,10 +2568,63 @@ const SectionMetricStack = ({ metrics }: { metrics: MetricCellProps[] }) => (
   </div>
 );
 
-type ExternalHeroRateItem = ExternalDataOverview['heroRates'][number];
-type ExternalEsportsEventItem = ExternalDataOverview['esportsEvents'][number];
+export type ExternalHeroRateItem = ExternalDataOverview['heroRates'][number];
+export type ExternalEsportsEventItem = ExternalDataOverview['esportsEvents'][number];
 
-interface ExternalDataOverviewPanelProps {
+type ExternalHeroRoleFilter = 'all' | MatchRole;
+type ExternalHeroSignalFilter = 'all' | 'core' | 'efficient' | 'overheated' | 'watch';
+type ExternalHeroSortMode = 'name' | 'pick' | 'win';
+type ExternalScheduleViewMode = 'month' | 'week';
+type ExternalScheduleRegionFilter = 'all' | string;
+type ExternalScheduleSourceFilter = 'all' | string;
+type ExternalScheduleStatusFilter = 'all' | 'completed' | 'live' | 'scheduled';
+
+interface ExternalHeroMetaRow {
+  heroId: string;
+  latestAt: string | null;
+  name: string;
+  pickRate: number | null;
+  regionLabel: string;
+  role: MatchRole | null;
+  roleLabel: string;
+  sourceCount: number;
+  sourceLabel: string;
+  snapshotCount: number;
+  winRate: number | null;
+}
+
+interface ExternalHeroRoleSummary {
+  avgPickRate: number | null;
+  avgWinRate: number | null;
+  count: number;
+  role: MatchRole;
+  topPick: ExternalHeroMetaRow | null;
+}
+
+interface ExternalScheduleRegionOption {
+  count: number;
+  label: string;
+  upcomingCount: number;
+  value: ExternalScheduleRegionFilter;
+}
+
+interface ExternalScheduleSourceOption {
+  count: number;
+  label: string;
+  value: ExternalScheduleSourceFilter;
+}
+
+export interface ExternalSourceCardModel {
+  detail: string;
+  eventCount: number;
+  heroRateCount: number;
+  latestAt: string | null;
+  primaryLabel: string;
+  source: ExternalSource;
+  statusLabel: string;
+}
+
+export interface ExternalDataOverviewPanelProps {
   error: unknown;
   isConfigured: boolean;
   isFetching: boolean;
@@ -1956,7 +2634,7 @@ interface ExternalDataOverviewPanelProps {
   onRefresh: () => void;
 }
 
-const ExternalDataOverviewPanel = ({
+export const ExternalDataOverviewPanel = ({
   error,
   isConfigured,
   isFetching,
@@ -1969,6 +2647,7 @@ const ExternalDataOverviewPanel = ({
   const heroRates = overview?.heroRates ?? [];
   const esportsEvents = overview?.esportsEvents ?? [];
   const warnings = overview?.warnings ?? [];
+  const sourceCards = createExternalSourceCards(sources, heroRates, esportsEvents);
 
   if (!isConfigured) {
     return (
@@ -1987,27 +2666,12 @@ const ExternalDataOverviewPanel = ({
     <div className="space-y-4">
       <MetricGrid metrics={metrics} />
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="metric-label">연결 상태</p>
-          <p className="mt-1 text-sm font-semibold text-muted-foreground">
-            Cloudflare Worker에서 Supabase에 저장된 외부 보조 데이터를 읽어옵니다.
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          className="w-full bg-transparent sm:w-auto"
-          disabled={isFetching}
-          onClick={onRefresh}
-        >
-          {isFetching ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4" />
-          )}
-          새로고침
-        </Button>
-      </div>
+      <ExternalDataControlBar
+        esportsEvents={esportsEvents}
+        heroRates={heroRates}
+        isFetching={isFetching}
+        onRefresh={onRefresh}
+      />
 
       {error ? (
         <EmptyState
@@ -2025,20 +2689,15 @@ const ExternalDataOverviewPanel = ({
         <>
           {warnings.length > 0 ? <ExternalDataWarningsPanel warnings={warnings} /> : null}
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
-            <ExternalSourcesPanel isLoading={isLoading} sources={sources} />
-            <ExternalCollectionStatusPanel
-              esportsEvents={esportsEvents}
-              heroRates={heroRates}
-              isFetching={isFetching}
-              sources={sources}
-            />
+          <div className="grid gap-4 2xl:grid-cols-[minmax(360px,0.92fr)_minmax(0,1.08fr)] 2xl:items-start">
+            <ExternalEsportsSchedulePanel esportsEvents={esportsEvents} isLoading={isLoading} />
+            <ExternalHeroMetaPanel heroRates={heroRates} isLoading={isLoading} sources={sources} />
           </div>
 
-          <ExternalLoadedDataPanel
-            esportsEvents={esportsEvents}
-            heroRates={heroRates}
+          <ExternalDataKindPanel
             isLoading={isLoading}
+            sourceCards={sourceCards}
+            sources={sources}
           />
         </>
       )}
@@ -2046,7 +2705,262 @@ const ExternalDataOverviewPanel = ({
   );
 };
 
-const ExternalDataWarningsPanel = ({
+export const createExternalSourceCards = (
+  sources: ExternalSource[],
+  heroRates: ExternalHeroRateItem[],
+  esportsEvents: ExternalEsportsEventItem[],
+): ExternalSourceCardModel[] =>
+  [...sources]
+    .sort((left, right) => getExternalSourcePriority(left.id) - getExternalSourcePriority(right.id))
+    .map((source) => {
+      const sourceHeroRates = heroRates.filter((snapshot) => snapshot.sourceId === source.id);
+      const sourceEvents = esportsEvents.filter((event) => event.sourceId === source.id);
+      const latestAt = getLatestExternalTimestamp([
+        ...sourceHeroRates.map((snapshot) => snapshot.fetchedAt),
+        ...sourceEvents.map((event) => event.fetchedAt),
+      ]);
+
+      if (source.id === 'blizzard_hero_rates') {
+        return {
+          detail: '공식 영웅 픽률·승률',
+          eventCount: sourceEvents.length,
+          heroRateCount: sourceHeroRates.length,
+          latestAt,
+          primaryLabel: '영웅 메타',
+          source,
+          statusLabel: sourceHeroRates.length > 0 ? '수집됨' : '대기',
+        };
+      }
+
+      if (source.id === 'overfast') {
+        const regions = new Set(sourceHeroRates.map((snapshot) => snapshot.region));
+
+        return {
+          detail:
+            regions.size > 0
+              ? `${Array.from(regions).map(getExternalRegionLabel).join(', ')} 경쟁전 통계`
+              : '경쟁전 통계·프로필',
+          eventCount: sourceEvents.length,
+          heroRateCount: sourceHeroRates.length,
+          latestAt,
+          primaryLabel: '경쟁전 보강',
+          source,
+          statusLabel: sourceHeroRates.length > 0 ? '수집됨' : '대기',
+        };
+      }
+
+      if (source.id === 'official_esports') {
+        return {
+          detail: '공식 경기 일정·방송 링크',
+          eventCount: sourceEvents.length,
+          heroRateCount: sourceHeroRates.length,
+          latestAt,
+          primaryLabel: 'e스포츠',
+          source,
+          statusLabel: sourceEvents.length > 0 ? '수집됨' : '대기',
+        };
+      }
+
+      if (source.id === 'owtics') {
+        const eventRegions = new Set(sourceEvents.map((event) => event.region).filter(Boolean));
+
+        return {
+          detail:
+            eventRegions.size > 0
+              ? `${Array.from(eventRegions).map(getExternalRegionLabel).join(', ')} 일정 보강`
+              : '아시아·한국 경기 일정 보강',
+          eventCount: sourceEvents.length,
+          heroRateCount: sourceHeroRates.length,
+          latestAt,
+          primaryLabel: '아시아 일정',
+          source,
+          statusLabel: sourceEvents.length > 0 ? '수집됨' : '대기',
+        };
+      }
+
+      return {
+        detail: '영웅 roster와 마스터 데이터',
+        eventCount: sourceEvents.length,
+        heroRateCount: sourceHeroRates.length,
+        latestAt,
+        primaryLabel: '마스터 데이터',
+        source,
+        statusLabel: '연결됨',
+      };
+    });
+
+const getExternalAverage = (values: Array<number | null>) => {
+  const numericValues = values.filter((value): value is number => value !== null);
+
+  if (numericValues.length === 0) {
+    return null;
+  }
+
+  return numericValues.reduce((sum, value) => sum + value, 0) / numericValues.length;
+};
+
+const createExternalHeroMetaRows = (
+  heroRates: ExternalHeroRateItem[],
+  sources: ExternalSource[],
+  roleFilter: ExternalHeroRoleFilter,
+): ExternalHeroMetaRow[] => {
+  const filteredHeroRates = heroRates.filter((snapshot) => {
+    if (roleFilter === 'all') {
+      return true;
+    }
+
+    return getExternalHeroRole(snapshot.heroId, snapshot.role) === roleFilter;
+  });
+  const groups = filteredHeroRates.reduce(
+    (map, snapshot) => {
+      const current = map.get(snapshot.heroId) ?? {
+        latestAt: null as string | null,
+        pickRates: [] as Array<number | null>,
+        regions: new Set<string>(),
+        role: getExternalHeroRole(snapshot.heroId, snapshot.role),
+        roles: new Set<string>(),
+        sourceIds: new Set<string>(),
+        snapshots: 0,
+        winRates: [] as Array<number | null>,
+      };
+
+      current.snapshots += 1;
+      current.pickRates.push(snapshot.pickRate);
+      current.winRates.push(snapshot.winRate);
+      current.regions.add(snapshot.region);
+      current.roles.add(snapshot.role);
+      current.sourceIds.add(snapshot.sourceId);
+      current.role = current.role ?? getExternalHeroRole(snapshot.heroId, snapshot.role);
+      current.latestAt = getLatestExternalTimestamp(
+        [current.latestAt, snapshot.fetchedAt].filter((value): value is string => Boolean(value)),
+      );
+      map.set(snapshot.heroId, current);
+
+      return map;
+    },
+    new Map<
+      string,
+      {
+        latestAt: string | null;
+        pickRates: Array<number | null>;
+        regions: Set<string>;
+        role: MatchRole | null;
+        roles: Set<string>;
+        sourceIds: Set<string>;
+        snapshots: number;
+        winRates: Array<number | null>;
+      }
+    >(),
+  );
+
+  return Array.from(groups, ([heroId, group]) => {
+    const sourceLabels = Array.from(group.sourceIds).map((sourceId) =>
+      getExternalSourceLabel(sourceId, sources),
+    );
+    const regionLabels = Array.from(group.regions).map(getExternalRegionLabel);
+    const roleLabelsForHero = Array.from(group.roles).map(getExternalRoleLabel);
+
+    return {
+      heroId,
+      latestAt: group.latestAt,
+      name: getExternalHeroLabel(heroId),
+      pickRate: roundExternalMetric(getExternalAverage(group.pickRates)),
+      regionLabel: regionLabels.slice(0, 3).join(', ') || '미지정',
+      role: group.role,
+      roleLabel: roleLabelsForHero.slice(0, 2).join(', ') || '미지정',
+      snapshotCount: group.snapshots,
+      sourceCount: group.sourceIds.size,
+      sourceLabel:
+        sourceLabels.length > 2
+          ? `${sourceLabels.slice(0, 2).join(', ')} 외 ${sourceLabels.length - 2}`
+          : sourceLabels.join(', ') || '소스 없음',
+      winRate: roundExternalMetric(getExternalAverage(group.winRates)),
+    };
+  }).sort((left, right) => {
+    const pickDelta = (right.pickRate ?? -1) - (left.pickRate ?? -1);
+
+    if (pickDelta !== 0) {
+      return pickDelta;
+    }
+
+    return (right.winRate ?? -1) - (left.winRate ?? -1);
+  });
+};
+
+export const ExternalDataControlBar = ({
+  esportsEvents,
+  heroRates,
+  isFetching,
+  onRefresh,
+}: {
+  esportsEvents: ExternalEsportsEventItem[];
+  heroRates: ExternalHeroRateItem[];
+  isFetching: boolean;
+  onRefresh: () => void;
+}) => {
+  const latestAt = getLatestExternalTimestamp([
+    ...heroRates.map((snapshot) => snapshot.fetchedAt),
+    ...esportsEvents.map((event) => event.fetchedAt),
+  ]);
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+      <div className="grid gap-px bg-border/60 lg:grid-cols-[minmax(0,1fr)_220px]">
+        <div className="bg-card px-4 py-4 sm:px-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className="gap-1.5 bg-transparent">
+                  <Activity className="h-3.5 w-3.5" />
+                  {isFetching ? '동기화 중' : '동기화 완료'}
+                </Badge>
+                <span className="text-xs font-bold text-muted-foreground">
+                  최근 수집 {getExternalFreshnessLabel(latestAt)}
+                </span>
+              </div>
+              <h2 className="mt-3 text-lg font-bold">외부 데이터 브라우저</h2>
+              <p className="mt-1 text-sm font-semibold text-muted-foreground">
+                수집된 영웅 메타와 공식 경기 일정을 탐색합니다.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              className="w-full bg-transparent sm:w-auto"
+              disabled={isFetching}
+              onClick={onRefresh}
+            >
+              {isFetching ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              새로고침
+            </Button>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 divide-x divide-border/60 bg-card lg:grid-cols-1 lg:divide-x-0 lg:divide-y">
+          <ExternalCompactMetric
+            label="영웅 메타"
+            value={heroRates.length.toLocaleString('ko-KR')}
+          />
+          <ExternalCompactMetric
+            label="일정 데이터"
+            value={esportsEvents.length.toLocaleString('ko-KR')}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ExternalCompactMetric = ({ label, value }: { label: string; value: string }) => (
+  <div className="px-4 py-3">
+    <p className="metric-label">{label}</p>
+    <p className="mt-1 text-xl font-bold">{value}</p>
+  </div>
+);
+
+export const ExternalDataWarningsPanel = ({
   warnings,
 }: {
   warnings: NonNullable<ExternalDataOverview['warnings']>;
@@ -2074,250 +2988,2139 @@ const ExternalDataWarningsPanel = ({
   </div>
 );
 
-const ExternalSourcesPanel = ({
+const getExternalSourceDataKindLabel = (card: ExternalSourceCardModel) => {
+  const kinds = [
+    card.heroRateCount > 0 ? '영웅 메타' : '',
+    card.eventCount > 0 ? '경기 일정' : '',
+  ].filter(Boolean);
+
+  if (kinds.length > 0) {
+    return kinds.join(', ');
+  }
+
+  if (card.source.id === 'overfast') {
+    return '프로필 준비 중';
+  }
+
+  if (card.source.id === 'blizzard_heroes') {
+    return '마스터 데이터';
+  }
+
+  return card.primaryLabel;
+};
+
+const ExternalCompactSourceCard = ({ card }: { card: ExternalSourceCardModel }) => {
+  const { source } = card;
+
+  return (
+    <div className="min-w-0 bg-card p-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap gap-1.5">
+            <Badge variant="outline" className="gap-1 bg-transparent text-[11px]">
+              {source.isOfficial ? (
+                <ShieldCheck className="h-3 w-3" />
+              ) : (
+                <Globe2 className="h-3 w-3" />
+              )}
+              {source.isOfficial ? '공식' : '서드파티'}
+            </Badge>
+            <Badge variant="outline" className="bg-transparent text-[11px]">
+              {card.statusLabel}
+            </Badge>
+          </div>
+          <h3 className="mt-2 truncate text-sm font-bold">{source.displayName}</h3>
+        </div>
+        <Button asChild variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+          <a href={source.baseUrl} target="_blank" rel="noreferrer" aria-label={source.displayName}>
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        </Button>
+      </div>
+      <div className="mt-3 grid gap-1.5 text-xs font-semibold text-muted-foreground">
+        <p className="truncate">최근 {getExternalFreshnessLabel(card.latestAt)}</p>
+        <p className="truncate">제공 {getExternalSourceDataKindLabel(card)}</p>
+        <p className="truncate">
+          {getExternalSourceTypeLabel(source.sourceType)} · TTL{' '}
+          {formatExternalTtl(source.defaultTtlSeconds)}
+        </p>
+      </div>
+    </div>
+  );
+};
+
+const ExternalPreparedDataCard = ({
+  detail,
+  icon: Icon,
+  label,
+  status,
+}: {
+  detail: string;
+  icon: LucideIcon;
+  label: string;
+  status: string;
+}) => (
+  <div className="min-w-0 bg-card p-3.5">
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="metric-label">{label}</p>
+        <p className="mt-2 truncate text-sm font-bold">{status}</p>
+      </div>
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-primary">
+        <Icon className="h-4 w-4" />
+      </div>
+    </div>
+    <p className="mt-2 line-clamp-2 text-xs font-semibold leading-relaxed text-muted-foreground">
+      {detail}
+    </p>
+  </div>
+);
+
+export const ExternalHeroMetaPanel = ({
+  heroRates,
   isLoading,
   sources,
 }: {
+  heroRates: ExternalHeroRateItem[];
   isLoading: boolean;
   sources: ExternalSource[];
-}) => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
-    <div className="flex flex-col gap-3 border-b border-border/60 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:px-5">
-      <div className="min-w-0">
-        <p className="metric-label">데이터 소스</p>
-        <h2 className="mt-1 text-lg font-bold">활성화된 외부 연결</h2>
+}) => {
+  const [roleFilter, setRoleFilter] = useState<ExternalHeroRoleFilter>('all');
+  const [heroQuery, setHeroQuery] = useState('');
+  const [signalFilter, setSignalFilter] = useState<ExternalHeroSignalFilter>('all');
+  const [sortMode, setSortMode] = useState<ExternalHeroSortMode>('pick');
+  const [selectedHeroId, setSelectedHeroId] = useState<string | null>(null);
+  const allHeroRows = createExternalHeroMetaRows(heroRates, sources, 'all');
+  const heroRows =
+    roleFilter === 'all' ? allHeroRows : createExternalHeroMetaRows(heroRates, sources, roleFilter);
+  const searchedHeroRows = filterExternalHeroRows(heroRows, heroQuery);
+  const visibleHeroRows = sortExternalHeroRows(
+    filterExternalHeroRowsBySignal(searchedHeroRows, signalFilter, heroRows),
+    sortMode,
+  );
+  const roleSummaries = createExternalHeroRoleSummaries(allHeroRows);
+  const signalCounts = getExternalHeroSignalCounts(heroRows);
+  const topPick =
+    [...heroRows]
+      .filter((hero) => hero.pickRate !== null)
+      .sort((left, right) => (right.pickRate ?? -1) - (left.pickRate ?? -1))[0] ??
+    heroRows[0] ??
+    null;
+  const topWin =
+    [...heroRows]
+      .filter((hero) => hero.winRate !== null)
+      .sort((left, right) => (right.winRate ?? -1) - (left.winRate ?? -1))[0] ??
+    heroRows[0] ??
+    null;
+  const selectedHero =
+    (selectedHeroId
+      ? (visibleHeroRows.find((hero) => hero.heroId === selectedHeroId) ??
+        heroRows.find((hero) => hero.heroId === selectedHeroId))
+      : null) ??
+    topPick ??
+    visibleHeroRows[0] ??
+    null;
+  const latestAt = getLatestExternalTimestamp(heroRates.map((snapshot) => snapshot.fetchedAt));
+  const resetHeroFilters = () => {
+    setRoleFilter('all');
+    setHeroQuery('');
+    setSignalFilter('all');
+    setSortMode('pick');
+    setSelectedHeroId(null);
+  };
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+      <div className="border-b border-border/60 px-4 py-3 sm:px-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <p className="metric-label">영웅 메타</p>
+            <h2 className="mt-1 text-lg font-bold">역할별 픽률과 승률</h2>
+            <p className="mt-1 text-sm font-semibold text-muted-foreground">
+              초상화와 표를 중심으로 현재 메타 상위 영웅을 확인합니다.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <ExternalHeroRoleTabs value={roleFilter} onChange={setRoleFilter} />
+            <Badge variant="outline" className="w-fit gap-1.5 bg-transparent">
+              <Gauge className="h-3.5 w-3.5" />
+              {getExternalFreshnessLabel(latestAt)}
+            </Badge>
+          </div>
+        </div>
       </div>
-      <Badge variant="outline" className="w-fit bg-transparent">
-        {isLoading ? '확인 중' : `${sources.length.toLocaleString('ko-KR')}개`}
-      </Badge>
-    </div>
-    <div className="grid gap-px bg-border/60 sm:grid-cols-2">
+
       {isLoading ? (
-        Array.from({ length: 4 }, (_, index) => (
-          <div key={index} className="bg-card p-4 sm:p-5">
-            <SkeletonBlock className="h-3 w-24" />
-            <SkeletonBlock className="mt-3 h-5 w-40 max-w-full" />
-            <SkeletonBlock className="mt-3 h-3 w-full" />
-            <SkeletonBlock className="mt-2 h-3 w-2/3" />
+        <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-2">
+          <ExternalRowsSkeleton rows={8} />
+          <ExternalRowsSkeleton rows={4} />
+        </div>
+      ) : heroRows.length > 0 ? (
+        <div>
+          <div className="grid gap-px border-b border-border/60 bg-border/60 lg:grid-cols-2">
+            <ExternalHeroFeatureCard
+              hero={topPick}
+              icon={Target}
+              metricLabel="픽률"
+              metricValue={formatExternalPercent(topPick?.pickRate ?? null)}
+              title="픽률 상위 영웅"
+              onSelect={setSelectedHeroId}
+            />
+            <ExternalHeroFeatureCard
+              hero={topWin}
+              icon={Trophy}
+              metricLabel="승률"
+              metricValue={formatExternalPercent(topWin?.winRate ?? null)}
+              title="승률 상위 영웅"
+              onSelect={setSelectedHeroId}
+            />
           </div>
-        ))
-      ) : sources.length > 0 ? (
-        sources.map((source) => (
-          <div key={source.id} className="min-w-0 bg-card p-4 sm:p-5">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="bg-transparent">
-                {source.isOfficial ? '공식' : '서드파티'}
-              </Badge>
-              <span className="text-xs font-bold text-muted-foreground">
-                {getExternalSourceTypeLabel(source.sourceType)}
-              </span>
-            </div>
-            <h3 className="mt-3 break-words text-base font-bold">{source.displayName}</h3>
-            <p className="mt-1 break-all text-xs font-semibold text-muted-foreground">
-              {source.baseUrl}
-            </p>
-            <p className="mt-3 text-sm font-semibold leading-relaxed text-muted-foreground">
-              {source.notes || '보조 데이터 소스로 등록되어 있습니다.'}
-            </p>
-            <div className="mt-4 flex items-center justify-between gap-3 border-t border-border/60 pt-3">
-              <span className="text-xs font-bold text-muted-foreground">
-                TTL {formatExternalTtl(source.defaultTtlSeconds)}
-              </span>
-              <Button asChild variant="ghost" size="sm">
-                <a href={source.baseUrl} target="_blank" rel="noreferrer">
-                  <ExternalLink className="h-4 w-4" />
-                  열기
-                </a>
-              </Button>
-            </div>
-          </div>
-        ))
+
+          <ExternalHeroSpotlight
+            hero={selectedHero}
+            rows={heroRows}
+            onClear={() => setSelectedHeroId(null)}
+            onSelectHero={setSelectedHeroId}
+          />
+          <ExternalHeroSignalBoard
+            counts={signalCounts}
+            rows={heroRows}
+            value={signalFilter}
+            onChange={setSignalFilter}
+            onSelectHero={setSelectedHeroId}
+          />
+          <ExternalHeroRoleSummaryStrip
+            activeRole={roleFilter}
+            summaries={roleSummaries}
+            onSelectRole={setRoleFilter}
+            onSelectHero={setSelectedHeroId}
+          />
+          <ExternalHeroMetaToolbar
+            query={heroQuery}
+            sortMode={sortMode}
+            totalRows={heroRows.length}
+            visibleRows={visibleHeroRows.length}
+            onQueryChange={setHeroQuery}
+            onSortModeChange={setSortMode}
+          />
+          <ExternalHeroActiveFilters
+            query={heroQuery}
+            roleFilter={roleFilter}
+            selectedHero={selectedHeroId ? selectedHero : null}
+            signalFilter={signalFilter}
+            visibleRows={visibleHeroRows.length}
+            onClearQuery={() => setHeroQuery('')}
+            onClearSelectedHero={() => setSelectedHeroId(null)}
+            onResetAll={resetHeroFilters}
+            onResetRole={() => setRoleFilter('all')}
+            onResetSignal={() => setSignalFilter('all')}
+          />
+          <ExternalHeroMetaScatterPlot
+            rows={visibleHeroRows}
+            selectedHeroId={selectedHero?.heroId ?? null}
+            onSelectHero={setSelectedHeroId}
+          />
+          <ExternalHeroComparisonTable
+            rows={visibleHeroRows.slice(0, 14)}
+            selectedHeroId={selectedHero?.heroId ?? null}
+            totalRows={visibleHeroRows.length}
+            onSelectHero={setSelectedHeroId}
+          />
+        </div>
       ) : (
-        <div className="bg-card p-4 sm:col-span-2 sm:p-5">
+        <div className="p-4 sm:p-5">
           <InlineEmptyState
-            title="활성화된 외부 소스가 없습니다."
-            description="Supabase external_sources 테이블의 enabled 상태를 확인해주세요."
+            title={`${getExternalRoleFilterLabel(roleFilter)} 영웅 메타가 없습니다.`}
+            description="다른 역할을 선택하거나 수집이 완료된 뒤 다시 확인해주세요."
           />
         </div>
       )}
+    </section>
+  );
+};
+
+const externalHeroRoleOptions = [
+  { label: '전체', value: 'all' },
+  ...matchRoleOptions,
+] satisfies Array<{ label: string; value: ExternalHeroRoleFilter }>;
+
+const externalHeroSortOptions = [
+  { label: '픽률', value: 'pick' },
+  { label: '승률', value: 'win' },
+  { label: '이름', value: 'name' },
+] satisfies Array<{ label: string; value: ExternalHeroSortMode }>;
+
+const ExternalHeroRoleTabs = ({
+  onChange,
+  value,
+}: {
+  onChange: (value: ExternalHeroRoleFilter) => void;
+  value: ExternalHeroRoleFilter;
+}) => (
+  <div className="grid grid-cols-4 overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-1">
+    {externalHeroRoleOptions.map((option) => (
+      <button
+        key={option.value}
+        type="button"
+        aria-pressed={value === option.value}
+        className={cn(
+          'h-8 min-w-0 rounded-[5px] px-2 text-xs font-bold transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
+          value === option.value ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
+        )}
+        onClick={() => onChange(option.value)}
+      >
+        <span className="truncate">{option.label}</span>
+      </button>
+    ))}
+  </div>
+);
+
+const ExternalHeroSpotlight = ({
+  hero,
+  onClear,
+  onSelectHero,
+  rows,
+}: {
+  hero: ExternalHeroMetaRow | null;
+  onClear: () => void;
+  onSelectHero: (heroId: string) => void;
+  rows: ExternalHeroMetaRow[];
+}) => {
+  const pickRank = hero ? getExternalHeroMetricRank(rows, hero.heroId, 'pickRate') : null;
+  const winRank = hero ? getExternalHeroMetricRank(rows, hero.heroId, 'winRate') : null;
+  const maxPickRate = Math.max(1, ...rows.map((row) => row.pickRate ?? 0));
+  const maxWinRate = Math.max(1, ...rows.map((row) => row.winRate ?? 0));
+  const peerRows = hero ? getExternalHeroPeerRows(hero, rows) : [];
+
+  return (
+    <div className="border-b border-border/60 bg-card px-4 py-4 sm:px-5">
+      {hero ? (
+        <div className="grid gap-4 xl:grid-cols-[168px_minmax(0,1fr)] xl:items-stretch">
+          <div className="relative min-h-[168px] overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))]">
+            <ExternalHeroPortrait
+              heroId={hero.heroId}
+              className="h-full min-h-[168px] w-full rounded-none border-0"
+              imageClassName="object-cover object-top"
+              iconClassName="h-8 w-8"
+            />
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-background/95 to-transparent px-3 pb-3 pt-10">
+              <Badge variant="outline" className="bg-card/90">
+                {getExternalHeroSignalLabel(hero, rows)}
+              </Badge>
+            </div>
+          </div>
+
+          <div className="min-w-0 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <p className="metric-label">선택 영웅</p>
+                <h3 className="mt-1 truncate text-2xl font-black">{hero.name}</h3>
+                <p className="mt-1 truncate text-sm font-semibold text-muted-foreground">
+                  {hero.roleLabel} · {hero.regionLabel}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 lg:justify-end">
+                <Badge variant="outline" className="bg-card">
+                  픽률 #{pickRank ?? '--'}
+                </Badge>
+                <Badge variant="outline" className="bg-card">
+                  승률 #{winRank ?? '--'}
+                </Badge>
+                <Button variant="ghost" size="sm" className="h-8" onClick={onClear}>
+                  초기화
+                </Button>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <ExternalHeroSpotlightMetric
+                label="픽률"
+                value={formatExternalPercent(hero.pickRate)}
+                width={((hero.pickRate ?? 0) / maxPickRate) * 100}
+              />
+              <ExternalHeroSpotlightMetric
+                label="승률"
+                value={formatExternalPercent(hero.winRate)}
+                width={((hero.winRate ?? 0) / maxWinRate) * 100}
+              />
+            </div>
+
+            <div className="mt-4 grid gap-2 text-xs font-semibold text-muted-foreground md:grid-cols-3">
+              <p className="truncate rounded-md border border-border/60 bg-card px-3 py-2">
+                소스 {hero.sourceLabel}
+              </p>
+              <p className="truncate rounded-md border border-border/60 bg-card px-3 py-2">
+                {getExternalHeroCoverageLabel(hero)} · {hero.snapshotCount.toLocaleString('ko-KR')}
+                개
+              </p>
+              <p className="truncate rounded-md border border-border/60 bg-card px-3 py-2">
+                최근 {getExternalFreshnessLabel(hero.latestAt)}
+              </p>
+            </div>
+
+            {peerRows.length > 0 ? (
+              <div className="mt-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="metric-label">가까운 비교군</p>
+                  <span className="text-[11px] font-bold text-muted-foreground">
+                    동일 역할 기준
+                  </span>
+                </div>
+                <div className="mt-2 grid gap-2 md:grid-cols-3">
+                  {peerRows.map((peer) => (
+                    <button
+                      key={peer.heroId}
+                      type="button"
+                      className="grid min-w-0 grid-cols-[36px_minmax(0,1fr)] items-center gap-2 rounded-md border border-border/60 bg-card px-2.5 py-2 text-left transition-colors hover:border-primary/35 hover:bg-primary/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
+                      onClick={() => onSelectHero(peer.heroId)}
+                    >
+                      <ExternalHeroPortrait heroId={peer.heroId} className="h-9 w-9" />
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-black">{peer.name}</span>
+                        <span className="mt-0.5 block truncate text-[11px] font-semibold text-muted-foreground">
+                          픽 {formatExternalPercent(peer.pickRate)} · 승{' '}
+                          {formatExternalPercent(peer.winRate)}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <InlineEmptyState
+          title="선택할 영웅 데이터가 없습니다."
+          description="영웅 메타 수집이 완료되면 선택 보드가 표시됩니다."
+        />
+      )}
+    </div>
+  );
+};
+
+const ExternalHeroSpotlightMetric = ({
+  label,
+  value,
+  width,
+}: {
+  label: string;
+  value: string;
+  width: number;
+}) => (
+  <div className="rounded-md border border-border/60 bg-card px-3 py-3">
+    <div className="flex items-center justify-between gap-3">
+      <p className="metric-label">{label}</p>
+      <p className="text-lg font-black">{value}</p>
+    </div>
+    <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted/60">
+      <span
+        className="block h-full rounded-full bg-primary"
+        style={{ width: `${Math.min(100, Math.max(0, width))}%` }}
+      />
     </div>
   </div>
 );
 
-const ExternalCollectionStatusPanel = ({
+const externalHeroSignalOptions = [
+  { description: '픽률과 승률이 모두 평균 이상', value: 'core' },
+  { description: '픽률은 낮지만 승률은 평균 이상', value: 'efficient' },
+  { description: '픽률은 높지만 승률은 평균 이하', value: 'overheated' },
+  { description: '추가 표본을 볼 필요가 있는 구간', value: 'watch' },
+] satisfies Array<{ description: string; value: Exclude<ExternalHeroSignalFilter, 'all'> }>;
+
+const ExternalHeroSignalBoard = ({
+  counts,
+  onChange,
+  onSelectHero,
+  rows,
+  value,
+}: {
+  counts: ReturnType<typeof getExternalHeroSignalCounts>;
+  onChange: (value: ExternalHeroSignalFilter) => void;
+  onSelectHero: (heroId: string) => void;
+  rows: ExternalHeroMetaRow[];
+  value: ExternalHeroSignalFilter;
+}) => (
+  <div className="border-b border-border/60 bg-card px-4 py-4 sm:px-5">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div className="min-w-0">
+        <p className="metric-label">메타 신호</p>
+        <h3 className="mt-1 text-base font-bold">역할 안에서 해석하기</h3>
+      </div>
+      <Button
+        variant={value === 'all' ? 'secondary' : 'outline'}
+        size="sm"
+        className={cn(value !== 'all' && 'bg-transparent')}
+        onClick={() => onChange('all')}
+      >
+        전체 보기
+      </Button>
+    </div>
+
+    <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+      {externalHeroSignalOptions.map((option) => {
+        const signalRows = rows
+          .filter((hero) => getExternalHeroSignalKey(hero, rows) === option.value)
+          .sort((left, right) => (right.pickRate ?? -1) - (left.pickRate ?? -1));
+        const leadHero = signalRows[0] ?? null;
+        const isActive = value === option.value;
+
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={isActive}
+            className={cn(
+              'grid min-w-0 grid-cols-[minmax(0,1fr)_42px] gap-3 rounded-md border px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
+              isActive
+                ? 'border-primary/60 bg-primary/10'
+                : 'border-border/60 bg-[hsl(var(--surface-2))] hover:border-primary/30',
+            )}
+            onClick={() => {
+              onChange(option.value);
+
+              if (leadHero) {
+                onSelectHero(leadHero.heroId);
+              }
+            }}
+          >
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="truncate text-sm font-black">
+                  {externalHeroSignalLabels[option.value]}
+                </p>
+                <Badge variant="outline" className="shrink-0 bg-card text-[11px]">
+                  {counts[option.value].toLocaleString('ko-KR')}
+                </Badge>
+              </div>
+              <p className="mt-1 line-clamp-2 text-xs font-semibold leading-relaxed text-muted-foreground">
+                {option.description}
+              </p>
+              <p className="mt-2 truncate text-[11px] font-bold text-muted-foreground">
+                {leadHero ? `대표 ${leadHero.name}` : '해당 영웅 없음'}
+              </p>
+            </div>
+            {leadHero ? (
+              <ExternalHeroPortrait heroId={leadHero.heroId} className="h-10 w-10" />
+            ) : (
+              <span className="h-10 w-10" />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  </div>
+);
+
+const ExternalHeroRoleSummaryStrip = ({
+  activeRole,
+  onSelectHero,
+  onSelectRole,
+  summaries,
+}: {
+  activeRole: ExternalHeroRoleFilter;
+  onSelectHero: (heroId: string) => void;
+  onSelectRole: (value: ExternalHeroRoleFilter) => void;
+  summaries: ExternalHeroRoleSummary[];
+}) => (
+  <div className="border-b border-border/60 bg-card px-4 py-3 sm:px-5">
+    <div className="grid gap-2 lg:grid-cols-3">
+      {summaries.map((summary) => {
+        const isActive = activeRole === summary.role;
+        const topPick = summary.topPick;
+
+        return (
+          <button
+            key={summary.role}
+            type="button"
+            aria-pressed={isActive}
+            className={cn(
+              'grid min-w-0 grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3 rounded-md border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
+              isActive
+                ? 'border-primary/60 bg-primary/10'
+                : 'border-border/60 bg-[hsl(var(--surface-2))] hover:border-primary/30',
+            )}
+            onClick={() => onSelectRole(summary.role)}
+          >
+            <div className="flex h-10 w-10 items-center justify-center rounded-md border border-border/60 bg-card">
+              <MatchRoleIcon role={summary.role} className="h-5 w-5 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <p className="truncate text-sm font-black">{getExternalRoleLabel(summary.role)}</p>
+                <Badge variant="outline" className="shrink-0 bg-transparent text-[11px]">
+                  {summary.count.toLocaleString('ko-KR')}명
+                </Badge>
+              </div>
+              <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+                {summary.topPick ? `대표 픽 ${summary.topPick.name}` : '데이터 대기'}
+              </p>
+              <p className="mt-0.5 truncate text-[11px] font-semibold text-muted-foreground">
+                평균 승률 {formatExternalPercent(summary.avgWinRate)} · 평균 픽률{' '}
+                {formatExternalPercent(summary.avgPickRate)}
+              </p>
+            </div>
+            {topPick ? (
+              <button
+                type="button"
+                className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
+                aria-label={`${topPick.name} 선택`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelectHero(topPick.heroId);
+                }}
+              >
+                <ExternalHeroPortrait heroId={topPick.heroId} className="h-10 w-10" />
+              </button>
+            ) : (
+              <div className="h-10 w-10" />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  </div>
+);
+
+const ExternalHeroMetaToolbar = ({
+  onQueryChange,
+  onSortModeChange,
+  query,
+  sortMode,
+  totalRows,
+  visibleRows,
+}: {
+  onQueryChange: (value: string) => void;
+  onSortModeChange: (value: ExternalHeroSortMode) => void;
+  query: string;
+  sortMode: ExternalHeroSortMode;
+  totalRows: number;
+  visibleRows: number;
+}) => (
+  <div className="border-b border-border/60 bg-card px-4 py-3 sm:px-5">
+    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+      <div className="relative min-w-0 flex-1">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          className="h-9 bg-[hsl(var(--surface-2))] pl-9 pr-9 text-sm font-semibold"
+          placeholder="영웅 이름, 역할, 지역 검색"
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+        />
+        {query ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
+            aria-label="검색어 지우기"
+            onClick={() => onQueryChange('')}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+        <div className="grid grid-cols-3 overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-1">
+          {externalHeroSortOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={sortMode === option.value}
+              className={cn(
+                'h-8 min-w-[54px] rounded-[5px] px-2 text-xs font-bold transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
+                sortMode === option.value
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground',
+              )}
+              onClick={() => onSortModeChange(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <Badge variant="outline" className="h-9 bg-transparent">
+          {visibleRows.toLocaleString('ko-KR')} / {totalRows.toLocaleString('ko-KR')}명
+        </Badge>
+      </div>
+    </div>
+  </div>
+);
+
+const ExternalHeroActiveFilters = ({
+  onClearQuery,
+  onClearSelectedHero,
+  onResetAll,
+  onResetRole,
+  onResetSignal,
+  query,
+  roleFilter,
+  selectedHero,
+  signalFilter,
+  visibleRows,
+}: {
+  onClearQuery: () => void;
+  onClearSelectedHero: () => void;
+  onResetAll: () => void;
+  onResetRole: () => void;
+  onResetSignal: () => void;
+  query: string;
+  roleFilter: ExternalHeroRoleFilter;
+  selectedHero: ExternalHeroMetaRow | null;
+  signalFilter: ExternalHeroSignalFilter;
+  visibleRows: number;
+}) => {
+  const chips = [
+    roleFilter !== 'all'
+      ? { label: `역할 ${getExternalRoleLabel(roleFilter)}`, onRemove: onResetRole }
+      : null,
+    signalFilter !== 'all'
+      ? { label: `신호 ${externalHeroSignalLabels[signalFilter]}`, onRemove: onResetSignal }
+      : null,
+    query.trim() ? { label: `검색 ${query.trim()}`, onRemove: onClearQuery } : null,
+    selectedHero ? { label: `선택 ${selectedHero.name}`, onRemove: onClearSelectedHero } : null,
+  ].filter((chip): chip is { label: string; onRemove: () => void } => chip !== null);
+
+  return (
+    <div className="border-b border-border/60 bg-card px-4 py-3 sm:px-5">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="text-xs font-bold text-muted-foreground">
+            현재 {visibleRows.toLocaleString('ko-KR')}명 표시
+          </span>
+          {chips.length > 0 ? (
+            chips.map((chip) => (
+              <button
+                key={chip.label}
+                type="button"
+                className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-2 text-xs font-bold transition-colors hover:border-primary/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
+                onClick={chip.onRemove}
+              >
+                <span className="truncate">{chip.label}</span>
+                <X className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              </button>
+            ))
+          ) : (
+            <Badge variant="outline" className="bg-transparent">
+              필터 없음
+            </Badge>
+          )}
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-fit"
+          disabled={chips.length === 0}
+          onClick={onResetAll}
+        >
+          전체 초기화
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+const ExternalHeroMetaScatterPlot = ({
+  onSelectHero,
+  rows,
+  selectedHeroId,
+}: {
+  onSelectHero: (heroId: string) => void;
+  rows: ExternalHeroMetaRow[];
+  selectedHeroId: string | null;
+}) => {
+  const plottableRows = rows.filter((hero) => hero.pickRate !== null && hero.winRate !== null);
+  const pickValues = plottableRows.map((hero) => hero.pickRate ?? 0);
+  const winValues = plottableRows.map((hero) => hero.winRate ?? 0);
+  const minPick = Math.max(0, Math.min(...pickValues, 0));
+  const maxPick = Math.max(...pickValues, 1);
+  const minWin = Math.max(0, Math.min(...winValues, 45) - 1);
+  const maxWin = Math.max(...winValues, 55) + 1;
+  const avgPick = roundExternalMetric(getExternalAverage(pickValues));
+  const avgWin = roundExternalMetric(getExternalAverage(winValues));
+  const avgPickPosition =
+    avgPick === null ? null : getExternalHeroScatterPosition(avgPick, minPick, maxPick);
+  const avgWinPosition =
+    avgWin === null ? null : getExternalHeroScatterPosition(avgWin, minWin, maxWin);
+
+  return (
+    <div className="border-b border-border/60 bg-card px-4 py-4 sm:px-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="metric-label">메타 분포</p>
+          <h3 className="mt-1 text-base font-bold">픽률 vs 승률</h3>
+        </div>
+        <div className="flex flex-wrap gap-2 sm:justify-end">
+          {matchRoleOptions.map((role) => (
+            <span
+              key={role.value}
+              className="inline-flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground"
+            >
+              <span
+                className={cn(
+                  'h-2.5 w-2.5 rounded-full border',
+                  getExternalHeroScatterRoleClassName(role.value),
+                )}
+              />
+              {role.label}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {plottableRows.length > 0 ? (
+        <div
+          className="relative mt-3 h-56 overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))]"
+          aria-label="픽률과 승률 분포"
+        >
+          <span className="absolute right-3 top-3 rounded-md border border-border/50 bg-card/85 px-2 py-1 text-[11px] font-black text-foreground">
+            핵심 메타
+          </span>
+          <span className="absolute left-3 top-3 rounded-md border border-border/50 bg-card/70 px-2 py-1 text-[11px] font-bold text-muted-foreground">
+            고효율 픽
+          </span>
+          <span className="absolute bottom-8 right-3 rounded-md border border-border/50 bg-card/70 px-2 py-1 text-[11px] font-bold text-muted-foreground">
+            과열 픽
+          </span>
+          {Array.from({ length: 4 }, (_, index) => (
+            <span
+              key={`h-${index}`}
+              className="absolute left-0 right-0 border-t border-border/50"
+              style={{ top: `${(index + 1) * 20}%` }}
+            />
+          ))}
+          {Array.from({ length: 4 }, (_, index) => (
+            <span
+              key={`v-${index}`}
+              className="absolute bottom-0 top-0 border-l border-border/50"
+              style={{ left: `${(index + 1) * 20}%` }}
+            />
+          ))}
+          {avgPickPosition !== null ? (
+            <span
+              className="absolute bottom-7 top-4 border-l border-dashed border-primary/45"
+              style={{ left: `${avgPickPosition}%` }}
+            />
+          ) : null}
+          {avgWinPosition !== null ? (
+            <span
+              className="absolute left-8 right-4 border-t border-dashed border-primary/45"
+              style={{ bottom: `${avgWinPosition}%` }}
+            />
+          ) : null}
+          {plottableRows.map((hero) => {
+            const left = getExternalHeroScatterPosition(hero.pickRate ?? 0, minPick, maxPick);
+            const bottom = getExternalHeroScatterPosition(hero.winRate ?? 0, minWin, maxWin);
+            const isSelected = hero.heroId === selectedHeroId;
+
+            return (
+              <button
+                key={hero.heroId}
+                type="button"
+                className={cn(
+                  'absolute -translate-x-1/2 translate-y-1/2 rounded-full border transition-[box-shadow,transform,width,height] hover:scale-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30',
+                  isSelected ? 'h-4 w-4 scale-125 ring-2 ring-primary/40' : 'h-3 w-3',
+                  getExternalHeroScatterRoleClassName(hero.role),
+                )}
+                style={{ bottom: `${bottom}%`, left: `${left}%` }}
+                title={`${hero.name} · 픽률 ${formatExternalPercent(hero.pickRate)} · 승률 ${formatExternalPercent(
+                  hero.winRate,
+                )}`}
+                aria-label={`${hero.name} 선택`}
+                onClick={() => onSelectHero(hero.heroId)}
+              />
+            );
+          })}
+          <div className="pointer-events-none absolute inset-x-3 bottom-2 flex justify-between text-[11px] font-bold text-muted-foreground">
+            <span>픽률 {formatExternalPercent(minPick)}</span>
+            <span>픽률 {formatExternalPercent(maxPick)}</span>
+          </div>
+          <div className="pointer-events-none absolute left-3 top-2 text-[11px] font-bold text-muted-foreground">
+            승률 {formatExternalPercent(maxWin)}
+          </div>
+          <div className="pointer-events-none absolute left-3 bottom-7 text-[11px] font-bold text-muted-foreground">
+            승률 {formatExternalPercent(minWin)}
+          </div>
+        </div>
+      ) : (
+        <InlineEmptyState
+          className="mt-3"
+          title="분포를 만들 데이터가 없습니다."
+          description="픽률과 승률이 함께 있는 영웅이 표시됩니다."
+        />
+      )}
+    </div>
+  );
+};
+
+const ExternalHeroFeatureCard = ({
+  hero,
+  icon: Icon,
+  metricLabel,
+  metricValue,
+  onSelect,
+  title,
+}: {
+  hero: ExternalHeroMetaRow | null;
+  icon: LucideIcon;
+  metricLabel: string;
+  metricValue: string;
+  onSelect: (heroId: string) => void;
+  title: string;
+}) => (
+  <button
+    type="button"
+    className="min-w-0 bg-card p-4 text-left transition-colors hover:bg-[hsl(var(--surface-2))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 sm:p-5"
+    disabled={!hero}
+    onClick={() => {
+      if (hero) {
+        onSelect(hero.heroId);
+      }
+    }}
+  >
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <p className="metric-label">{title}</p>
+        <h3 className="mt-1 truncate text-lg font-bold">{hero?.name ?? '--'}</h3>
+      </div>
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-primary">
+        <Icon className="h-4 w-4" />
+      </div>
+    </div>
+
+    {hero ? (
+      <div className="mt-4 grid grid-cols-[116px_minmax(0,1fr)] gap-4">
+        <ExternalHeroPortrait heroId={hero.heroId} className="h-28 w-28" />
+        <div className="min-w-0 self-center">
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="outline" className="bg-transparent">
+              {hero.roleLabel}
+            </Badge>
+            <Badge variant="outline" className="bg-transparent">
+              {metricLabel} {metricValue}
+            </Badge>
+          </div>
+          <p className="mt-3 truncate text-sm font-semibold text-muted-foreground">
+            승률 {formatExternalPercent(hero.winRate)} · 픽률 {formatExternalPercent(hero.pickRate)}
+          </p>
+          <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+            {hero.sourceLabel} · {hero.regionLabel}
+          </p>
+          <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+            {hero.snapshotCount.toLocaleString('ko-KR')}개 표본
+          </p>
+        </div>
+      </div>
+    ) : (
+      <InlineEmptyState
+        className="mt-4"
+        title="표시할 영웅 데이터 없음"
+        description="픽률 데이터가 수집되면 영웅 프로필이 표시됩니다."
+      />
+    )}
+  </button>
+);
+
+const ExternalHeroComparisonTable = ({
+  onSelectHero,
+  rows,
+  selectedHeroId,
+  totalRows,
+}: {
+  onSelectHero: (heroId: string) => void;
+  rows: ExternalHeroMetaRow[];
+  selectedHeroId: string | null;
+  totalRows: number;
+}) => {
+  const maxPickRate = Math.max(1, ...rows.map((row) => row.pickRate ?? 0));
+
+  return (
+    <div className="bg-card px-4 py-4 sm:px-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="metric-label">영웅별 비교</p>
+          <h3 className="mt-1 text-base font-bold">픽률 막대와 승률</h3>
+        </div>
+        <Badge variant="outline" className="w-fit bg-transparent">
+          상위 {rows.length.toLocaleString('ko-KR')} / {totalRows.toLocaleString('ko-KR')}명
+        </Badge>
+      </div>
+
+      {rows.length > 0 ? (
+        <div className="mt-3 overflow-hidden rounded-md border border-border/70">
+          <div className="hidden grid-cols-[minmax(220px,1.3fr)_minmax(170px,1fr)_80px_minmax(120px,0.8fr)] gap-3 border-b border-border/60 bg-[hsl(var(--surface-2))] px-3 py-2 text-xs font-bold text-muted-foreground lg:grid">
+            <span>영웅</span>
+            <span>픽률</span>
+            <span className="text-right">승률</span>
+            <span>소스</span>
+          </div>
+          <div>
+            {rows.map((hero) => (
+              <button
+                key={hero.heroId}
+                type="button"
+                className={cn(
+                  'grid w-full gap-3 border-b border-border/60 px-3 py-3 text-left transition-colors last:border-b-0 hover:bg-primary/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 lg:grid-cols-[minmax(220px,1.3fr)_minmax(170px,1fr)_80px_minmax(120px,0.8fr)] lg:items-center',
+                  selectedHeroId === hero.heroId && 'bg-primary/[0.08]',
+                )}
+                onClick={() => onSelectHero(hero.heroId)}
+              >
+                <div className="grid min-w-0 grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3 lg:grid-cols-[44px_minmax(0,1fr)]">
+                  <ExternalHeroPortrait heroId={hero.heroId} className="h-11 w-11" />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold">{hero.name}</p>
+                    <p className="mt-0.5 truncate text-xs font-semibold text-muted-foreground">
+                      {hero.roleLabel} · {hero.snapshotCount.toLocaleString('ko-KR')}개 표본
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="bg-transparent lg:hidden">
+                    {formatExternalPercent(hero.winRate)}
+                  </Badge>
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center justify-between gap-3 text-xs font-bold">
+                    <span className="text-muted-foreground">픽률</span>
+                    <span>{formatExternalPercent(hero.pickRate)}</span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted/60">
+                    <span
+                      className="block h-full rounded-full bg-primary"
+                      style={{ width: `${((hero.pickRate ?? 0) / maxPickRate) * 100}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="hidden text-right text-sm font-bold lg:block">
+                  {formatExternalPercent(hero.winRate)}
+                </div>
+                <div className="hidden min-w-0 lg:block">
+                  <p className="truncate text-xs font-semibold text-muted-foreground">
+                    {hero.sourceLabel}
+                  </p>
+                  <p className="mt-0.5 truncate text-[11px] font-semibold text-muted-foreground">
+                    {hero.regionLabel}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <InlineEmptyState
+          className="mt-3"
+          title="검색 결과가 없습니다."
+          description="검색어를 지우거나 다른 역할을 선택해주세요."
+        />
+      )}
+    </div>
+  );
+};
+
+const ExternalHeroPortrait = ({
+  className,
+  heroId,
+  iconClassName,
+  imageClassName,
+}: {
+  className?: string;
+  heroId: string;
+  iconClassName?: string;
+  imageClassName?: string;
+}) => {
+  const src = getExternalHeroPortraitSrc(heroId);
+  const label = getExternalHeroLabel(heroId);
+
+  return (
+    <div
+      className={cn(
+        'flex shrink-0 items-center justify-center overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))]',
+        className,
+      )}
+    >
+      {src ? (
+        <img
+          alt={label}
+          className={cn('h-full w-full object-cover object-top', imageClassName)}
+          src={src}
+        />
+      ) : (
+        <Swords className={cn('h-5 w-5 text-muted-foreground', iconClassName)} />
+      )}
+    </div>
+  );
+};
+
+export const ExternalEsportsSchedulePanel = ({
   esportsEvents,
-  heroRates,
-  isFetching,
-  sources,
+  isLoading,
 }: {
   esportsEvents: ExternalEsportsEventItem[];
-  heroRates: ExternalHeroRateItem[];
-  isFetching: boolean;
+  isLoading: boolean;
+}) => {
+  const [now] = useState(() => Date.now());
+  const [calendarMode, setCalendarMode] = useState<ExternalScheduleViewMode>('month');
+  const [regionFilter, setRegionFilter] = useState<ExternalScheduleRegionFilter>('all');
+  const [sourceFilter, setSourceFilter] = useState<ExternalScheduleSourceFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<ExternalScheduleStatusFilter>('all');
+  const [eventQuery, setEventQuery] = useState('');
+  const [selectedDateOverride, setSelectedDateOverride] = useState<string | null>(null);
+  const [calendarCursor, setCalendarCursor] = useState<Date | null>(null);
+  const regionOptions = useMemo(
+    () => createExternalScheduleRegionOptions(esportsEvents, now),
+    [esportsEvents, now],
+  );
+  const activeRegionFilter =
+    regionFilter === 'all' || regionOptions.some((option) => option.value === regionFilter)
+      ? regionFilter
+      : 'all';
+  const regionFilteredEvents = useMemo(
+    () => filterExternalScheduleEvents(esportsEvents, activeRegionFilter),
+    [esportsEvents, activeRegionFilter],
+  );
+  const sourceOptions = useMemo(
+    () => createExternalScheduleSourceOptions(regionFilteredEvents),
+    [regionFilteredEvents],
+  );
+  const activeSourceFilter =
+    sourceFilter === 'all' || sourceOptions.some((option) => option.value === sourceFilter)
+      ? sourceFilter
+      : 'all';
+  const queryFilteredEvents = useMemo(
+    () =>
+      filterExternalScheduleEventsByQuery(
+        filterExternalScheduleEventsBySource(regionFilteredEvents, activeSourceFilter),
+        eventQuery,
+      ),
+    [activeSourceFilter, eventQuery, regionFilteredEvents],
+  );
+  const statusCountsForFilter = getExternalEventStatusCounts(queryFilteredEvents);
+  const filteredEvents = useMemo(
+    () => filterExternalScheduleEventsByStatus(queryFilteredEvents, statusFilter),
+    [queryFilteredEvents, statusFilter],
+  );
+  const eventsByDate = useMemo(() => {
+    const groups = new Map<string, ExternalEsportsEventItem[]>();
+
+    filteredEvents.forEach((event) => {
+      const dateKey = getExternalEventDateKey(event);
+
+      if (!dateKey) {
+        return;
+      }
+
+      const events = groups.get(dateKey) ?? [];
+      events.push(event);
+      groups.set(dateKey, events);
+    });
+
+    groups.forEach((events) => {
+      events.sort(
+        (left, right) => getExternalEventSortTime(left) - getExternalEventSortTime(right),
+      );
+    });
+
+    return groups;
+  }, [filteredEvents]);
+  const upcomingEvents = filteredEvents
+    .filter((event) => event.startsAt && new Date(event.startsAt).getTime() >= now)
+    .sort((left, right) => compareExternalTimestampAsc(left.startsAt, right.startsAt));
+  const nextEvent = upcomingEvents[0] ?? null;
+  const upcomingRailEvents = getExternalUpcomingEvents(filteredEvents, now, 8);
+  const preferredEvent =
+    nextEvent ??
+    [...filteredEvents]
+      .filter((event) => event.startsAt)
+      .sort((left, right) => getExternalEventSortTime(left) - getExternalEventSortTime(right))[0] ??
+    null;
+  const preferredDate =
+    preferredEvent?.startsAt && !Number.isNaN(new Date(preferredEvent.startsAt).getTime())
+      ? new Date(preferredEvent.startsAt)
+      : null;
+  const selectedDate =
+    selectedDateOverride ??
+    (preferredDate ? formatDateValue(preferredDate) : formatDateValue(new Date()));
+  const selectedDateValue = parseDateValue(selectedDate) ?? preferredDate ?? new Date();
+  const visibleDate =
+    calendarCursor ??
+    (calendarMode === 'week' ? getWeekStart(selectedDateValue) : getMonthStart(selectedDateValue));
+  const latestAt = getLatestExternalTimestamp(esportsEvents.map((event) => event.fetchedAt));
+  const selectedEvents = eventsByDate.get(selectedDate) ?? [];
+  const calendarDays = getExternalCalendarDays(visibleDate, calendarMode);
+  const statusCounts = getExternalEventStatusCounts(filteredEvents);
+  const busiestDate = getExternalBusiestScheduleDate(filteredEvents);
+  const nextEventDateKey = nextEvent ? getExternalEventDateKey(nextEvent) : null;
+  const selectedRegionLabel =
+    regionOptions.find((option) => option.value === activeRegionFilter)?.label ??
+    getExternalRegionLabel(activeRegionFilter);
+
+  const moveCalendar = (direction: -1 | 1) => {
+    setCalendarCursor(
+      calendarMode === 'week'
+        ? addDays(visibleDate, direction * 7)
+        : addMonths(visibleDate, direction),
+    );
+  };
+  const goToDate = (date: Date) => {
+    const dateKey = formatDateValue(date);
+
+    setSelectedDateOverride(dateKey);
+    setCalendarCursor(calendarMode === 'week' ? getWeekStart(date) : getMonthStart(date));
+  };
+  const goToToday = () => {
+    goToDate(new Date());
+  };
+  const goToNextEvent = () => {
+    if (!nextEvent?.startsAt) {
+      return;
+    }
+
+    const date = new Date(nextEvent.startsAt);
+
+    if (!Number.isNaN(date.getTime())) {
+      goToDate(date);
+    }
+  };
+  const selectCalendarDate = (dateKey: string) => {
+    const date = parseDateValue(dateKey);
+
+    setSelectedDateOverride(dateKey);
+
+    if (date) {
+      setCalendarCursor(calendarMode === 'week' ? getWeekStart(date) : getMonthStart(date));
+    }
+  };
+  const changeCalendarMode = (mode: ExternalScheduleViewMode) => {
+    setCalendarMode(mode);
+    setCalendarCursor(
+      mode === 'week' ? getWeekStart(selectedDateValue) : getMonthStart(selectedDateValue),
+    );
+  };
+  const changeRegionFilter = (value: ExternalScheduleRegionFilter) => {
+    setRegionFilter(value);
+    setSourceFilter('all');
+    setStatusFilter('all');
+    setEventQuery('');
+    setSelectedDateOverride(null);
+    setCalendarCursor(null);
+  };
+  const changeSourceFilter = (value: ExternalScheduleSourceFilter) => {
+    setSourceFilter(value);
+    setStatusFilter('all');
+    setSelectedDateOverride(null);
+    setCalendarCursor(null);
+  };
+  const changeStatusFilter = (value: ExternalScheduleStatusFilter) => {
+    setStatusFilter(value);
+    setSelectedDateOverride(null);
+    setCalendarCursor(null);
+  };
+  const resetScheduleFilters = () => {
+    setRegionFilter('all');
+    setSourceFilter('all');
+    setStatusFilter('all');
+    setEventQuery('');
+    setSelectedDateOverride(null);
+    setCalendarCursor(null);
+  };
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+      <div className="border-b border-border/60 px-4 py-3 sm:px-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="metric-label">e스포츠</p>
+            <h2 className="mt-1 text-lg font-bold">경기 일정 캘린더</h2>
+          </div>
+          <Badge variant="outline" className="w-fit gap-1.5 bg-transparent">
+            <CalendarCheck2 className="h-3.5 w-3.5" />
+            {getExternalFreshnessLabel(latestAt)}
+          </Badge>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="grid gap-4 p-4 sm:p-5">
+          <ExternalRowsSkeleton rows={6} />
+        </div>
+      ) : esportsEvents.length > 0 ? (
+        <div>
+          <ExternalScheduleRegionTabs
+            options={regionOptions}
+            value={activeRegionFilter}
+            onChange={changeRegionFilter}
+          />
+          <ExternalScheduleExplorerBar
+            query={eventQuery}
+            sourceOptions={sourceOptions}
+            sourceValue={activeSourceFilter}
+            statusCounts={statusCountsForFilter}
+            statusValue={statusFilter}
+            totalEvents={regionFilteredEvents.length}
+            visibleEvents={filteredEvents.length}
+            onQueryChange={setEventQuery}
+            onSourceChange={changeSourceFilter}
+            onStatusChange={changeStatusFilter}
+          />
+          <ExternalScheduleActiveFilters
+            query={eventQuery}
+            regionLabel={selectedRegionLabel}
+            regionValue={activeRegionFilter}
+            sourceLabel={
+              sourceOptions.find((option) => option.value === activeSourceFilter)?.label ??
+              getExternalCompactSourceLabel(activeSourceFilter)
+            }
+            sourceValue={activeSourceFilter}
+            statusValue={statusFilter}
+            visibleEvents={filteredEvents.length}
+            onClearQuery={() => setEventQuery('')}
+            onResetAll={resetScheduleFilters}
+            onResetRegion={() => changeRegionFilter('all')}
+            onResetSource={() => changeSourceFilter('all')}
+            onResetStatus={() => changeStatusFilter('all')}
+          />
+          <ExternalScheduleSummaryStrip
+            busiestDate={busiestDate}
+            events={filteredEvents}
+            regionLabel={selectedRegionLabel}
+            statusCounts={statusCounts}
+          />
+          <ExternalNextEventFeature event={nextEvent} now={now} />
+          <ExternalUpcomingMatchRail events={upcomingRailEvents} onSelectDate={goToDate} />
+          <ExternalScheduleCalendar
+            days={calendarDays}
+            eventsByDate={eventsByDate}
+            hasNextEvent={Boolean(nextEvent)}
+            mode={calendarMode}
+            nextEventDateKey={nextEventDateKey}
+            selectedDate={selectedDate}
+            visibleDate={visibleDate}
+            onGoToNextEvent={goToNextEvent}
+            onGoToToday={goToToday}
+            onModeChange={changeCalendarMode}
+            onMove={moveCalendar}
+            onSelectDate={selectCalendarDate}
+          />
+          <ExternalSelectedDateEvents
+            dateKey={selectedDate}
+            events={selectedEvents}
+            regionLabel={selectedRegionLabel}
+          />
+        </div>
+      ) : (
+        <div className="p-4 sm:p-5">
+          <InlineEmptyState
+            title="e스포츠 일정 데이터가 없습니다."
+            description="수집이 완료되면 경기 일정과 경기 상태가 표시됩니다."
+          />
+        </div>
+      )}
+    </section>
+  );
+};
+
+const ExternalScheduleExplorerBar = ({
+  onQueryChange,
+  onSourceChange,
+  onStatusChange,
+  query,
+  sourceOptions,
+  sourceValue,
+  statusCounts,
+  statusValue,
+  totalEvents,
+  visibleEvents,
+}: {
+  onQueryChange: (value: string) => void;
+  onSourceChange: (value: ExternalScheduleSourceFilter) => void;
+  onStatusChange: (value: ExternalScheduleStatusFilter) => void;
+  query: string;
+  sourceOptions: ExternalScheduleSourceOption[];
+  sourceValue: ExternalScheduleSourceFilter;
+  statusCounts: { completed: number; live: number; scheduled: number };
+  statusValue: ExternalScheduleStatusFilter;
+  totalEvents: number;
+  visibleEvents: number;
+}) => {
+  const statusOptions = [
+    {
+      count: statusCounts.scheduled + statusCounts.live + statusCounts.completed,
+      label: '전체',
+      value: 'all',
+    },
+    { count: statusCounts.scheduled, label: '예정', value: 'scheduled' },
+    { count: statusCounts.live, label: '진행', value: 'live' },
+    { count: statusCounts.completed, label: '종료', value: 'completed' },
+  ] satisfies Array<{ count: number; label: string; value: ExternalScheduleStatusFilter }>;
+
+  return (
+    <div className="border-b border-border/60 bg-card px-4 py-3 sm:px-5">
+      <div className="grid gap-3">
+        <div className="grid gap-3 xl:grid-cols-[minmax(220px,1fr)_auto] xl:items-center">
+          <div className="relative min-w-0">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="h-9 bg-[hsl(var(--surface-2))] pl-9 pr-9 text-sm font-semibold"
+              placeholder="팀, 스테이지, 대회 검색"
+              value={query}
+              onChange={(event) => onQueryChange(event.target.value)}
+            />
+            {query ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
+                aria-label="검색어 지우기"
+                onClick={() => onQueryChange('')}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+            <div className="flex max-w-full gap-1 overflow-x-auto rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-1">
+              {sourceOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={sourceValue === option.value}
+                  className={cn(
+                    'h-8 shrink-0 rounded-[5px] px-2.5 text-xs font-bold transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
+                    sourceValue === option.value
+                      ? 'bg-card text-foreground shadow-sm'
+                      : 'text-muted-foreground',
+                  )}
+                  onClick={() => onSourceChange(option.value)}
+                >
+                  {option.label} {option.count.toLocaleString('ko-KR')}
+                </button>
+              ))}
+            </div>
+            <Badge variant="outline" className="h-9 bg-transparent">
+              {visibleEvents.toLocaleString('ko-KR')} / {totalEvents.toLocaleString('ko-KR')}경기
+            </Badge>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-1">
+          {statusOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={statusValue === option.value}
+              className={cn(
+                'h-8 min-w-0 rounded-[5px] px-2 text-xs font-bold transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
+                statusValue === option.value
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground',
+              )}
+              onClick={() => onStatusChange(option.value)}
+            >
+              <span className="truncate">
+                {option.label} {option.count.toLocaleString('ko-KR')}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ExternalUpcomingMatchRail = ({
+  events,
+  onSelectDate,
+}: {
+  events: ExternalEsportsEventItem[];
+  onSelectDate: (date: Date) => void;
+}) => (
+  <div className="border-b border-border/60 bg-card px-4 py-4 sm:px-5">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div className="min-w-0">
+        <p className="metric-label">다가오는 경기</p>
+        <h3 className="mt-1 text-base font-bold">빠른 이동 타임라인</h3>
+      </div>
+      <Badge variant="outline" className="w-fit bg-transparent">
+        {events.length.toLocaleString('ko-KR')}개 표시
+      </Badge>
+    </div>
+
+    {events.length > 0 ? (
+      <div className="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 pb-1">
+        {events.map((event) => {
+          const startsAt = event.startsAt ? new Date(event.startsAt) : null;
+          const isValidDate = startsAt !== null && !Number.isNaN(startsAt.getTime());
+
+          return (
+            <button
+              key={event.id}
+              type="button"
+              className="min-w-[220px] rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
+              disabled={!isValidDate}
+              onClick={() => {
+                if (startsAt && isValidDate) {
+                  onSelectDate(startsAt);
+                }
+              }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <Badge variant="outline" className="bg-card text-[11px]">
+                  {formatExternalEventTime(event.startsAt)}
+                </Badge>
+                <span className="truncate text-[11px] font-bold text-muted-foreground">
+                  {event.region
+                    ? getExternalRegionLabel(event.region)
+                    : getExternalCompactSourceLabel(event.sourceId)}
+                </span>
+              </div>
+              <p className="mt-2 line-clamp-2 text-sm font-black leading-tight">
+                {event.teamA || 'TBD'} vs {event.teamB || 'TBD'}
+              </p>
+              <p className="mt-2 truncate text-xs font-semibold text-muted-foreground">
+                {event.stage || event.series || event.tournament || '대회 정보 없음'}
+              </p>
+            </button>
+          );
+        })}
+      </div>
+    ) : (
+      <InlineEmptyState
+        className="mt-3"
+        title="다가오는 경기가 없습니다."
+        description="필터를 조정하거나 다른 지역을 선택해주세요."
+      />
+    )}
+  </div>
+);
+
+const ExternalScheduleActiveFilters = ({
+  onClearQuery,
+  onResetAll,
+  onResetRegion,
+  onResetSource,
+  onResetStatus,
+  query,
+  regionLabel,
+  regionValue,
+  sourceLabel,
+  sourceValue,
+  statusValue,
+  visibleEvents,
+}: {
+  onClearQuery: () => void;
+  onResetAll: () => void;
+  onResetRegion: () => void;
+  onResetSource: () => void;
+  onResetStatus: () => void;
+  query: string;
+  regionLabel: string;
+  regionValue: ExternalScheduleRegionFilter;
+  sourceLabel: string;
+  sourceValue: ExternalScheduleSourceFilter;
+  statusValue: ExternalScheduleStatusFilter;
+  visibleEvents: number;
+}) => {
+  const chips = [
+    regionValue !== 'all' ? { label: `지역 ${regionLabel}`, onRemove: onResetRegion } : null,
+    sourceValue !== 'all' ? { label: `출처 ${sourceLabel}`, onRemove: onResetSource } : null,
+    statusValue !== 'all'
+      ? {
+          label: `상태 ${getExternalScheduleStatusFilterLabel(statusValue)}`,
+          onRemove: onResetStatus,
+        }
+      : null,
+    query.trim() ? { label: `검색 ${query.trim()}`, onRemove: onClearQuery } : null,
+  ].filter((chip): chip is { label: string; onRemove: () => void } => chip !== null);
+
+  return (
+    <div className="border-b border-border/60 bg-card px-4 py-3 sm:px-5">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="text-xs font-bold text-muted-foreground">
+            현재 {visibleEvents.toLocaleString('ko-KR')}경기 표시
+          </span>
+          {chips.length > 0 ? (
+            chips.map((chip) => (
+              <button
+                key={chip.label}
+                type="button"
+                className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-2 text-xs font-bold transition-colors hover:border-primary/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
+                onClick={chip.onRemove}
+              >
+                <span className="truncate">{chip.label}</span>
+                <X className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              </button>
+            ))
+          ) : (
+            <Badge variant="outline" className="bg-transparent">
+              필터 없음
+            </Badge>
+          )}
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-fit"
+          disabled={chips.length === 0}
+          onClick={onResetAll}
+        >
+          전체 초기화
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+const ExternalScheduleSummaryStrip = ({
+  busiestDate,
+  events,
+  regionLabel,
+  statusCounts,
+}: {
+  busiestDate: { count: number; dateKey: string } | null;
+  events: ExternalEsportsEventItem[];
+  regionLabel: string;
+  statusCounts: { completed: number; live: number; scheduled: number };
+}) => {
+  const total = Math.max(1, events.length);
+
+  return (
+    <div className="border-b border-border/60 bg-card px-4 py-3 sm:px-5">
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <ExternalScheduleSummaryItem
+          icon={CalendarDays}
+          label={regionLabel}
+          value={`${events.length.toLocaleString('ko-KR')}경기`}
+          detail={`예정 ${statusCounts.scheduled.toLocaleString('ko-KR')} · 종료 ${statusCounts.completed.toLocaleString('ko-KR')}`}
+        />
+        <ExternalScheduleSummaryItem
+          icon={Clock3}
+          label="예정 비중"
+          value={`${Math.round((statusCounts.scheduled / total) * 100)}%`}
+          detail={`${statusCounts.scheduled.toLocaleString('ko-KR')}경기 대기 중`}
+        />
+        <ExternalScheduleSummaryItem
+          icon={ListOrdered}
+          label="가장 많은 날"
+          value={busiestDate ? `${busiestDate.count.toLocaleString('ko-KR')}경기` : '--'}
+          detail={busiestDate ? formatExternalFullDate(busiestDate.dateKey) : '일정 없음'}
+        />
+        <ExternalScheduleSummaryItem
+          icon={Globe2}
+          label="데이터 출처"
+          value={getExternalEventSourceSummary(events)}
+          detail="선택 지역 기준"
+        />
+      </div>
+    </div>
+  );
+};
+
+const ExternalScheduleSummaryItem = ({
+  detail,
+  icon: Icon,
+  label,
+  value,
+}: {
+  detail: string;
+  icon: LucideIcon;
+  label: string;
+  value: string;
+}) => (
+  <div className="min-w-0 rounded-md border border-border/60 bg-[hsl(var(--surface-2))] px-3 py-2.5">
+    <div className="flex items-start gap-2.5">
+      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/60 bg-card text-primary">
+        <Icon className="h-3.5 w-3.5" />
+      </div>
+      <div className="min-w-0">
+        <p className="truncate text-[11px] font-bold text-muted-foreground">{label}</p>
+        <p className="mt-0.5 truncate text-sm font-black">{value}</p>
+        <p className="mt-0.5 truncate text-[11px] font-semibold text-muted-foreground">{detail}</p>
+      </div>
+    </div>
+  </div>
+);
+
+const ExternalScheduleRegionTabs = ({
+  onChange,
+  options,
+  value,
+}: {
+  onChange: (value: ExternalScheduleRegionFilter) => void;
+  options: ExternalScheduleRegionOption[];
+  value: ExternalScheduleRegionFilter;
+}) => (
+  <div className="border-b border-border/60 bg-card px-4 py-3 sm:px-5">
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="min-w-0">
+        <p className="metric-label">지역</p>
+        <h3 className="mt-1 text-base font-bold">리그/지역별 일정</h3>
+      </div>
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 lg:justify-end">
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={value === option.value}
+            className={cn(
+              'min-w-[92px] shrink-0 rounded-md border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
+              value === option.value
+                ? 'border-primary/60 bg-primary/10 text-foreground'
+                : 'border-border/70 bg-[hsl(var(--surface-2))] text-muted-foreground hover:border-primary/30 hover:text-foreground',
+            )}
+            onClick={() => onChange(option.value)}
+          >
+            <span className="block truncate text-xs font-black">{option.label}</span>
+            <span className="mt-1 block truncate text-[11px] font-bold">
+              {option.count.toLocaleString('ko-KR')}경기
+              {option.upcomingCount > 0
+                ? ` · 예정 ${option.upcomingCount.toLocaleString('ko-KR')}`
+                : ''}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
+const ExternalNextEventFeature = ({
+  event,
+  now,
+}: {
+  event: ExternalEsportsEventItem | null;
+  now: number;
+}) => (
+  <div className="border-b border-border/60 bg-[hsl(var(--surface-2))] px-4 py-4 sm:px-5">
+    {event ? (
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-stretch">
+        <div className="min-w-0">
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="outline" className="bg-card">
+              다음 경기
+            </Badge>
+            <Badge variant="outline" className="bg-card">
+              {getExternalCompactSourceLabel(event.sourceId)}
+            </Badge>
+            {event.region ? (
+              <Badge variant="outline" className="bg-card">
+                {getExternalRegionLabel(event.region)}
+              </Badge>
+            ) : null}
+          </div>
+          <h3 className="mt-1 break-words text-2xl font-black leading-tight sm:text-3xl">
+            {event.teamA || 'TBD'} vs {event.teamB || 'TBD'}
+          </h3>
+          <p className="mt-2 text-sm font-semibold text-muted-foreground">
+            {[event.stage, event.series, event.tournament].filter(Boolean).join(' · ') ||
+              '대회 정보 없음'}
+          </p>
+        </div>
+        <div className="rounded-md border border-border/70 bg-card p-3">
+          <p className="metric-label">시작</p>
+          <p className="mt-1 text-lg font-black">
+            {event.startsAt ? formatExternalEventTime(event.startsAt) : '미정'}
+          </p>
+          <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+            {event.startsAt ? formatExternalFullDate(event.startsAt) : '일정 미정'}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Badge variant="outline" className="bg-transparent">
+              {formatExternalTimeUntil(event.startsAt, now)}
+            </Badge>
+            <Badge variant="outline" className="bg-transparent">
+              {getExternalEventStatusLabel(event.status)}
+            </Badge>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <ExternalWatchLinks urls={event.watchUrls} />
+          </div>
+        </div>
+      </div>
+    ) : (
+      <div className="min-w-0">
+        <p className="metric-label">다음 경기</p>
+        <h3 className="mt-1 text-xl font-bold">예정된 경기가 없습니다.</h3>
+      </div>
+    )}
+  </div>
+);
+
+const ExternalScheduleCalendar = ({
+  days,
+  eventsByDate,
+  hasNextEvent,
+  mode,
+  nextEventDateKey,
+  onGoToNextEvent,
+  onGoToToday,
+  onModeChange,
+  onMove,
+  onSelectDate,
+  selectedDate,
+  visibleDate,
+}: {
+  days: Date[];
+  eventsByDate: Map<string, ExternalEsportsEventItem[]>;
+  hasNextEvent: boolean;
+  mode: ExternalScheduleViewMode;
+  nextEventDateKey: string | null;
+  onGoToNextEvent: () => void;
+  onGoToToday: () => void;
+  onModeChange: (mode: ExternalScheduleViewMode) => void;
+  onMove: (direction: -1 | 1) => void;
+  onSelectDate: (dateKey: string) => void;
+  selectedDate: string;
+  visibleDate: Date;
+}) => {
+  const today = formatDateValue(new Date());
+
+  return (
+    <div className="border-b border-border/60 bg-card px-4 py-4 sm:px-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="metric-label">캘린더</p>
+          <h3 className="mt-1 text-base font-bold">
+            {formatExternalDateRangeLabel(visibleDate, mode)}
+          </h3>
+        </div>
+        <div className="flex flex-wrap gap-2 sm:justify-end">
+          <Button variant="outline" size="sm" className="bg-transparent" onClick={onGoToToday}>
+            오늘
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="bg-transparent"
+            disabled={!hasNextEvent}
+            onClick={onGoToNextEvent}
+          >
+            다음 경기
+          </Button>
+          <div className="grid grid-cols-2 overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-1">
+            {(['month', 'week'] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={cn(
+                  'h-8 min-w-[54px] rounded-[5px] px-2 text-xs font-bold transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
+                  mode === option ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
+                )}
+                onClick={() => onModeChange(option)}
+              >
+                {option === 'month' ? '월간' : '주간'}
+              </button>
+            ))}
+          </div>
+          <div className="flex rounded-md border border-border/70 bg-card">
+            <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => onMove(-1)}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => onMove(1)}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-7 gap-1">
+        {calendarWeekdayLabels.map((label) => (
+          <span
+            key={label}
+            className="flex h-7 items-center justify-center text-[11px] font-bold text-muted-foreground"
+          >
+            {label}
+          </span>
+        ))}
+        {days.map((date) => {
+          const dateKey = formatDateValue(date);
+          const events = eventsByDate.get(dateKey) ?? [];
+          const isOutsideMonth = mode === 'month' && date.getMonth() !== visibleDate.getMonth();
+          const isSelected = dateKey === selectedDate;
+          const isToday = dateKey === today;
+          const isNextEventDate = dateKey === nextEventDateKey;
+
+          return (
+            <ExternalScheduleCalendarDay
+              key={dateKey}
+              date={date}
+              events={events}
+              isNextEventDate={isNextEventDate}
+              isOutsideMonth={isOutsideMonth}
+              isSelected={isSelected}
+              isToday={isToday}
+              mode={mode}
+              onSelect={() => onSelectDate(dateKey)}
+            />
+          );
+        })}
+      </div>
+      <ExternalScheduleLegend />
+    </div>
+  );
+};
+
+const ExternalScheduleCalendarDay = ({
+  date,
+  events,
+  isNextEventDate,
+  isOutsideMonth,
+  isSelected,
+  isToday,
+  mode,
+  onSelect,
+}: {
+  date: Date;
+  events: ExternalEsportsEventItem[];
+  isNextEventDate: boolean;
+  isOutsideMonth: boolean;
+  isSelected: boolean;
+  isToday: boolean;
+  mode: ExternalScheduleViewMode;
+  onSelect: () => void;
+}) => {
+  const counts = getExternalEventStatusCounts(events);
+
+  return (
+    <button
+      type="button"
+      className={cn(
+        'flex min-w-0 flex-col items-start rounded-md border border-border/50 bg-[hsl(var(--surface-2))] p-1.5 text-left transition-[border-color,background-color,box-shadow] hover:border-primary/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
+        mode === 'week' ? 'min-h-[96px]' : 'min-h-[76px]',
+        isOutsideMonth && 'opacity-45',
+        isNextEventDate && !isSelected && 'border-primary/55 bg-primary/[0.07]',
+        isSelected &&
+          'border-primary/70 bg-primary/10 shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.18)]',
+        isToday && !isSelected && 'border-primary/30',
+      )}
+      aria-label={`${formatExternalFullDate(formatDateValue(date))} ${events.length.toLocaleString(
+        'ko-KR',
+      )}경기`}
+      onClick={onSelect}
+    >
+      <span className="text-xs font-black">{date.getDate()}</span>
+      <span className="mt-auto text-[11px] font-bold text-muted-foreground">
+        {events.length > 0 ? `${events.length}경기` : ''}
+      </span>
+      <ExternalEventStatusDots counts={counts} />
+    </button>
+  );
+};
+
+const ExternalEventStatusDots = ({
+  counts,
+}: {
+  counts: { completed: number; live: number; scheduled: number };
+}) => (
+  <span className="mt-1 flex h-2.5 items-center gap-1">
+    {counts.scheduled > 0 ? <span className="h-2 w-2 rounded-full bg-primary" /> : null}
+    {counts.live > 0 ? <span className="h-2 w-2 rounded-full bg-[hsl(var(--success))]" /> : null}
+    {counts.completed > 0 ? <span className="h-2 w-2 rounded-full bg-muted-foreground/55" /> : null}
+  </span>
+);
+
+const ExternalScheduleLegend = () => (
+  <div className="mt-3 flex flex-wrap gap-3 text-[11px] font-bold text-muted-foreground">
+    <span className="inline-flex items-center gap-1.5">
+      <span className="h-2 w-2 rounded-full bg-primary" />
+      예정
+    </span>
+    <span className="inline-flex items-center gap-1.5">
+      <span className="h-2 w-2 rounded-full bg-[hsl(var(--success))]" />
+      진행
+    </span>
+    <span className="inline-flex items-center gap-1.5">
+      <span className="h-2 w-2 rounded-full bg-muted-foreground/55" />
+      종료
+    </span>
+  </div>
+);
+
+const ExternalSelectedDateEvents = ({
+  dateKey,
+  events,
+  regionLabel,
+}: {
+  dateKey: string;
+  events: ExternalEsportsEventItem[];
+  regionLabel: string;
+}) => {
+  const counts = getExternalEventStatusCounts(events);
+
+  return (
+    <div className="bg-card px-4 py-4 sm:px-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="metric-label">선택 날짜</p>
+          <h3 className="mt-1 text-base font-bold">{formatExternalFullDate(dateKey)}</h3>
+          <p className="mt-1 text-xs font-semibold text-muted-foreground">{regionLabel} 일정</p>
+        </div>
+        <div className="flex flex-wrap gap-2 sm:justify-end">
+          <Badge variant="outline" className="w-fit bg-transparent">
+            {events.length.toLocaleString('ko-KR')}경기
+          </Badge>
+          {events.length > 0 ? (
+            <>
+              <Badge variant="outline" className="w-fit bg-transparent">
+                예정 {counts.scheduled.toLocaleString('ko-KR')}
+              </Badge>
+              <Badge variant="outline" className="w-fit bg-transparent">
+                진행 {counts.live.toLocaleString('ko-KR')}
+              </Badge>
+              <Badge variant="outline" className="w-fit bg-transparent">
+                종료 {counts.completed.toLocaleString('ko-KR')}
+              </Badge>
+            </>
+          ) : null}
+        </div>
+      </div>
+
+      {events.length > 0 ? (
+        <div className="mt-3 grid gap-2">
+          {events.map((event) => (
+            <ExternalEsportsEventRow key={event.id} event={event} />
+          ))}
+        </div>
+      ) : (
+        <InlineEmptyState
+          className="mt-4"
+          title="선택한 날짜에 경기가 없습니다."
+          description="캘린더에서 경기 수가 표시된 날짜를 선택해주세요."
+        />
+      )}
+    </div>
+  );
+};
+
+export const ExternalDataKindPanel = ({
+  isLoading,
+  sourceCards,
+  sources,
+}: {
+  isLoading: boolean;
+  sourceCards: ExternalSourceCardModel[];
   sources: ExternalSource[];
 }) => {
-  const latestHeroRateFetchedAt = getLatestExternalTimestamp(
-    heroRates.map((snapshot) => snapshot.fetchedAt),
-  );
-  const latestEsportsFetchedAt = getLatestExternalTimestamp(
-    esportsEvents.map((event) => event.fetchedAt),
-  );
-  const statusItems = [
-    {
-      detail: latestHeroRateFetchedAt
-        ? formatExternalDateTime(latestHeroRateFetchedAt)
-        : '아직 저장된 스냅샷 없음',
-      label: '영웅 메타',
-      value: heroRates.length > 0 ? `${heroRates.length.toLocaleString('ko-KR')}개` : '대기',
-    },
-    {
-      detail: latestEsportsFetchedAt
-        ? formatExternalDateTime(latestEsportsFetchedAt)
-        : '아직 저장된 일정 없음',
-      label: 'e스포츠',
-      value:
-        esportsEvents.length > 0 ? `${esportsEvents.length.toLocaleString('ko-KR')}개` : '대기',
-    },
+  const pendingCards = [
     {
       detail: sources.some((source) => source.id === 'overfast')
-        ? 'OverFast 소스 연결됨'
-        : '소스 연결 대기',
+        ? '공개 프로필 데이터가 연결되면 작게 표시합니다.'
+        : '프로필 소스 연결 후 표시합니다.',
+      icon: UsersRound,
       label: '플레이어 프로필',
-      value: '다음 단계',
+      status: '준비 중',
+    },
+    {
+      detail: '영웅 목록과 로컬 기준 데이터 비교는 작은 상태로만 유지합니다.',
+      icon: Layers3,
+      label: '마스터 데이터',
+      status: sources.some((source) => source.id === 'blizzard_heroes') ? '연결됨' : '대기',
     },
   ];
 
   return (
-    <aside className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
-      <div className="flex items-start justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
-        <div className="min-w-0">
-          <p className="metric-label">수집 상태</p>
-          <h2 className="mt-1 text-lg font-bold">저장된 외부 데이터</h2>
-        </div>
-        <Badge variant="outline" className="bg-transparent">
-          {isFetching ? '동기화 중' : '조회됨'}
-        </Badge>
+    <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+      <div className="border-b border-border/60 px-4 py-3 sm:px-5">
+        <p className="metric-label">보조 정보</p>
+        <h2 className="mt-1 text-lg font-bold">소스와 준비 중인 데이터</h2>
       </div>
-      <div className="px-4 py-1 sm:px-5">
-        {statusItems.map((item) => (
-          <div key={item.label} className="border-b border-border/60 py-4 last:border-b-0">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-bold">{item.label}</p>
-                <p className="mt-1 text-xs font-semibold text-muted-foreground">{item.detail}</p>
+      <div className="grid gap-px bg-border/60 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        {isLoading
+          ? Array.from({ length: 6 }, (_, index) => (
+              <div key={index} className="bg-card p-3.5">
+                <SkeletonBlock className="h-3 w-20" />
+                <SkeletonBlock className="mt-3 h-5 w-32" />
+                <SkeletonBlock className="mt-3 h-3 w-32" />
               </div>
-              <Badge variant="outline" className="shrink-0 bg-transparent">
-                {item.value}
-              </Badge>
-            </div>
-          </div>
-        ))}
+            ))
+          : [
+              ...sourceCards.map((card) => (
+                <ExternalCompactSourceCard key={card.source.id} card={card} />
+              )),
+              ...pendingCards.map((card) => (
+                <ExternalPreparedDataCard key={card.label} {...card} />
+              )),
+            ]}
       </div>
-    </aside>
+    </section>
   );
 };
 
-const ExternalLoadedDataPanel = ({
-  esportsEvents,
-  heroRates,
-  isLoading,
-}: {
-  esportsEvents: ExternalEsportsEventItem[];
-  heroRates: ExternalHeroRateItem[];
-  isLoading: boolean;
-}) => (
-  <div className="grid gap-4 xl:grid-cols-2">
-    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
-      <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-        <p className="metric-label">영웅 메타</p>
-        <h2 className="mt-1 text-lg font-bold">최근 글로벌 스냅샷</h2>
-      </div>
-      <div className="px-4 py-1 sm:px-5">
-        {isLoading ? (
-          <ExternalRowsSkeleton rows={5} />
-        ) : heroRates.length > 0 ? (
-          heroRates
-            .slice(0, 8)
-            .map((snapshot) => <ExternalHeroRateRow key={snapshot.id} snapshot={snapshot} />)
-        ) : (
-          <InlineEmptyState
-            className="my-4"
-            title="영웅 메타 스냅샷이 없습니다."
-            description="수집 작업이 추가되면 Blizzard Hero Statistics 기반 데이터가 여기에 표시됩니다."
-          />
-        )}
-      </div>
-    </div>
+const ExternalEsportsEventRow = ({ event }: { event: ExternalEsportsEventItem }) => {
+  const scoreLabel =
+    event.status === 'completed' && event.scoreA !== null && event.scoreB !== null
+      ? `${event.scoreA} - ${event.scoreB}`
+      : 'vs';
 
-    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
-      <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-        <p className="metric-label">e스포츠</p>
-        <h2 className="mt-1 text-lg font-bold">최근 일정 데이터</h2>
+  return (
+    <article className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3 transition-colors hover:border-primary/30">
+      <div className="grid gap-3 md:grid-cols-[84px_minmax(0,1fr)_auto] md:items-start">
+        <div className="min-w-0 rounded-md border border-border/60 bg-card px-2.5 py-2">
+          <p className="text-sm font-black">{formatExternalEventTime(event.startsAt)}</p>
+          <div className="mt-1 flex items-center gap-1.5">
+            <span
+              className={cn(
+                'h-2 w-2 rounded-full',
+                event.status === 'completed'
+                  ? 'bg-muted-foreground/55'
+                  : event.status === 'live'
+                    ? 'bg-[hsl(var(--success))]'
+                    : 'bg-primary',
+              )}
+            />
+            <span className="truncate text-[11px] font-bold text-muted-foreground">
+              {getExternalEventStatusLabel(event.status)}
+            </span>
+          </div>
+        </div>
+        <div className="min-w-0">
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="outline" className="bg-card">
+              {getExternalCompactSourceLabel(event.sourceId)}
+            </Badge>
+            {event.region ? (
+              <Badge variant="outline" className="bg-card">
+                {getExternalRegionLabel(event.region)}
+              </Badge>
+            ) : null}
+          </div>
+          <p className="mt-2 truncate text-xs font-semibold text-muted-foreground">
+            {event.stage || 'Stage 미정'}
+          </p>
+          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2">
+            <span className="break-words text-base font-black leading-tight">
+              {event.teamA || 'TBD'}
+            </span>
+            <Badge variant="outline" className="bg-card px-2 font-black">
+              {scoreLabel}
+            </Badge>
+            <span className="break-words text-base font-black leading-tight">
+              {event.teamB || 'TBD'}
+            </span>
+          </div>
+          <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+            {event.series || event.tournament || '대회 정보 없음'}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
+          <ExternalWatchLinks urls={event.watchUrls} />
+        </div>
       </div>
-      <div className="px-4 py-1 sm:px-5">
-        {isLoading ? (
-          <ExternalRowsSkeleton rows={5} />
-        ) : esportsEvents.length > 0 ? (
-          esportsEvents
-            .slice(0, 8)
-            .map((event) => <ExternalEsportsEventRow key={event.id} event={event} />)
-        ) : (
-          <InlineEmptyState
-            className="my-4"
-            title="e스포츠 일정 데이터가 없습니다."
-            description="공식 e스포츠 소스 수집 작업이 추가되면 일정과 경기 상태가 표시됩니다."
-          />
-        )}
-      </div>
-    </div>
-  </div>
-);
+    </article>
+  );
+};
 
-const ExternalHeroRateRow = ({ snapshot }: { snapshot: ExternalHeroRateItem }) => (
-  <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-3 border-b border-border/60 py-4 last:border-b-0">
-    <div className="min-w-0">
-      <p className="truncate text-sm font-bold">{getExternalHeroLabel(snapshot.heroId)}</p>
-      <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-        {getExternalRoleLabel(snapshot.role)} · {snapshot.gamemode} · {snapshot.tier}
-      </p>
-      <p className="mt-2 truncate text-xs font-semibold text-muted-foreground">
-        {formatExternalDateTime(snapshot.fetchedAt)}
-      </p>
-    </div>
-    <div className="grid grid-cols-2 gap-2 text-right">
-      <div>
-        <p className="metric-label">픽률</p>
-        <p className="mt-1 text-sm font-bold">{formatExternalPercent(snapshot.pickRate)}</p>
-      </div>
-      <div>
-        <p className="metric-label">승률</p>
-        <p className="mt-1 text-sm font-bold">{formatExternalPercent(snapshot.winRate)}</p>
-      </div>
-    </div>
-  </div>
-);
-
-const ExternalEsportsEventRow = ({ event }: { event: ExternalEsportsEventItem }) => (
-  <div className="border-b border-border/60 py-4 last:border-b-0">
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-bold">
-          {event.teamA && event.teamB
-            ? `${event.teamA} vs ${event.teamB}`
-            : event.tournament || '일정 이름 없음'}
-        </p>
-        <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-          {[event.tournament, event.stage, event.series].filter(Boolean).join(' · ') ||
-            '대회 정보 없음'}
-        </p>
-        <p className="mt-2 text-xs font-semibold text-muted-foreground">
-          {event.startsAt ? formatExternalDateTime(event.startsAt) : '일정 미정'}
-        </p>
-      </div>
-      <Badge variant="outline" className="shrink-0 bg-transparent">
-        {getExternalEventStatusLabel(event.status)}
-      </Badge>
-    </div>
-  </div>
+const ExternalWatchLinks = ({ urls }: { urls: string[] }) => (
+  <>
+    {urls.slice(0, 2).map((url) => (
+      <Button key={url} asChild variant="outline" size="sm" className="bg-card">
+        <a href={url} target="_blank" rel="noreferrer">
+          <ExternalLink className="h-4 w-4" />
+          {getExternalWatchLinkLabel(url)}
+        </a>
+      </Button>
+    ))}
+  </>
 );
 
 const ExternalRowsSkeleton = ({ rows }: { rows: number }) => (
@@ -3839,10 +6642,6 @@ const chartSkeletonWidths = [
 ];
 
 const StatsSectionSkeleton = ({ section }: { section: StatsSection }) => {
-  if (section === 'external') {
-    return <ExternalDataStatsSkeleton />;
-  }
-
   return (
     <section className="min-w-0 space-y-4">
       <StatsFilterPanelSkeleton includeMode={section !== 'modes'} />
@@ -4000,20 +6799,6 @@ const SummaryStatsSkeleton = () => (
       </div>
     </div>
   </div>
-);
-
-const ExternalDataStatsSkeleton = () => (
-  <section className="min-w-0 space-y-4">
-    <StatsMetricGridSkeleton />
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
-      <StatsMediaRowsSkeleton />
-      <StatsListPanelSkeleton rows={3} />
-    </div>
-    <div className="grid gap-4 xl:grid-cols-2">
-      <StatsListPanelSkeleton rows={5} />
-      <StatsListPanelSkeleton rows={5} />
-    </div>
-  </section>
 );
 
 const StatsMetricGridSkeleton = () => (
