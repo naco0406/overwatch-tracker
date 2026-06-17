@@ -30,6 +30,12 @@ const ExternalDataPage = lazy(() =>
   import('@/pages/ExternalDataPage').then((module) => ({ default: module.ExternalDataPage })),
 );
 
+const ExternalEsportsMatchPage = lazy(() =>
+  import('@/pages/ExternalEsportsMatchPage').then((module) => ({
+    default: module.ExternalEsportsMatchPage,
+  })),
+);
+
 const LazyPage = ({ children }: { children: ReactNode }) => (
   <Suspense
     fallback={<div className="text-sm font-semibold text-muted-foreground">불러오는 중</div>}
@@ -86,7 +92,7 @@ const AppRoutes = () => (
           }
         />
         <Route path="/stats" element={<Navigate to="/stats/maps" replace />} />
-        <Route path="/stats/external" element={<Navigate to="/external-data/overview" replace />} />
+        <Route path="/stats/external" element={<Navigate to="/external-data/sources" replace />} />
         <Route
           path="/stats/:section"
           element={
@@ -95,7 +101,20 @@ const AppRoutes = () => (
             </LazyPage>
           }
         />
-        <Route path="/external-data" element={<Navigate to="/external-data/overview" replace />} />
+        <Route path="/external-data" element={<Navigate to="/external-data/sources" replace />} />
+        <Route
+          path="/external-data/overview"
+          element={<Navigate to="/external-data/sources" replace />}
+        />
+        <Route path="/external-data/assets" element={<MasterDataPage />} />
+        <Route
+          path="/external-data/esports/matches/:eventId"
+          element={
+            <LazyPage>
+              <ExternalEsportsMatchPage />
+            </LazyPage>
+          }
+        />
         <Route
           path="/external-data/:section"
           element={
@@ -104,7 +123,7 @@ const AppRoutes = () => (
             </LazyPage>
           }
         />
-        <Route path="/master-data" element={<MasterDataPage />} />
+        <Route path="/master-data" element={<Navigate to="/external-data/assets" replace />} />
         <Route path="/settings" element={<Navigate to="/settings/account" replace />} />
         <Route path="/settings/:section" element={<SettingsPage />} />
       </Route>

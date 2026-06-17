@@ -18,6 +18,39 @@ interface ExternalEsportsEventsResponse {
   esportsEvents?: ExternalEsportsEvent[];
 }
 
+export type ExternalCollectTarget =
+  | 'all'
+  | 'esports-events'
+  | 'global-hero-rates'
+  | 'official-esports-events'
+  | 'owtics-esports-events';
+
+export interface ExternalCollectRequest {
+  assetLimit?: number;
+  detailLimit?: number;
+  detailOffset?: number;
+  target?: ExternalCollectTarget;
+}
+
+export interface ExternalCollectResponse {
+  ok: boolean;
+  results: Array<{
+    error?: string;
+    finishedAt?: string;
+    insertedCount?: number;
+    jobKey?: string;
+    metadata?: Record<string, unknown>;
+    sourceId?: string;
+    startedAt?: string;
+    status?: string;
+  }>;
+  summary?: {
+    failed: number;
+    inserted: number;
+    jobs: number;
+  };
+}
+
 class ExternalDataApiError extends Error {
   status?: number;
 
@@ -45,7 +78,10 @@ const getResponseErrorMessage = (body: unknown, fallback: string) => {
   return fallback;
 };
 
-const fetchExternalJson = async <TResponse>(path: string): Promise<TResponse> => {
+const fetchExternalJson = async <TResponse>(
+  path: string,
+  init: RequestInit = {},
+): Promise<TResponse> => {
   const baseUrl = getExternalDataApiBaseUrl();
 
   if (!baseUrl) {
@@ -54,8 +90,10 @@ const fetchExternalJson = async <TResponse>(path: string): Promise<TResponse> =>
 
   const response = await fetch(`${baseUrl}${path}`, {
     cache: 'no-store',
+    ...init,
     headers: {
       Accept: 'application/json',
+      ...(init.headers ?? {}),
     },
   });
   const body = (await response.json().catch(() => null)) as unknown;
@@ -108,9 +146,9 @@ const listExternalSources = async () => {
 };
 
 const getEsportsEventsPath = () => {
-  const from = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
+  const from = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
 
-  return `/external/esports-events?from=${encodeURIComponent(from)}&limit=240`;
+  return `/external/esports-events?from=${encodeURIComponent(from)}&limit=800`;
 };
 
 const getExternalDataOverview = async (): Promise<ExternalDataOverview> => {
@@ -143,7 +181,35 @@ const getExternalDataOverview = async (): Promise<ExternalDataOverview> => {
   };
 };
 
+const collectExternalData = async ({
+  assetLimit,
+  detailLimit,
+  detailOffset,
+  target = 'all',
+}: ExternalCollectRequest = {}): Promise<ExternalCollectResponse> => {
+  const params = new URLSearchParams({
+    trigger: 'ui',
+  });
+
+  if (typeof detailLimit === 'number') {
+    params.set('detailLimit', String(detailLimit));
+  }
+
+  if (typeof detailOffset === 'number') {
+    params.set('detailOffset', String(detailOffset));
+  }
+
+  if (typeof assetLimit === 'number') {
+    params.set('assetLimit', String(assetLimit));
+  }
+
+  return fetchExternalJson<ExternalCollectResponse>(`/external/collect/${target}?${params}`, {
+    method: 'POST',
+  });
+};
+
 export {
+  collectExternalData,
   ExternalDataApiError,
   getExternalDataApiBaseUrl,
   getExternalDataOverview,

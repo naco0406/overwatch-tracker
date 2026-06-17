@@ -1,12 +1,9 @@
-import type { LucideIcon } from 'lucide-react';
 import {
   Activity,
   BarChart3,
   CalendarDays,
-  ChevronRight,
   Clock3,
   Database,
-  Gauge,
   Globe2,
   Layers3,
   Loader2,
@@ -28,8 +25,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { heroOptions, roleLabels } from '@/data/matchOptions';
 import { getHeroPortraitPath } from '@/data/masterAssets';
-import { useExternalDataOverview } from '@/hooks/useExternalData';
-import { isExternalDataApiConfigured } from '@/lib/externalDataApi';
+import { toast } from '@/hooks/use-toast';
+import { useCollectExternalData, useExternalDataOverview } from '@/hooks/useExternalData';
+import {
+  isExternalDataApiConfigured,
+  type ExternalCollectRequest,
+  type ExternalCollectResponse,
+} from '@/lib/externalDataApi';
 import { cn } from '@/lib/utils';
 import type {
   ExternalDataOverview,
@@ -53,11 +55,11 @@ import {
 
 const externalDataSections = [
   {
-    description: '세부 브라우저로 들어가기 전 연결 상태, 최신성, 누락 여부만 점검합니다.',
-    eyebrow: 'External Data',
-    label: '개요',
-    title: '외부 데이터',
-    value: 'overview',
+    description: '공식/서드파티 소스, TTL, 제공 데이터, 수집 최신성을 레지스트리로 봅니다.',
+    eyebrow: 'Sources',
+    label: '데이터 소스 현황',
+    title: '데이터 소스 현황',
+    value: 'sources',
   },
   {
     description: '공식 일정과 OWTICS 보강 일정을 날짜, 지역, 경기 상태 기준으로 봅니다.',
@@ -73,12 +75,14 @@ const externalDataSections = [
     title: '영웅 메타',
     value: 'heroes',
   },
+] as const;
+
+const externalDataNavSections = [
+  ...externalDataSections,
   {
-    description: '공식/서드파티 소스, TTL, 제공 데이터, 수집 최신성을 레지스트리로 봅니다.',
-    eyebrow: 'Sources',
-    label: '데이터 소스',
-    title: '데이터 소스',
-    value: 'sources',
+    label: '오버워치 에셋',
+    to: '/external-data/assets',
+    value: 'assets',
   },
 ] as const;
 
@@ -102,16 +106,6 @@ interface ExternalRoleCoverageRow {
   count: number;
   label: string;
   role: MatchRole;
-}
-
-interface ExternalRouteCardModel {
-  actionLabel: string;
-  detail: string;
-  icon: LucideIcon;
-  label: string;
-  status: string;
-  to: string;
-  value: string;
 }
 
 const externalSourceTypeLabels = {
@@ -203,12 +197,6 @@ const createExternalMetrics = ({
     },
   ];
 };
-
-const getExternalOverviewLatestAt = (overview?: ExternalDataOverview) =>
-  getLatestExternalTimestamp([
-    ...(overview?.heroRates ?? []).map((snapshot) => snapshot.fetchedAt),
-    ...(overview?.esportsEvents ?? []).map((event) => event.fetchedAt),
-  ]);
 
 const getExternalFreshnessLabel = (value: string | null) => {
   if (!value) {
@@ -487,23 +475,191 @@ const getSourceCardLatestAt = (cards: ExternalSourceCardModel[]) =>
     cards.map((card) => card.latestAt).filter((value): value is string => Boolean(value)),
   );
 
+const OWTICS_ASSET_BATCH_SIZE = 12;
+const OWTICS_DETAIL_BATCH_SIZE = 4;
+const OWTICS_DETAIL_MAX_BATCHES = 120;
+
+const getCollectMetadataNumber = (metadata: Record<string, unknown> | undefined, key: string) => {
+  const value = metadata?.[key];
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const numberValue = Number(value);
+
+    return Number.isFinite(numberValue) ? numberValue : null;
+  }
+
+  return null;
+};
+
+const getOwticsCollectBatchState = (response: ExternalCollectResponse) => {
+  const result = response.results.find((item) => item.sourceId === 'owtics');
+
+  if (!result) {
+    return null;
+  }
+
+  return {
+    failed: getCollectMetadataNumber(result.metadata, 'detailFailedCount') ?? 0,
+    fetched: getCollectMetadataNumber(result.metadata, 'detailFetchedCount') ?? 0,
+    limit: getCollectMetadataNumber(result.metadata, 'detailLimit') ?? OWTICS_DETAIL_BATCH_SIZE,
+    offset: getCollectMetadataNumber(result.metadata, 'detailOffset') ?? 0,
+    requested: getCollectMetadataNumber(result.metadata, 'detailRequestedCount') ?? 0,
+    total: getCollectMetadataNumber(result.metadata, 'detailTotalCount'),
+  };
+};
+
+const summarizeExternalCollectionResponses = (responses: ExternalCollectResponse[]) => {
+  const results = responses.flatMap((response) => response.results);
+  const detailFetched = results.reduce(
+    (sum, result) => sum + (getCollectMetadataNumber(result.metadata, 'detailFetchedCount') ?? 0),
+    0,
+  );
+  const detailFailed = results.reduce(
+    (sum, result) => sum + (getCollectMetadataNumber(result.metadata, 'detailFailedCount') ?? 0),
+    0,
+  );
+  const assetFailed = results.reduce(
+    (sum, result) => sum + (getCollectMetadataNumber(result.metadata, 'assetFailedCount') ?? 0),
+    0,
+  );
+  const assetHit = results.reduce(
+    (sum, result) => sum + (getCollectMetadataNumber(result.metadata, 'assetHitCount') ?? 0),
+    0,
+  );
+  const assetUploaded = results.reduce(
+    (sum, result) => sum + (getCollectMetadataNumber(result.metadata, 'assetUploadedCount') ?? 0),
+    0,
+  );
+
+  return {
+    assetFailed,
+    assetHit,
+    assetUploaded,
+    detailFailed,
+    detailFetched,
+    failed: results.filter((result) => result.status !== 'success').length,
+    inserted: results.reduce((sum, result) => sum + (result.insertedCount ?? 0), 0),
+    jobs: results.length,
+    ok: responses.every((response) => response.ok),
+  };
+};
+
+const formatExternalCollectionSummary = (
+  summary: ReturnType<typeof summarizeExternalCollectionResponses>,
+) => {
+  const detailTotal = summary.detailFetched + summary.detailFailed;
+  const detailLabel =
+    detailTotal > 0 ? ` · OWTICS 상세 ${summary.detailFetched.toLocaleString('ko-KR')}개 보강` : '';
+  const assetTotal = summary.assetUploaded + summary.assetHit + summary.assetFailed;
+  const assetLabel =
+    assetTotal > 0
+      ? ` · 로고 ${summary.assetUploaded.toLocaleString('ko-KR')}개 저장 · 캐시 ${summary.assetHit.toLocaleString('ko-KR')}`
+      : '';
+
+  return `${summary.jobs.toLocaleString('ko-KR')}개 작업 · ${summary.inserted.toLocaleString('ko-KR')}개 반영 · 실패 ${summary.failed.toLocaleString('ko-KR')}${detailLabel}${assetLabel}`;
+};
+
 const ExternalDataPage = () => {
   const { section } = useParams();
-  const activeSection = isExternalDataSection(section) ? section : 'overview';
+  const activeSection = isExternalDataSection(section) ? section : 'sources';
   const activeSectionMeta =
     externalDataSections.find((item) => item.value === activeSection) ?? externalDataSections[0];
   const isConfigured = isExternalDataApiConfigured();
   const { data: overview, error, isFetching, isLoading, refetch } = useExternalDataOverview(true);
+  const collectExternalDataMutation = useCollectExternalData();
+  const [collectionProgressLabel, setCollectionProgressLabel] = useState<string | null>(null);
   const sources = overview?.sources ?? [];
   const heroRates = overview?.heroRates ?? [];
   const esportsEvents = overview?.esportsEvents ?? [];
   const warnings = overview?.warnings ?? [];
   const sourceCards = createExternalSourceCards(sources, heroRates, esportsEvents);
   const fallbackMetrics = createExternalMetrics({ isConfigured, isLoading, overview });
+  const isCollectingExternalData =
+    collectExternalDataMutation.isPending || collectionProgressLabel !== null;
 
   if (section && !isExternalDataSection(section)) {
-    return <Navigate to="/external-data/overview" replace />;
+    return <Navigate to="/external-data/sources" replace />;
   }
+
+  const handleCollectExternalData = async () => {
+    const responses: ExternalCollectResponse[] = [];
+    const runStep = async (request: ExternalCollectRequest, label: string) => {
+      setCollectionProgressLabel(label);
+      const response = await collectExternalDataMutation.mutateAsync(request);
+      responses.push(response);
+
+      return response;
+    };
+    const runOwticsDetailBatches = async () => {
+      let detailOffset = 0;
+      let detailTotal: number | null = null;
+
+      for (let batchIndex = 0; batchIndex < OWTICS_DETAIL_MAX_BATCHES; batchIndex += 1) {
+        const rangeStart = detailOffset + 1;
+        const rangeEnd =
+          detailTotal === null
+            ? detailOffset + OWTICS_DETAIL_BATCH_SIZE
+            : Math.min(detailOffset + OWTICS_DETAIL_BATCH_SIZE, detailTotal);
+        const totalLabel = detailTotal === null ? '' : `/${detailTotal.toLocaleString('ko-KR')}`;
+        const response = await runStep(
+          {
+            assetLimit: OWTICS_ASSET_BATCH_SIZE,
+            detailLimit: OWTICS_DETAIL_BATCH_SIZE,
+            detailOffset,
+            target: 'owtics-esports-events',
+          },
+          `OWTICS 상세 ${rangeStart.toLocaleString('ko-KR')}-${rangeEnd.toLocaleString('ko-KR')}${totalLabel}`,
+        );
+        const batchState = getOwticsCollectBatchState(response);
+
+        if (!batchState || batchState.requested <= 0) {
+          break;
+        }
+
+        detailTotal = batchState.total ?? detailTotal;
+        const nextOffset = batchState.offset + batchState.limit;
+
+        if (nextOffset <= detailOffset || (detailTotal !== null && nextOffset >= detailTotal)) {
+          break;
+        }
+
+        detailOffset = nextOffset;
+      }
+    };
+
+    try {
+      if (activeSection === 'sources' || activeSection === 'heroes') {
+        await runStep({ target: 'global-hero-rates' }, '영웅 메타 수집');
+      }
+
+      if (activeSection === 'sources' || activeSection === 'esports') {
+        await runStep({ target: 'official-esports-events' }, '공식 일정 수집');
+        await runOwticsDetailBatches();
+      }
+
+      const summary = summarizeExternalCollectionResponses(responses);
+
+      toast({
+        title: summary.ok ? '외부 데이터 수집 완료' : '외부 데이터 수집 일부 실패',
+        description: formatExternalCollectionSummary(summary),
+        variant: summary.ok ? 'default' : 'destructive',
+      });
+      void refetch();
+    } catch (collectError) {
+      toast({
+        title: '외부 데이터 수집 실패',
+        description:
+          collectError instanceof Error ? collectError.message : '수집 작업을 실행하지 못했습니다.',
+        variant: 'destructive',
+      });
+    } finally {
+      setCollectionProgressLabel(null);
+    }
+  };
 
   return (
     <div className="page-stack">
@@ -512,19 +668,33 @@ const ExternalDataPage = () => {
         title={activeSectionMeta.title}
         description={activeSectionMeta.description}
         actions={
-          <Button
-            variant="outline"
-            className="bg-transparent"
-            disabled={isFetching || !isConfigured}
-            onClick={() => void refetch()}
-          >
-            {isFetching ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-            새로고침
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="default"
+              disabled={isCollectingExternalData || !isConfigured}
+              onClick={() => void handleCollectExternalData()}
+            >
+              {isCollectingExternalData ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Database className="h-4 w-4" />
+              )}
+              {collectionProgressLabel ?? '수집 실행'}
+            </Button>
+            <Button
+              variant="outline"
+              className="bg-transparent"
+              disabled={isFetching || !isConfigured || isCollectingExternalData}
+              onClick={() => void refetch()}
+            >
+              {isFetching ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              새로고침
+            </Button>
+          </div>
         }
       />
 
@@ -556,13 +726,10 @@ const ExternalDataPage = () => {
           activeSection={activeSection}
           esportsEvents={esportsEvents}
           heroRates={heroRates}
-          isFetching={isFetching}
           isLoading={isLoading}
-          overview={overview}
           sourceCards={sourceCards}
           sources={sources}
           warnings={warnings}
-          onRefresh={() => void refetch()}
         />
       )}
     </div>
@@ -571,10 +738,10 @@ const ExternalDataPage = () => {
 
 const ExternalDataSectionNav = ({ activeSection }: { activeSection: ExternalDataSection }) => (
   <nav className="mobile-scroll flex gap-2 overflow-x-auto">
-    {externalDataSections.map((item) => (
+    {externalDataNavSections.map((item) => (
       <NavLink
         key={item.value}
-        to={`/external-data/${item.value}`}
+        to={item.value === 'assets' ? item.to : `/external-data/${item.value}`}
         className={cn(
           'flex h-10 shrink-0 items-center rounded-md border border-border/70 bg-card px-3 text-sm font-bold text-muted-foreground transition-colors hover:border-primary/35 hover:text-foreground',
           activeSection === item.value &&
@@ -591,10 +758,7 @@ const ExternalDataSectionBody = ({
   activeSection,
   esportsEvents,
   heroRates,
-  isFetching,
   isLoading,
-  onRefresh,
-  overview,
   sourceCards,
   sources,
   warnings,
@@ -602,27 +766,11 @@ const ExternalDataSectionBody = ({
   activeSection: ExternalDataSection;
   esportsEvents: ExternalDataOverview['esportsEvents'];
   heroRates: ExternalDataOverview['heroRates'];
-  isFetching: boolean;
   isLoading: boolean;
-  overview?: ExternalDataOverview;
   sourceCards: ExternalSourceCardModel[];
   sources: ExternalSource[];
   warnings: NonNullable<ExternalDataOverview['warnings']>;
-  onRefresh: () => void;
 }) => {
-  if (activeSection === 'overview') {
-    return (
-      <ExternalDataOverviewHub
-        isFetching={isFetching}
-        isLoading={isLoading}
-        overview={overview}
-        sourceCards={sourceCards}
-        warnings={warnings}
-        onRefresh={onRefresh}
-      />
-    );
-  }
-
   if (activeSection === 'esports') {
     return (
       <ExternalEsportsDetailPage
@@ -652,238 +800,6 @@ const ExternalDataSectionBody = ({
       sources={sources}
       warnings={warnings}
     />
-  );
-};
-
-const ExternalDataOverviewHub = ({
-  isFetching,
-  isLoading,
-  onRefresh,
-  overview,
-  sourceCards,
-  warnings,
-}: {
-  isFetching: boolean;
-  isLoading: boolean;
-  overview?: ExternalDataOverview;
-  sourceCards: ExternalSourceCardModel[];
-  warnings: NonNullable<ExternalDataOverview['warnings']>;
-  onRefresh: () => void;
-}) => {
-  const sources = overview?.sources ?? [];
-  const heroRates = overview?.heroRates ?? [];
-  const esportsEvents = overview?.esportsEvents ?? [];
-  const latestAt = getExternalOverviewLatestAt(overview);
-  const officialSourceCount = sources.filter((source) => source.isOfficial).length;
-  const routeCards = createExternalOverviewRouteCards({
-    esportsEvents,
-    heroRates,
-    sourceCards,
-    sources,
-  });
-
-  return (
-    <div className="space-y-4">
-      <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
-        <div className="grid gap-px bg-border/60 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="bg-card px-4 py-5 sm:px-6">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="gap-1.5 bg-transparent">
-                <Database className="h-3.5 w-3.5" />
-                데이터 인덱스
-              </Badge>
-              <Badge
-                variant="outline"
-                className={cn(
-                  'gap-1.5 bg-transparent',
-                  isFetching ? 'text-primary' : 'text-[hsl(var(--success))]',
-                )}
-              >
-                <Activity className={cn('h-3.5 w-3.5', isFetching && 'animate-pulse')} />
-                {isFetching ? '동기화 중' : '동기화 완료'}
-              </Badge>
-            </div>
-            <h2 className="mt-4 text-2xl font-black tracking-normal sm:text-3xl">
-              세부 데이터는 각각의 브라우저에서 분리합니다.
-            </h2>
-            <p className="mt-2 max-w-3xl text-sm font-semibold leading-relaxed text-muted-foreground">
-              개요는 연결 상태, 최신 수집 시각, 경고만 남긴 진입 화면입니다.
-            </p>
-            <div className="mt-5 grid overflow-hidden rounded-md border border-border/70 bg-border/60 sm:grid-cols-3">
-              <ExternalOverviewPulse
-                icon={Globe2}
-                label="소스"
-                value={isLoading ? '...' : sources.length.toLocaleString('ko-KR')}
-                detail={`${officialSourceCount}개 공식 · ${Math.max(0, sources.length - officialSourceCount)}개 서드파티`}
-              />
-              <ExternalOverviewPulse
-                icon={Clock3}
-                label="최근 수집"
-                value={getExternalFreshnessLabel(latestAt)}
-                detail={latestAt ? formatExternalDateTime(latestAt) : '수집 대기'}
-              />
-              <ExternalOverviewPulse
-                icon={Gauge}
-                label="경고"
-                value={warnings.length.toLocaleString('ko-KR')}
-                detail={warnings.length > 0 ? '확인 필요' : '정상'}
-              />
-            </div>
-          </div>
-          <div className="bg-[hsl(var(--surface-2))] px-4 py-5 sm:px-5">
-            <p className="metric-label">상태 요약</p>
-            <div className="mt-4 grid gap-3">
-              <ExternalOverviewStatusRow
-                label="영웅 메타"
-                value={`${heroRates.length.toLocaleString('ko-KR')} snapshots`}
-              />
-              <ExternalOverviewStatusRow
-                label="경기 일정"
-                value={`${esportsEvents.length.toLocaleString('ko-KR')} events`}
-              />
-              <ExternalOverviewStatusRow
-                label="소스 카드"
-                value={`${sourceCards.length.toLocaleString('ko-KR')} sources`}
-              />
-            </div>
-            <Button
-              variant="outline"
-              className="mt-5 w-full bg-card"
-              disabled={isFetching}
-              onClick={onRefresh}
-            >
-              {isFetching ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-              상태 새로고침
-            </Button>
-          </div>
-        </div>
-      </section>
-
-      <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
-        <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-          <p className="metric-label">데이터 브라우저</p>
-          <h2 className="mt-1 text-lg font-bold">분리된 작업 영역</h2>
-        </div>
-        <div className="grid gap-px bg-border/60 lg:grid-cols-3">
-          {routeCards.map((card) => (
-            <ExternalOverviewRouteCard key={card.to} card={card} />
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-};
-
-const createExternalOverviewRouteCards = ({
-  esportsEvents,
-  heroRates,
-  sourceCards,
-  sources,
-}: {
-  esportsEvents: ExternalEsportsEventItem[];
-  heroRates: ExternalHeroRateItem[];
-  sourceCards: ExternalSourceCardModel[];
-  sources: ExternalSource[];
-}): ExternalRouteCardModel[] => {
-  const statusCounts = getExternalEventStatusCounts(esportsEvents);
-  const heroRows = createExternalHeroSignalRows(heroRates);
-  const heroLatestAt = getLatestExternalTimestamp(heroRates.map((snapshot) => snapshot.fetchedAt));
-  const esportsLatestAt = getLatestExternalTimestamp(esportsEvents.map((event) => event.fetchedAt));
-  const sourcesLatestAt = getSourceCardLatestAt(sourceCards);
-
-  return [
-    {
-      actionLabel: '일정 열기',
-      detail: `예정 ${statusCounts.scheduled.toLocaleString('ko-KR')} · 진행 ${statusCounts.live.toLocaleString('ko-KR')} · 종료 ${statusCounts.completed.toLocaleString('ko-KR')}`,
-      icon: Swords,
-      label: 'e스포츠 일정',
-      status: getExternalFreshnessLabel(esportsLatestAt),
-      to: '/external-data/esports',
-      value: `${esportsEvents.length.toLocaleString('ko-KR')}경기`,
-    },
-    {
-      actionLabel: '메타 열기',
-      detail: `${heroRows.length.toLocaleString('ko-KR')}명 · ${new Set(heroRates.map((snapshot) => snapshot.region)).size.toLocaleString('ko-KR')}개 지역 샘플`,
-      icon: BarChart3,
-      label: '영웅 메타',
-      status: getExternalFreshnessLabel(heroLatestAt),
-      to: '/external-data/heroes',
-      value: `${heroRates.length.toLocaleString('ko-KR')} snapshots`,
-    },
-    {
-      actionLabel: '소스 열기',
-      detail: `${sources.filter((source) => source.isOfficial).length.toLocaleString('ko-KR')}개 공식 · ${Math.max(0, sources.length - sources.filter((source) => source.isOfficial).length).toLocaleString('ko-KR')}개 서드파티`,
-      icon: ShieldCheck,
-      label: '데이터 소스',
-      status: getExternalFreshnessLabel(sourcesLatestAt),
-      to: '/external-data/sources',
-      value: `${sources.length.toLocaleString('ko-KR')}소스`,
-    },
-  ];
-};
-
-const ExternalOverviewPulse = ({
-  detail,
-  icon: Icon,
-  label,
-  value,
-}: {
-  detail: string;
-  icon: LucideIcon;
-  label: string;
-  value: string;
-}) => (
-  <div className="min-w-0 bg-[hsl(var(--surface-2))] px-3.5 py-3.5">
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <p className="metric-label">{label}</p>
-        <p className="mt-2 break-words text-lg font-black leading-tight">{value}</p>
-        <p className="mt-1 break-words text-xs font-semibold text-muted-foreground">{detail}</p>
-      </div>
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-card text-primary">
-        <Icon className="h-4 w-4" />
-      </div>
-    </div>
-  </div>
-);
-
-const ExternalOverviewStatusRow = ({ label, value }: { label: string; value: string }) => (
-  <div className="flex min-w-0 items-center justify-between gap-3 border-b border-border/60 pb-3 last:border-b-0 last:pb-0">
-    <span className="text-xs font-bold text-muted-foreground">{label}</span>
-    <span className="truncate text-sm font-black">{value}</span>
-  </div>
-);
-
-const ExternalOverviewRouteCard = ({ card }: { card: ExternalRouteCardModel }) => {
-  const Icon = card.icon;
-
-  return (
-    <NavLink
-      to={card.to}
-      className="group min-w-0 bg-card p-4 transition-colors hover:bg-[hsl(var(--surface-2))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 sm:p-5"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border/70 bg-[hsl(var(--surface-2))] text-primary">
-          <Icon className="h-5 w-5" />
-        </div>
-        <Badge variant="outline" className="bg-transparent text-[11px]">
-          {card.status}
-        </Badge>
-      </div>
-      <p className="metric-label mt-5">{card.label}</p>
-      <h3 className="mt-2 break-words text-2xl font-black leading-tight">{card.value}</h3>
-      <p className="mt-2 min-h-10 text-sm font-semibold leading-relaxed text-muted-foreground">
-        {card.detail}
-      </p>
-      <div className="mt-4 inline-flex items-center gap-1.5 text-sm font-black text-primary">
-        {card.actionLabel}
-        <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-      </div>
-    </NavLink>
   );
 };
 
@@ -1408,7 +1324,6 @@ const ExternalSourcesDetailPage = ({
       <MetricGrid metrics={metrics} />
       {warnings.length > 0 ? <ExternalDataWarningsPanel warnings={warnings} /> : null}
       <ExternalSourceRegistry isLoading={isLoading} sourceCards={sourceCards} />
-      <ExternalPreparedDataStatus sources={sources} />
     </div>
   );
 };
@@ -1627,56 +1542,6 @@ const ExternalSourceRegistryRow = ({ card }: { card: ExternalSourceCardModel }) 
         {formatExternalTtl(source.defaultTtlSeconds)}
       </div>
     </article>
-  );
-};
-
-const ExternalPreparedDataStatus = ({ sources }: { sources: ExternalSource[] }) => {
-  const hasHeroMasterSource = sources.some((source) => source.id === 'blizzard_heroes');
-  const hasProfileSource = sources.some((source) => source.id === 'overfast');
-  const items = [
-    {
-      detail: hasProfileSource ? '공개 프로필 동기화 UI 연결 전' : '프로필 소스 연결 대기',
-      icon: UsersRound,
-      label: '플레이어 프로필',
-      status: '준비 중',
-    },
-    {
-      detail: '영웅 roster와 로컬 마스터 데이터 비교',
-      icon: Layers3,
-      label: '마스터 데이터',
-      status: hasHeroMasterSource ? '연결됨' : '대기',
-    },
-  ];
-
-  return (
-    <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
-      <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-        <p className="metric-label">작은 상태 카드</p>
-        <h2 className="mt-1 text-lg font-bold">아직 큰 화면을 차지하지 않는 데이터</h2>
-      </div>
-      <div className="grid gap-px bg-border/60 md:grid-cols-2">
-        {items.map((item) => {
-          const Icon = item.icon;
-
-          return (
-            <div key={item.label} className="min-w-0 bg-card px-4 py-3.5">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <Badge variant="outline" className="bg-transparent text-[11px]">
-                    {item.status}
-                  </Badge>
-                  <h3 className="mt-2 text-base font-black">{item.label}</h3>
-                  <p className="mt-1 text-xs font-semibold text-muted-foreground">{item.detail}</p>
-                </div>
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-[hsl(var(--surface-2))] text-primary">
-                  <Icon className="h-4 w-4" />
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
   );
 };
 

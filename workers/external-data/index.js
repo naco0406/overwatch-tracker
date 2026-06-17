@@ -5,7 +5,9 @@ const ESPORTS_SCHEDULE_URL = 'https://esports.overwatch.com/en-us/schedule';
 const OWTICS_CALENDAR_URL = 'https://owtics.gg/en-US/esports/calendar';
 const OVERFAST_HERO_STATS_URL = 'https://overfast-api.tekrop.fr/heroes/stats';
 const HERO_RATE_REGIONS = ['americas', 'asia', 'europe'];
-const OWTICS_ESPORTS_REGIONS = new Set(['asia', 'china', 'japan', 'korea', 'pacific']);
+const DEFAULT_OWTICS_DETAIL_FETCH_LIMIT = 4;
+const DEFAULT_EXTERNAL_ASSET_MAX_BYTES = 1_500_000;
+const OWTICS_LOGO_METADATA_KEYS = ['competitionLogoUrl', 'teamALogoUrl', 'teamBLogoUrl'];
 
 const SOURCE_ALLOWLIST = new Set([
   'esports.overwatch.com',
@@ -78,6 +80,19 @@ const ESPORTS_EVENT_SELECT_COLUMNS = [
 ].join(',');
 
 const normalizeBaseUrl = (value) => value.replace(/\/+$/, '');
+
+const getOptionalBaseUrl = (value) =>
+  typeof value === 'string' && value.trim() ? normalizeBaseUrl(value.trim()) : '';
+
+const getExternalAssetsBucket = (env) => env.EXTERNAL_ASSETS_BUCKET || env.ASSETS_BUCKET || null;
+
+const getConfiguredExternalAssetsPublicBaseUrl = (env) =>
+  getOptionalBaseUrl(env.EXTERNAL_ASSETS_PUBLIC_BASE_URL) ||
+  getOptionalBaseUrl(env.R2_PUBLIC_BASE_URL);
+
+const getExternalAssetsPublicBaseUrl = (request, env) =>
+  getConfiguredExternalAssetsPublicBaseUrl(env) ||
+  normalizeBaseUrl(new URL('/external/assets', request.url).toString());
 
 const getRequiredEnv = (env, key) => {
   const value = env[key];
@@ -334,6 +349,12 @@ const parseMaybeNumber = (value) => {
   return Number.isFinite(numberValue) ? numberValue : null;
 };
 
+const parseNullableRateNumber = (value) => {
+  const numberValue = parseMaybeNumber(value);
+
+  return numberValue !== null && numberValue >= 0 ? numberValue : null;
+};
+
 const normalizeRole = (value) => {
   const normalized = String(value ?? '')
     .trim()
@@ -389,8 +410,8 @@ const parseBlizzardHeroRates = (html, fetchedAt = new Date().toISOString()) => {
   return rawRows
     .map((row) => {
       const heroId = typeof row?.id === 'string' ? row.id : '';
-      const pickRate = parseMaybeNumber(row?.cells?.pickrate);
-      const winRate = parseMaybeNumber(row?.cells?.winrate);
+      const pickRate = parseNullableRateNumber(row?.cells?.pickrate);
+      const winRate = parseNullableRateNumber(row?.cells?.winrate);
 
       if (!heroId) {
         return null;
@@ -433,8 +454,8 @@ const mapOverfastHeroStats = (items, region, fetchedAt = new Date().toISOString(
   return items
     .map((item) => {
       const heroId = typeof item?.hero === 'string' ? item.hero : '';
-      const pickRate = parseMaybeNumber(item?.pickrate);
-      const winRate = parseMaybeNumber(item?.winrate);
+      const pickRate = parseNullableRateNumber(item?.pickrate);
+      const winRate = parseNullableRateNumber(item?.winrate);
 
       if (!heroId) {
         return null;
@@ -737,6 +758,9 @@ const parseOwticsScore = (value) => {
 
 const getOwticsTeamLabel = (team) => String(team?.name || team?.abbreviation || '').trim();
 
+const getOwticsMetadataString = (value) =>
+  value === null || value === undefined ? '' : String(value).trim();
+
 const getOwticsMatchUrl = (detailsUrl) => {
   if (typeof detailsUrl !== 'string' || !detailsUrl) {
     return '';
@@ -747,6 +771,547 @@ const getOwticsMatchUrl = (detailsUrl) => {
   }
 
   return `https://owtics.gg/en-US${detailsUrl.startsWith('/') ? detailsUrl : `/${detailsUrl}`}`;
+};
+
+const compactOwticsMetadata = (metadata) =>
+  Object.fromEntries(
+    Object.entries(metadata).filter(([, value]) => {
+      if (value === null || value === undefined || value === '') {
+        return false;
+      }
+
+      if (Array.isArray(value)) {
+        return value.length > 0;
+      }
+
+      if (typeof value === 'object') {
+        return Object.keys(value).length > 0;
+      }
+
+      return true;
+    }),
+  );
+
+const getOwticsRecordString = (record, keys) => {
+  for (const key of keys) {
+    const value = record?.[key];
+
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+
+    if (value && typeof value === 'object') {
+      const nested = getOwticsRecordString(value, [
+        'emoji',
+        'flag',
+        'code',
+        'name',
+        'title',
+        'label',
+      ]);
+
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  return '';
+};
+
+const normalizeOwticsPlayer = (player, index) => {
+  if (!player || typeof player !== 'object') {
+    return null;
+  }
+
+  const name = getOwticsRecordString(player, [
+    'name',
+    'handle',
+    'username',
+    'playerName',
+    'displayName',
+    'nickname',
+  ]);
+
+  if (!name) {
+    return null;
+  }
+
+  const role = getOwticsRecordString(player, ['role', 'position']);
+  const country = getOwticsRecordString(player, [
+    'countryCode',
+    'country',
+    'nationality',
+    'nationalityCode',
+    'homeCountry',
+  ]);
+  const flag = getOwticsRecordString(player, ['flag', 'emoji']);
+
+  return compactOwticsMetadata({
+    country,
+    flag,
+    id: getOwticsRecordString(player, ['id', 'slug']) || `${name}-${index}`,
+    name,
+    role,
+  });
+};
+
+const collectOwticsArraysByKey = (value, patterns, results = []) => {
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectOwticsArraysByKey(item, patterns, results));
+    return results;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return results;
+  }
+
+  Object.entries(value).forEach(([key, child]) => {
+    const normalizedKey = key.toLowerCase();
+
+    if (Array.isArray(child) && patterns.some((pattern) => normalizedKey.includes(pattern))) {
+      results.push(child);
+    }
+
+    collectOwticsArraysByKey(child, patterns, results);
+  });
+
+  return results;
+};
+
+const extractOwticsRoster = (team) => {
+  const arrays = collectOwticsArraysByKey(team, ['roster', 'player', 'member']);
+  const playerGroups = arrays
+    .map((items) => items.map(normalizeOwticsPlayer).filter(Boolean))
+    .filter((items) => items.length > 0)
+    .sort((left, right) => right.length - left.length);
+
+  return playerGroups[0] ?? [];
+};
+
+const normalizeOwticsBroadcast = (broadcast, index) => {
+  if (!broadcast || typeof broadcast !== 'object') {
+    return null;
+  }
+
+  const url = getOwticsRecordString(broadcast, ['url', 'href', 'link', 'streamUrl', 'channelUrl']);
+  const name = getOwticsRecordString(broadcast, [
+    'name',
+    'title',
+    'channel',
+    'channelName',
+    'displayName',
+  ]);
+
+  if (!url && !name) {
+    return null;
+  }
+
+  return compactOwticsMetadata({
+    id: getOwticsRecordString(broadcast, ['id', 'slug']) || `${name || url}-${index}`,
+    language: getOwticsRecordString(broadcast, ['language', 'locale']),
+    name: name || url,
+    platform: getOwticsRecordString(broadcast, ['platform', 'service']),
+    url,
+  });
+};
+
+const extractOwticsBroadcasts = (value) => {
+  const arrays = collectOwticsArraysByKey(value, ['broadcast', 'stream', 'watch', 'channel']);
+
+  return arrays
+    .flatMap((items) => items.map(normalizeOwticsBroadcast).filter(Boolean))
+    .filter(
+      (broadcast, index, broadcasts) =>
+        broadcasts.findIndex(
+          (item) => item.url === broadcast.url && item.name === broadcast.name,
+        ) === index,
+    );
+};
+
+const findOwticsTeamObject = (objects, fallbackTeam) => {
+  if (!fallbackTeam || typeof fallbackTeam !== 'object') {
+    return {};
+  }
+
+  const id = getOwticsRecordString(fallbackTeam, ['id']);
+  const slug = getOwticsRecordString(fallbackTeam, ['slug']);
+  const name = getOwticsTeamLabel(fallbackTeam);
+
+  return (
+    objects.find((object) => {
+      if (object?.__typename !== 'Team') {
+        return false;
+      }
+
+      return (
+        (id && getOwticsRecordString(object, ['id']) === id) ||
+        (slug && getOwticsRecordString(object, ['slug']) === slug) ||
+        (name && getOwticsTeamLabel(object) === name)
+      );
+    }) ?? fallbackTeam
+  );
+};
+
+const extractOwticsMatchDetailMetadata = (html, matchId) => {
+  const chunks = decodeReactRouterStreamChunks(html).map(parseStreamChunkJson).filter(Boolean);
+  const matches = chunks.flatMap((chunk) =>
+    collectJsonObjects(
+      chunk,
+      (value) => value?.__typename === 'Match' && typeof value?.id === 'string',
+    ),
+  );
+  const objects = chunks.flatMap((chunk) =>
+    collectJsonObjects(chunk, (value) => typeof value?.__typename === 'string'),
+  );
+  const match = matches.find((item) => item.id === matchId) ?? matches[0] ?? {};
+  const teamA = findOwticsTeamObject(objects, match.teamA);
+  const teamB = findOwticsTeamObject(objects, match.teamB);
+  const teamARoster = extractOwticsRoster(teamA);
+  const teamBRoster = extractOwticsRoster(teamB);
+  const broadcasts = extractOwticsBroadcasts(match);
+
+  return compactOwticsMetadata({
+    broadcasts,
+    detailParsedAt: new Date().toISOString(),
+    rosters:
+      teamARoster.length > 0 || teamBRoster.length > 0
+        ? compactOwticsMetadata({
+            teamA: teamARoster,
+            teamB: teamBRoster,
+          })
+        : undefined,
+    teamAAbbreviation: getOwticsRecordString(teamA, ['abbreviation']),
+    teamAId: getOwticsRecordString(teamA, ['id']),
+    teamALogoUrl: getOwticsRecordString(teamA, ['logoUrl']),
+    teamASlug: getOwticsRecordString(teamA, ['slug']),
+    teamBAbbreviation: getOwticsRecordString(teamB, ['abbreviation']),
+    teamBId: getOwticsRecordString(teamB, ['id']),
+    teamBLogoUrl: getOwticsRecordString(teamB, ['logoUrl']),
+    teamBSlug: getOwticsRecordString(teamB, ['slug']),
+  });
+};
+
+const mapWithConcurrency = async (items, concurrency, mapper) => {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  });
+
+  await Promise.all(workers);
+
+  return results;
+};
+
+const getOwticsLogoMetadataSourceKey = (key) => key.replace(/Url$/, 'SourceUrl');
+
+const getOwticsLogoMetadataObjectKey = (key) => key.replace(/Url$/, 'ObjectKey');
+
+const toHex = (buffer) =>
+  Array.from(new Uint8Array(buffer))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+
+const getExternalAssetExtension = (sourceUrl) => {
+  const pathname = new URL(sourceUrl).pathname.toLowerCase();
+  const match = pathname.match(/\.([a-z0-9]{2,5})$/);
+  const extension = match?.[1] ?? 'img';
+
+  return ['avif', 'gif', 'jpeg', 'jpg', 'png', 'svg', 'webp'].includes(extension)
+    ? extension
+    : 'img';
+};
+
+const getExternalAssetContentType = (contentType) =>
+  contentType.split(';')[0]?.trim().toLowerCase() || 'application/octet-stream';
+
+const normalizeExternalImageUrl = (sourceUrl) => {
+  if (typeof sourceUrl !== 'string' || !sourceUrl.trim()) {
+    return '';
+  }
+
+  let url;
+
+  try {
+    url = new URL(sourceUrl.trim(), 'https://owtics.gg');
+  } catch (_error) {
+    return '';
+  }
+
+  return url.protocol === 'https:' ? url.toString() : '';
+};
+
+const createExternalAssetObjectKey = async (sourceId, assetKind, sourceUrl) => {
+  const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(sourceUrl));
+  const hash = toHex(hashBuffer).slice(0, 32);
+
+  return `external/${sourceId}/${assetKind}/${hash}.${getExternalAssetExtension(sourceUrl)}`;
+};
+
+const fetchExternalImageAsset = async (sourceUrl, maxBytes) => {
+  const response = await fetch(sourceUrl, {
+    headers: {
+      Accept: 'image/avif,image/webp,image/png,image/jpeg,image/svg+xml,image/*',
+      'User-Agent': 'NACO external-data asset mirror',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`External asset request failed: ${response.status}`);
+  }
+
+  const contentType = getExternalAssetContentType(response.headers.get('Content-Type') ?? '');
+
+  if (!contentType.startsWith('image/')) {
+    throw new Error(`External asset is not an image: ${contentType}`);
+  }
+
+  const contentLength = Number(response.headers.get('Content-Length') ?? 0);
+
+  if (contentLength > maxBytes) {
+    throw new Error('External asset is too large.');
+  }
+
+  const body = await response.arrayBuffer();
+
+  if (body.byteLength === 0) {
+    throw new Error('External asset is empty.');
+  }
+
+  if (body.byteLength > maxBytes) {
+    throw new Error('External asset is too large.');
+  }
+
+  return { body, contentType };
+};
+
+const cacheExternalImageAsset = async (env, sourceUrl, assetKind, options) => {
+  const bucket = getExternalAssetsBucket(env);
+  const publicBaseUrl = options.assetPublicBaseUrl;
+  const normalizedUrl = normalizeExternalImageUrl(sourceUrl);
+
+  if (!bucket || !publicBaseUrl || !normalizedUrl) {
+    return null;
+  }
+
+  const key = await createExternalAssetObjectKey('owtics', assetKind, normalizedUrl);
+  const publicUrl = `${publicBaseUrl}/${key}`;
+  const existing = await bucket.head(key);
+
+  if (existing) {
+    return {
+      key,
+      publicUrl,
+      sourceUrl: normalizedUrl,
+      status: 'hit',
+    };
+  }
+
+  const maxBytes = Number(env.EXTERNAL_ASSET_MAX_BYTES ?? DEFAULT_EXTERNAL_ASSET_MAX_BYTES);
+  const asset = await fetchExternalImageAsset(normalizedUrl, maxBytes);
+
+  await bucket.put(key, asset.body, {
+    customMetadata: {
+      assetKind,
+      source: 'owtics',
+      sourceUrl: normalizedUrl,
+    },
+    httpMetadata: {
+      cacheControl: 'public, max-age=31536000, immutable',
+      contentType: asset.contentType,
+    },
+  });
+
+  return {
+    key,
+    publicUrl,
+    sourceUrl: normalizedUrl,
+    status: 'uploaded',
+  };
+};
+
+const getOwticsLogoAssetReferences = (rows) => {
+  const seen = new Set();
+  const references = [];
+
+  rows.forEach((row) => {
+    OWTICS_LOGO_METADATA_KEYS.forEach((key) => {
+      const sourceUrl = normalizeExternalImageUrl(row.metadata?.[key]);
+
+      if (!sourceUrl || seen.has(sourceUrl)) {
+        return;
+      }
+
+      seen.add(sourceUrl);
+      references.push({
+        key,
+        kind: key.replace(/Url$/, '').replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`),
+        sourceUrl,
+      });
+    });
+  });
+
+  return references;
+};
+
+const cacheOwticsLogoAssetsForRows = async (rows, env, options = {}) => {
+  const bucket = getExternalAssetsBucket(env);
+  const enabled = Boolean(bucket && options.assetPublicBaseUrl);
+  const references = enabled ? getOwticsLogoAssetReferences(rows) : [];
+  const requestedLimit = Number(options.assetLimit ?? env.OWTICS_ASSET_FETCH_LIMIT ?? 12);
+  const assetLimit = Math.max(
+    0,
+    Math.min(16, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 12),
+  );
+  const selectedReferences = references.slice(0, assetLimit);
+  const concurrency = Math.max(
+    1,
+    Math.min(4, Number(env.OWTICS_ASSET_FETCH_CONCURRENCY ?? 2) || 2),
+  );
+  const results = await mapWithConcurrency(selectedReferences, concurrency, async (reference) => {
+    try {
+      return await cacheExternalImageAsset(env, reference.sourceUrl, reference.kind, options);
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'External asset cache failed.',
+        sourceUrl: reference.sourceUrl,
+        status: 'failed',
+      };
+    }
+  });
+  const assetsBySourceUrl = new Map(
+    results
+      .filter((result) => result?.publicUrl && result?.sourceUrl)
+      .map((result) => [result.sourceUrl, result]),
+  );
+
+  return {
+    assetsBySourceUrl,
+    enabled,
+    failedCount: results.filter((result) => result?.status === 'failed').length,
+    hitCount: results.filter((result) => result?.status === 'hit').length,
+    limit: assetLimit,
+    requestedCount: selectedReferences.length,
+    totalCount: references.length,
+    uploadedCount: results.filter((result) => result?.status === 'uploaded').length,
+  };
+};
+
+const applyOwticsLogoAssetCache = (rows, assetResult) =>
+  rows.map((row) => {
+    if (!assetResult.enabled) {
+      return row;
+    }
+
+    const metadata = { ...(row.metadata ?? {}) };
+
+    OWTICS_LOGO_METADATA_KEYS.forEach((key) => {
+      const sourceUrl = normalizeExternalImageUrl(metadata[key]);
+
+      if (!sourceUrl) {
+        return;
+      }
+
+      const cachedAsset = assetResult.assetsBySourceUrl.get(sourceUrl);
+      metadata[getOwticsLogoMetadataSourceKey(key)] = sourceUrl;
+
+      if (cachedAsset) {
+        metadata[key] = cachedAsset.publicUrl;
+        metadata[getOwticsLogoMetadataObjectKey(key)] = cachedAsset.key;
+        return;
+      }
+
+      delete metadata[key];
+      delete metadata[getOwticsLogoMetadataObjectKey(key)];
+    });
+
+    return {
+      ...row,
+      metadata: compactOwticsMetadata(metadata),
+    };
+  });
+
+const enrichOwticsEventsWithDetails = async (rows, env, options = {}) => {
+  const detailRows = rows.filter((row) => row.metadata?.detailsUrl);
+  const configuredLimit = Number(
+    env.OWTICS_DETAIL_FETCH_LIMIT ?? DEFAULT_OWTICS_DETAIL_FETCH_LIMIT,
+  );
+  const requestedLimit = Number(options.detailLimit ?? configuredLimit);
+  const requestedOffset = Number(options.detailOffset ?? 0);
+  const detailLimit = Math.max(
+    0,
+    Math.min(
+      12,
+      Number.isFinite(requestedLimit)
+        ? Math.floor(requestedLimit)
+        : DEFAULT_OWTICS_DETAIL_FETCH_LIMIT,
+    ),
+  );
+  const detailOffset = Math.max(
+    0,
+    Math.min(detailRows.length, Number.isFinite(requestedOffset) ? Math.floor(requestedOffset) : 0),
+  );
+  const concurrency = Math.max(
+    1,
+    Math.min(8, Number(env.OWTICS_DETAIL_FETCH_CONCURRENCY ?? 4) || 4),
+  );
+  const rowsWithDetails = detailRows.slice(detailOffset, detailOffset + detailLimit);
+  const detailResults = await mapWithConcurrency(rowsWithDetails, concurrency, async (row) => {
+    try {
+      const html = await fetchAllowedText(row.metadata.detailsUrl);
+      const detailMetadata = extractOwticsMatchDetailMetadata(html, row.external_event_id);
+      const broadcastUrls = Array.isArray(detailMetadata.broadcasts)
+        ? detailMetadata.broadcasts.map((broadcast) => broadcast.url).filter(Boolean)
+        : [];
+
+      return {
+        externalEventId: row.external_event_id,
+        metadata: detailMetadata,
+        watchUrls: broadcastUrls,
+      };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'OWTICS detail parse failed.',
+        externalEventId: row.external_event_id,
+        metadata: {},
+        watchUrls: [],
+      };
+    }
+  });
+  const detailById = new Map(detailResults.map((result) => [result.externalEventId, result]));
+
+  return {
+    detailFetchedCount: detailResults.filter((result) => !result.error).length,
+    detailFailedCount: detailResults.filter((result) => result.error).length,
+    detailExternalEventIds: detailResults.map((result) => result.externalEventId),
+    detailLimit,
+    detailOffset,
+    detailRequestedCount: rowsWithDetails.length,
+    detailTotalCount: detailRows.length,
+    rows: rows.map((row) => {
+      const detail = detailById.get(row.external_event_id);
+
+      if (!detail) {
+        return row;
+      }
+
+      return {
+        ...row,
+        metadata: compactOwticsMetadata({
+          ...row.metadata,
+          ...detail.metadata,
+          detailError: detail.error,
+        }),
+        watch_urls: Array.from(new Set([...(row.watch_urls ?? []), ...detail.watchUrls])),
+      };
+    }),
+  };
 };
 
 const parseOwticsEsportsEvents = (html, fetchedAt = new Date().toISOString()) => {
@@ -764,10 +1329,6 @@ const parseOwticsEsportsEvents = (html, fetchedAt = new Date().toISOString()) =>
       const competition =
         match.competition && typeof match.competition === 'object' ? match.competition : {};
       const region = normalizeOwticsRegion(competition.region);
-
-      if (!OWTICS_ESPORTS_REGIONS.has(region)) {
-        return null;
-      }
 
       const detailsUrl = getOwticsMatchUrl(match.detailsUrl);
       const result = match.result && typeof match.result === 'object' ? match.result : {};
@@ -798,10 +1359,20 @@ const parseOwticsEsportsEvents = (html, fetchedAt = new Date().toISOString()) =>
           competitionId: competition.id ?? '',
           competitionLogoUrl: competition.logoUrl ?? '',
           competitionSlug: competition.slug ?? '',
+          competitionRegion: getOwticsMetadataString(competition.region),
+          competitionSeries: getOwticsMetadataString(competition.series),
+          competitionTitle: getOwticsMetadataString(competition.title),
           detailsUrl,
+          rawStatus: getOwticsMetadataString(match.status),
           source: 'owtics_calendar',
+          teamAAbbreviation: getOwticsMetadataString(match.teamA?.abbreviation),
+          teamAId: getOwticsMetadataString(match.teamA?.id),
           teamALogoUrl: match.teamA?.logoUrl ?? '',
+          teamASlug: getOwticsMetadataString(match.teamA?.slug),
+          teamBAbbreviation: getOwticsMetadataString(match.teamB?.abbreviation),
+          teamBId: getOwticsMetadataString(match.teamB?.id),
           teamBLogoUrl: match.teamB?.logoUrl ?? '',
+          teamBSlug: getOwticsMetadataString(match.teamB?.slug),
         },
         region,
         score_a: scoreA,
@@ -880,6 +1451,16 @@ const getLimitParam = (request, fallback, max) => {
   return Math.max(1, Math.min(max, Math.floor(value)));
 };
 
+const getBoundedSearchInteger = (url, key, fallback, min, max) => {
+  const value = Number(url.searchParams.get(key) ?? fallback);
+
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.max(min, Math.min(max, Math.floor(value)));
+};
+
 const handleGlobalHeroRates = async (request, env, origin) => {
   const limit = getLimitParam(request, 96, 300);
   const rows = await supabaseRestFetch(
@@ -901,7 +1482,7 @@ const handleGlobalHeroRates = async (request, env, origin) => {
 };
 
 const handleEsportsEvents = async (request, env, origin) => {
-  const limit = getLimitParam(request, 160, 300);
+  const limit = getLimitParam(request, 500, 1000);
   const url = new URL(request.url);
   const fromParam = url.searchParams.get('from');
   const fromFilter =
@@ -1130,20 +1711,54 @@ const collectOfficialEsportsEvents = (env, trigger) =>
     trigger,
   });
 
-const collectOwticsEsportsEvents = (env, trigger) =>
+const collectOwticsEsportsEvents = (env, trigger, options = {}) =>
   collectWithFetchRun(env, {
     jobKey: COLLECTOR_JOB_NAMES.owticsEsportsEvents,
     requestUrl: OWTICS_CALENDAR_URL,
     run: async (startedAt) => {
       const html = await fetchAllowedText(OWTICS_CALENDAR_URL);
       const rows = parseOwticsEsportsEvents(html, startedAt);
-      const inserted = await upsertEsportsEvents(env, rows);
+      const collectionOptions = {
+        ...options,
+        assetPublicBaseUrl:
+          options.assetPublicBaseUrl || getConfiguredExternalAssetsPublicBaseUrl(env),
+      };
+      const detailResult = await enrichOwticsEventsWithDetails(rows, env, collectionOptions);
+      const detailEventIds = new Set(detailResult.detailExternalEventIds);
+      const shouldUpsertAllRows = detailResult.detailOffset === 0;
+      const assetSourceRows = detailResult.rows.filter((row) =>
+        detailEventIds.has(row.external_event_id),
+      );
+      const assetResult = await cacheOwticsLogoAssetsForRows(
+        assetSourceRows,
+        env,
+        collectionOptions,
+      );
+      const rowsWithCachedAssets = applyOwticsLogoAssetCache(detailResult.rows, assetResult);
+      const rowsToUpsert = shouldUpsertAllRows
+        ? rowsWithCachedAssets
+        : rowsWithCachedAssets.filter((row) => detailEventIds.has(row.external_event_id));
+      const inserted = await upsertEsportsEvents(env, rowsToUpsert);
 
       return {
         insertedCount: inserted.length,
         metadata: {
-          parsedCount: rows.length,
-          regions: Array.from(new Set(rows.map((row) => row.region))).sort(),
+          assetCacheEnabled: assetResult.enabled,
+          assetFailedCount: assetResult.failedCount,
+          assetHitCount: assetResult.hitCount,
+          assetRequestedCount: assetResult.requestedCount,
+          assetTotalCount: assetResult.totalCount,
+          assetUploadedCount: assetResult.uploadedCount,
+          detailFailedCount: detailResult.detailFailedCount,
+          detailFetchedCount: detailResult.detailFetchedCount,
+          detailLimit: detailResult.detailLimit,
+          detailOffset: detailResult.detailOffset,
+          detailRequestedCount: detailResult.detailRequestedCount,
+          detailTotalCount: detailResult.detailTotalCount,
+          detailUpsertMode: shouldUpsertAllRows ? 'index_with_detail_batch' : 'detail_batch',
+          parsedCount: detailResult.rows.length,
+          regions: Array.from(new Set(detailResult.rows.map((row) => row.region))).sort(),
+          upsertedRowCount: rowsToUpsert.length,
           trigger,
         },
       };
@@ -1152,10 +1767,10 @@ const collectOwticsEsportsEvents = (env, trigger) =>
     trigger,
   });
 
-const collectEsportsEvents = async (env, trigger) => {
+const collectEsportsEvents = async (env, trigger, options = {}) => {
   const results = await Promise.all([
     collectOfficialEsportsEvents(env, trigger),
-    collectOwticsEsportsEvents(env, trigger),
+    collectOwticsEsportsEvents(env, trigger, options),
   ]);
 
   return results;
@@ -1170,10 +1785,10 @@ const collectGlobalHeroRates = async (env, trigger = 'manual') => {
   return [blizzardResult, ...overfastResults];
 };
 
-const collectAllExternalData = async (env, trigger = 'manual') => {
+const collectAllExternalData = async (env, trigger = 'manual', options = {}) => {
   const [heroRateResults, esportsResults] = await Promise.all([
     collectGlobalHeroRates(env, trigger),
-    collectEsportsEvents(env, trigger),
+    collectEsportsEvents(env, trigger, options),
   ]);
 
   return [...heroRateResults, ...esportsResults];
@@ -1185,6 +1800,51 @@ const summarizeCollectionResults = (results) => ({
   jobs: results.length,
 });
 
+const handleExternalAsset = async (request, env, origin) => {
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    return jsonResponse({ error: 'Method not allowed.' }, { status: 405 }, origin);
+  }
+
+  const bucket = getExternalAssetsBucket(env);
+
+  if (!bucket) {
+    return jsonResponse(
+      { error: 'External asset bucket is not configured.' },
+      { status: 501 },
+      origin,
+    );
+  }
+
+  const url = new URL(request.url);
+  const key = decodeURIComponent(url.pathname.replace('/external/assets/', ''));
+
+  if (!key.startsWith('external/') || key.includes('..')) {
+    return jsonResponse({ error: 'Invalid asset key.' }, { status: 400 }, origin);
+  }
+
+  const object = await bucket.get(key);
+
+  if (!object) {
+    return jsonResponse({ error: 'External asset not found.' }, { status: 404 }, origin);
+  }
+
+  const headers = new Headers(buildCorsHeaders(origin));
+  headers.set(
+    'Cache-Control',
+    object.httpMetadata?.cacheControl ?? 'public, max-age=86400, stale-while-revalidate=604800',
+  );
+  headers.set('Content-Type', object.httpMetadata?.contentType ?? 'application/octet-stream');
+
+  if (object.httpEtag) {
+    headers.set('ETag', object.httpEtag);
+  }
+
+  return new Response(request.method === 'HEAD' ? null : object.body, {
+    headers,
+    status: 200,
+  });
+};
+
 const handleCollect = async (request, env, origin) => {
   if (request.method !== 'POST') {
     return jsonResponse({ error: 'Method not allowed.' }, { status: 405 }, origin);
@@ -1193,14 +1853,37 @@ const handleCollect = async (request, env, origin) => {
   const url = new URL(request.url);
   const target = url.pathname.replace('/external/collect/', '');
   const trigger = url.searchParams.get('trigger') || 'manual';
+  const options = {
+    assetLimit: getBoundedSearchInteger(
+      url,
+      'assetLimit',
+      Number(env.OWTICS_ASSET_FETCH_LIMIT ?? 12) || 12,
+      0,
+      16,
+    ),
+    assetPublicBaseUrl: getExternalAssetsPublicBaseUrl(request, env),
+    detailLimit: getBoundedSearchInteger(
+      url,
+      'detailLimit',
+      Number(env.OWTICS_DETAIL_FETCH_LIMIT ?? DEFAULT_OWTICS_DETAIL_FETCH_LIMIT) ||
+        DEFAULT_OWTICS_DETAIL_FETCH_LIMIT,
+      0,
+      12,
+    ),
+    detailOffset: getBoundedSearchInteger(url, 'detailOffset', 0, 0, 100000),
+  };
   let results;
 
   if (target === 'all') {
-    results = await collectAllExternalData(env, trigger);
+    results = await collectAllExternalData(env, trigger, options);
   } else if (target === 'global-hero-rates') {
     results = await collectGlobalHeroRates(env, trigger);
   } else if (target === 'esports-events') {
-    results = await collectEsportsEvents(env, trigger);
+    results = await collectEsportsEvents(env, trigger, options);
+  } else if (target === 'official-esports-events') {
+    results = [await collectOfficialEsportsEvents(env, trigger)];
+  } else if (target === 'owtics-esports-events') {
+    results = [await collectOwticsEsportsEvents(env, trigger, options)];
   } else {
     return jsonResponse({ error: 'Unknown collection target.' }, { status: 404 }, origin);
   }
@@ -1278,6 +1961,10 @@ export default {
 
       if (request.method === 'GET' && url.pathname === '/external/esports-events') {
         return handleEsportsEvents(request, env, origin);
+      }
+
+      if (url.pathname.startsWith('/external/assets/')) {
+        return handleExternalAsset(request, env, origin);
       }
 
       if (url.pathname.startsWith('/external/collect/')) {

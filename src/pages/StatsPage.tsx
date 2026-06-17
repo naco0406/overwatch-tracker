@@ -28,7 +28,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
-import { Navigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useParams } from 'react-router-dom';
 import {
   Bar,
   BarChart,
@@ -312,6 +312,9 @@ const getExternalEventStatusLabel = (status: string) =>
   status in externalEventStatusLabels
     ? externalEventStatusLabels[status as keyof typeof externalEventStatusLabels]
     : status;
+
+const getExternalEsportsMatchPath = (event: ExternalEsportsEventItem) =>
+  `/external-data/esports/matches/${encodeURIComponent(event.id)}`;
 
 const getExternalSourcePriority = (sourceId: string) =>
   sourceId in externalSourcePriority
@@ -4733,6 +4736,12 @@ const ExternalNextEventFeature = ({
             </Badge>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
+            <Button asChild variant="default" size="sm">
+              <Link to={getExternalEsportsMatchPath(event)}>
+                <Swords className="h-4 w-4" />
+                매치 상세
+              </Link>
+            </Button>
             <ExternalWatchLinks urls={event.watchUrls} />
           </div>
         </div>
@@ -5103,6 +5112,12 @@ const ExternalEsportsEventRow = ({ event }: { event: ExternalEsportsEventItem })
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
+          <Button asChild variant="default" size="sm">
+            <Link to={getExternalEsportsMatchPath(event)}>
+              <Swords className="h-4 w-4" />
+              상세
+            </Link>
+          </Button>
           <ExternalWatchLinks urls={event.watchUrls} />
         </div>
       </div>

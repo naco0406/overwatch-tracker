@@ -16,7 +16,7 @@ values (
   true,
   false,
   21600,
-  'Supplemental esports schedule source for OWCS Asia, Korea, Japan, Pacific, and China events.'
+  'Supplemental esports schedule and match-detail source for global Overwatch events.'
 )
 on conflict (id) do update set
   display_name = excluded.display_name,

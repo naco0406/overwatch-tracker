@@ -1,6 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 
-import { getExternalDataOverview, isExternalDataApiConfigured } from '@/lib/externalDataApi';
+import {
+  collectExternalData,
+  getExternalDataOverview,
+  isExternalDataApiConfigured,
+  type ExternalCollectRequest,
+} from '@/lib/externalDataApi';
 
 const externalDataQueryKey = ['external-data', 'overview'] as const;
 
@@ -12,4 +17,10 @@ const useExternalDataOverview = (enabled = true) =>
     staleTime: 1000 * 60 * 5,
   });
 
-export { externalDataQueryKey, useExternalDataOverview };
+const useCollectExternalData = () => {
+  return useMutation({
+    mutationFn: (request: ExternalCollectRequest = {}) => collectExternalData(request),
+  });
+};
+
+export { externalDataQueryKey, useCollectExternalData, useExternalDataOverview };

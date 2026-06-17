@@ -49,6 +49,9 @@ SUPABASE_URL=https://{project-ref}.supabase.co
 SUPABASE_ANON_KEY={supabase publishable key}
 ALLOWED_ORIGINS=https://ow.naco.kr,http://localhost:5173
 SOURCES_CACHE_TTL_SECONDS=300
+R2_PUBLIC_BASE_URL=https://assets-ow.naco.kr
+OWTICS_DETAIL_FETCH_LIMIT=4
+OWTICS_ASSET_FETCH_LIMIT=12
 ```
 
 Secrets:
@@ -64,6 +67,37 @@ wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 ```
 
 개발 중 수동 수집 endpoint는 별도 secret 없이 열어둔다. 운영에서 외부 공개 호출을 막고 싶으면 나중에 collector secret 또는 관리자 인증을 추가한다.
+
+## 3.1. R2 로고 캐시
+
+OWTICS 팀/대회 로고는 매번 원본 사이트에서 직접 표시하지 않고, 수집 시 Worker가 R2에 한 번 저장한 뒤 캐시 URL을 Supabase metadata에 기록한다.
+
+Worker Settings -> Bindings에 R2 bucket binding을 추가한다.
+
+```text
+Binding type: R2 bucket
+Variable name: ASSETS_BUCKET
+Bucket: overwatch-tracker-assets
+```
+
+권장 object key prefix:
+
+```text
+external/owtics/team-a-logo/{hash}.png
+external/owtics/team-b-logo/{hash}.png
+external/owtics/competition-logo/{hash}.png
+```
+
+`R2_PUBLIC_BASE_URL` 또는 `EXTERNAL_ASSETS_PUBLIC_BASE_URL`이 있으면 저장되는 로고 URL은 `https://assets-ow.naco.kr/external/...` 형태가 된다.
+이 값이 없으면 수동 수집 시 `https://{external-worker-host}/external/assets/external/...` 형태의 Worker 서빙 URL을 사용한다.
+
+관련 선택 변수:
+
+```text
+EXTERNAL_ASSET_MAX_BYTES=1500000
+OWTICS_ASSET_FETCH_CONCURRENCY=2
+OWTICS_DETAIL_FETCH_CONCURRENCY=4
+```
 
 ## 4. Route 연결
 

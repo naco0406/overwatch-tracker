@@ -4,7 +4,6 @@ import {
   ChevronDown,
   Command,
   Database,
-  Grid2X2,
   Home,
   LogOut,
   MessagesSquare,
@@ -63,14 +62,14 @@ const primaryNavItems: NavItem[] = [
     ],
   },
   {
-    to: '/external-data/overview',
+    to: '/external-data/sources',
     label: '외부 데이터',
     icon: Database,
     children: [
-      { to: '/external-data/overview', label: '개요' },
+      { to: '/external-data/sources', label: '데이터 소스 현황' },
       { to: '/external-data/esports', label: 'e스포츠 일정' },
       { to: '/external-data/heroes', label: '영웅 메타' },
-      { to: '/external-data/sources', label: '데이터 소스' },
+      { to: '/external-data/assets', label: '오버워치 에셋' },
     ],
   },
   {
@@ -492,15 +491,6 @@ const AccountMenu = ({
               </PopoverClose>
             </>
           ) : null}
-          <PopoverClose asChild>
-            <NavLink
-              to="/master-data"
-              className="flex h-10 items-center gap-3 rounded-md px-3 text-sm font-bold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-            >
-              <Grid2X2 className="h-4 w-4" />
-              오버워치 에셋
-            </NavLink>
-          </PopoverClose>
           <div className="my-1 border-t border-border/70" />
           <div className="flex items-start gap-2 px-3 py-2 text-xs font-semibold leading-relaxed text-muted-foreground">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
