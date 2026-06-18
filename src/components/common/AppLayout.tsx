@@ -62,14 +62,14 @@ const primaryNavItems: NavItem[] = [
     ],
   },
   {
-    to: '/external-data/sources',
+    to: '/external-data/heroes',
     label: '외부 데이터',
     icon: Database,
     children: [
-      { to: '/external-data/sources', label: '데이터 소스 현황' },
-      { to: '/external-data/esports', label: 'e스포츠 일정' },
       { to: '/external-data/heroes', label: '영웅 메타' },
+      { to: '/external-data/esports', label: 'e스포츠 일정' },
       { to: '/external-data/assets', label: '오버워치 에셋' },
+      { to: '/external-data/sources', label: '데이터 소스 현황' },
     ],
   },
   {

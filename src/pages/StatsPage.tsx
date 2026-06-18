@@ -20,14 +20,17 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
+  Star,
   Swords,
   Target,
   Trophy,
   TriangleAlert,
   UsersRound,
   X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import {
   Bar,
@@ -75,6 +78,12 @@ import { useCompetitiveSeasons } from '@/hooks/useCompetitiveSeasons';
 import { useMatches } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useQwenInsightNarrator } from '@/hooks/useQwenInsightNarrator';
+import { useUserSettings } from '@/hooks/useUserSettings';
+import {
+  getFavoriteEsportsTeamEvents,
+  getNextFavoriteEsportsTeamEvent,
+  isFavoriteEsportsTeamEvent,
+} from '@/lib/externalEsports';
 import {
   compareMatchesByTimelineDesc,
   formatWinRate,
@@ -98,6 +107,7 @@ import {
 import type { ExternalDataOverview, ExternalSource } from '@/types/externalData';
 import type { Match, MatchRole, ModeId, QueueType } from '@/types/match';
 import { getPlayerAccountLabel, type PlayerAccount } from '@/types/playerAccount';
+import type { FavoriteEsportsTeam } from '@/types/userSettings';
 
 const periodOptions = [
   { label: '전체', value: 'all' },
@@ -280,6 +290,14 @@ const formatExternalTtl = (seconds: number) => {
 const formatExternalPercent = (value: number | null) =>
   value === null ? '--' : `${value.toFixed(1)}%`;
 
+const formatExternalSignedPercent = (value: number | null) => {
+  if (value === null) {
+    return '--';
+  }
+
+  return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`;
+};
+
 const getExternalSourceTypeLabel = (value: ExternalSource['sourceType']) =>
   externalSourceTypeLabels[value] ?? value;
 
@@ -315,6 +333,40 @@ const getExternalEventStatusLabel = (status: string) =>
 
 const getExternalEsportsMatchPath = (event: ExternalEsportsEventItem) =>
   `/external-data/esports/matches/${encodeURIComponent(event.id)}`;
+
+const externalScheduleLogoWellStyle = {
+  background:
+    'radial-gradient(circle at 50% 30%, rgba(255,255,255,0.20), transparent 58%), linear-gradient(145deg, hsl(222 20% 15%), hsl(220 16% 8%))',
+  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.10), inset 0 -12px 28px rgba(0,0,0,0.18)',
+} satisfies CSSProperties;
+
+const externalScheduleLogoImageClassName =
+  'h-full w-full object-contain drop-shadow-[0_1px_1px_rgba(0,0,0,0.65)] drop-shadow-[0_0_10px_rgba(0,0,0,0.45)]';
+
+const getExternalEventMetadataString = (event: ExternalEsportsEventItem, key: string) => {
+  const value = event.metadata?.[key];
+
+  return typeof value === 'string' && value.trim() ? value.trim() : '';
+};
+
+const getExternalEventTeamLogoUrl = (event: ExternalEsportsEventItem, side: 'A' | 'B') =>
+  getExternalEventMetadataString(event, side === 'A' ? 'teamALogoUrl' : 'teamBLogoUrl');
+
+const getExternalEventCompetitionLogoUrl = (event: ExternalEsportsEventItem) =>
+  getExternalEventMetadataString(event, 'competitionLogoUrl');
+
+const getExternalEventTeamCode = (event: ExternalEsportsEventItem, side: 'A' | 'B') =>
+  getExternalEventMetadataString(event, side === 'A' ? 'teamAAbbreviation' : 'teamBAbbreviation') ||
+  (side === 'A' ? event.teamA : event.teamB);
+
+const getExternalTeamInitials = (teamName: string) =>
+  teamName
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || 'T';
 
 const getExternalSourcePriority = (sourceId: string) =>
   sourceId in externalSourcePriority
@@ -506,48 +558,6 @@ const formatExternalTimeUntil = (value: string | null, now: number) => {
   const remainingHours = diffHours % 24;
 
   return remainingHours > 0 ? `${diffDays}일 ${remainingHours}시간 후` : `${diffDays}일 후`;
-};
-
-const getExternalEventSourceSummary = (events: ExternalEsportsEventItem[]) => {
-  if (events.length === 0) {
-    return '소스 없음';
-  }
-
-  const counts = events.reduce((map, event) => {
-    map.set(event.sourceId, (map.get(event.sourceId) ?? 0) + 1);
-
-    return map;
-  }, new Map<string, number>());
-
-  return Array.from(counts, ([sourceId, count]) => ({
-    count,
-    label: getExternalCompactSourceLabel(sourceId),
-  }))
-    .sort(
-      (left, right) => right.count - left.count || left.label.localeCompare(right.label, 'ko-KR'),
-    )
-    .slice(0, 2)
-    .map((item) => `${item.label} ${item.count.toLocaleString('ko-KR')}`)
-    .join(' · ');
-};
-
-const getExternalBusiestScheduleDate = (events: ExternalEsportsEventItem[]) => {
-  const counts = events.reduce((map, event) => {
-    const dateKey = getExternalEventDateKey(event);
-
-    if (!dateKey) {
-      return map;
-    }
-
-    map.set(dateKey, (map.get(dateKey) ?? 0) + 1);
-
-    return map;
-  }, new Map<string, number>());
-  const busiest = Array.from(counts, ([dateKey, count]) => ({ count, dateKey })).sort(
-    (left, right) => right.count - left.count || left.dateKey.localeCompare(right.dateKey),
-  )[0];
-
-  return busiest ?? null;
 };
 
 const addDays = (date: Date, amount: number) => {
@@ -744,22 +754,6 @@ const filterExternalScheduleEventsByStatus = (
     ? events
     : events.filter((event) => getExternalScheduleStatusFilterValue(event.status) === statusFilter);
 
-const getExternalScheduleStatusFilterLabel = (value: ExternalScheduleStatusFilter) => {
-  if (value === 'completed') {
-    return '종료';
-  }
-
-  if (value === 'live') {
-    return '진행';
-  }
-
-  if (value === 'scheduled') {
-    return '예정';
-  }
-
-  return '전체';
-};
-
 const getExternalUpcomingEvents = (events: ExternalEsportsEventItem[], now: number, limit = 8) =>
   events
     .filter((event) => event.startsAt && new Date(event.startsAt).getTime() >= now)
@@ -805,25 +799,6 @@ const filterExternalHeroRows = (rows: ExternalHeroMetaRow[], query: string) => {
   );
 };
 
-const createExternalHeroRoleSummaries = (rows: ExternalHeroMetaRow[]): ExternalHeroRoleSummary[] =>
-  matchRoleOptions.map((option) => {
-    const roleRows = rows.filter((hero) => hero.role === option.value);
-    const topPick =
-      [...roleRows]
-        .filter((hero) => hero.pickRate !== null)
-        .sort((left, right) => (right.pickRate ?? -1) - (left.pickRate ?? -1))[0] ??
-      roleRows[0] ??
-      null;
-
-    return {
-      avgPickRate: roundExternalMetric(getExternalAverage(roleRows.map((hero) => hero.pickRate))),
-      avgWinRate: roundExternalMetric(getExternalAverage(roleRows.map((hero) => hero.winRate))),
-      count: roleRows.length,
-      role: option.value,
-      topPick,
-    };
-  });
-
 const getExternalHeroScatterRoleClassName = (role: MatchRole | null) => {
   if (role === 'tank') {
     return 'border-amber-200 bg-amber-300 shadow-[0_0_0_3px_rgb(252_211_77/0.14)]';
@@ -845,7 +820,271 @@ const getExternalHeroScatterPosition = (value: number, minValue: number, maxValu
     return 50;
   }
 
-  return Math.min(96, Math.max(4, ((value - minValue) / (maxValue - minValue)) * 92 + 4));
+  return Math.min(97, Math.max(3, ((value - minValue) / (maxValue - minValue)) * 94 + 3));
+};
+
+const getExternalHeroMetricRangeWidth = (
+  value: number | null,
+  minValue: number,
+  maxValue: number,
+) => {
+  if (value === null || maxValue <= minValue) {
+    return 0;
+  }
+
+  return Math.min(100, Math.max(0, ((value - minValue) / (maxValue - minValue)) * 100));
+};
+
+const getExternalNiceAxisStep = (range: number, targetTickCount = 4) => {
+  if (!Number.isFinite(range) || range <= 0) {
+    return 1;
+  }
+
+  const rawStep = range / targetTickCount;
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+  const normalized = rawStep / magnitude;
+
+  if (normalized <= 1) {
+    return magnitude;
+  }
+
+  if (normalized <= 2) {
+    return 2 * magnitude;
+  }
+
+  if (normalized <= 2.5) {
+    return 2.5 * magnitude;
+  }
+
+  if (normalized <= 5) {
+    return 5 * magnitude;
+  }
+
+  return 10 * magnitude;
+};
+
+const getExternalRoundedAxisValue = (value: number) => Number(value.toFixed(2));
+
+const createExternalHeroScatterAxis = (
+  values: Array<number | null>,
+  {
+    fallbackMax,
+    fallbackMin,
+    ignoreZero = false,
+    minPadding,
+    minRange,
+  }: {
+    fallbackMax: number;
+    fallbackMin: number;
+    ignoreZero?: boolean;
+    minPadding: number;
+    minRange: number;
+  },
+): ExternalHeroScatterAxis => {
+  const numericValues = getExternalValidPercentValues(values, { ignoreZero });
+  const rawMin = numericValues.length > 0 ? Math.min(...numericValues) : fallbackMin;
+  const rawMax = numericValues.length > 0 ? Math.max(...numericValues) : fallbackMax;
+  const rawRange = Math.max(0, rawMax - rawMin);
+  const padding = Math.max(minPadding, rawRange * 0.16);
+  let min = rawMin - padding;
+  let max = rawMax + padding;
+
+  if (max - min < minRange) {
+    const center = (rawMin + rawMax) / 2;
+
+    min = center - minRange / 2;
+    max = center + minRange / 2;
+  }
+
+  min = Math.max(0, min);
+  max = Math.min(100, max);
+
+  if (max - min < minRange) {
+    if (min <= 0) {
+      max = Math.min(100, min + minRange);
+    } else if (max >= 100) {
+      min = Math.max(0, max - minRange);
+    }
+  }
+
+  const step = getExternalNiceAxisStep(max - min);
+  const niceMin = Math.max(0, Math.floor(min / step) * step);
+  const niceMax = Math.min(100, Math.ceil(max / step) * step);
+  const safeMax = niceMax <= niceMin ? Math.min(100, niceMin + step) : niceMax;
+  const ticks: number[] = [];
+
+  for (let tick = niceMin; tick <= safeMax + step / 2; tick += step) {
+    ticks.push(getExternalRoundedAxisValue(tick));
+  }
+
+  if (ticks.length < 2) {
+    ticks.push(getExternalRoundedAxisValue(safeMax));
+  }
+
+  return {
+    max: getExternalRoundedAxisValue(safeMax),
+    min: getExternalRoundedAxisValue(niceMin),
+    rawMax: getExternalRoundedAxisValue(rawMax),
+    rawMin: getExternalRoundedAxisValue(rawMin),
+    ticks,
+  };
+};
+
+const createExternalHeroScatterAxisFromDomain = (
+  baseAxis: ExternalHeroScatterAxis,
+  min: number,
+  max: number,
+): ExternalHeroScatterAxis => {
+  const safeMin = Math.max(0, Math.min(100, Math.min(min, max)));
+  const safeMax = Math.max(safeMin + 0.1, Math.min(100, Math.max(min, max)));
+  const step = getExternalNiceAxisStep(safeMax - safeMin);
+  const ticks: number[] = [];
+  const firstTick = Math.ceil(safeMin / step) * step;
+
+  ticks.push(getExternalRoundedAxisValue(safeMin));
+
+  for (let tick = firstTick; tick < safeMax; tick += step) {
+    const roundedTick = getExternalRoundedAxisValue(tick);
+
+    if (roundedTick > safeMin && roundedTick < safeMax) {
+      ticks.push(roundedTick);
+    }
+  }
+
+  ticks.push(getExternalRoundedAxisValue(safeMax));
+
+  return {
+    max: getExternalRoundedAxisValue(safeMax),
+    min: getExternalRoundedAxisValue(safeMin),
+    rawMax: baseAxis.rawMax,
+    rawMin: baseAxis.rawMin,
+    ticks: Array.from(new Set(ticks)),
+  };
+};
+
+const isExternalMetricInsideAxis = (value: number | null, axis: ExternalHeroScatterAxis) =>
+  value !== null && value >= axis.min && value <= axis.max;
+
+const clampExternalHeroAxisDomain = ({
+  baseAxis,
+  max,
+  min,
+  minRange,
+}: {
+  baseAxis: ExternalHeroScatterAxis;
+  max: number;
+  min: number;
+  minRange: number;
+}) => {
+  const baseRange = Math.max(0.1, baseAxis.max - baseAxis.min);
+  const targetRange = Math.min(baseRange, Math.max(minRange, max - min));
+  let nextMin = min;
+  let nextMax = min + targetRange;
+
+  if (nextMin < baseAxis.min) {
+    nextMin = baseAxis.min;
+    nextMax = nextMin + targetRange;
+  }
+
+  if (nextMax > baseAxis.max) {
+    nextMax = baseAxis.max;
+    nextMin = nextMax - targetRange;
+  }
+
+  return {
+    max: getExternalRoundedAxisValue(Math.min(baseAxis.max, nextMax)),
+    min: getExternalRoundedAxisValue(Math.max(baseAxis.min, nextMin)),
+  };
+};
+
+const zoomExternalHeroAxisDomain = ({
+  axis,
+  baseAxis,
+  centerRatio,
+  minRange,
+  scale,
+}: {
+  axis: ExternalHeroScatterAxis;
+  baseAxis: ExternalHeroScatterAxis;
+  centerRatio: number;
+  minRange: number;
+  scale: number;
+}) => {
+  const safeCenterRatio = Math.min(0.95, Math.max(0.05, centerRatio));
+  const currentRange = axis.max - axis.min;
+  const baseRange = baseAxis.max - baseAxis.min;
+  const targetRange = Math.min(baseRange, Math.max(minRange, currentRange * scale));
+  const centerValue = axis.min + currentRange * safeCenterRatio;
+
+  return clampExternalHeroAxisDomain({
+    baseAxis,
+    max: centerValue + targetRange * (1 - safeCenterRatio),
+    min: centerValue - targetRange * safeCenterRatio,
+    minRange,
+  });
+};
+
+const getExternalHeroSignalFocusDomain = ({
+  avgPick,
+  avgWin,
+  basePickAxis,
+  baseWinAxis,
+  pickMinRange,
+  signalFilter,
+  winMinRange,
+}: {
+  avgPick: number | null;
+  avgWin: number | null;
+  basePickAxis: ExternalHeroScatterAxis;
+  baseWinAxis: ExternalHeroScatterAxis;
+  pickMinRange: number;
+  signalFilter: ExternalHeroSignalFilter;
+  winMinRange: number;
+}): ExternalHeroScatterZoomDomain | null => {
+  if (signalFilter === 'all' || avgPick === null || avgWin === null) {
+    return null;
+  }
+
+  const pickPadding = Math.max(0.8, (basePickAxis.max - basePickAxis.min) * 0.08);
+  const winPadding = Math.max(0.6, (baseWinAxis.max - baseWinAxis.min) * 0.08);
+  let pickMin = basePickAxis.min;
+  let pickMax = basePickAxis.max;
+  let winMin = baseWinAxis.min;
+  let winMax = baseWinAxis.max;
+
+  if (signalFilter === 'core') {
+    pickMin = avgPick - pickPadding;
+    winMin = avgWin - winPadding;
+  } else if (signalFilter === 'efficient') {
+    pickMax = avgPick + pickPadding;
+    winMin = avgWin - winPadding;
+  } else if (signalFilter === 'overheated') {
+    pickMin = avgPick - pickPadding;
+    winMax = avgWin + winPadding;
+  } else {
+    pickMax = avgPick + pickPadding;
+    winMax = avgWin + winPadding;
+  }
+
+  const pickDomain = clampExternalHeroAxisDomain({
+    baseAxis: basePickAxis,
+    max: pickMax,
+    min: pickMin,
+    minRange: pickMinRange,
+  });
+  const winDomain = clampExternalHeroAxisDomain({
+    baseAxis: baseWinAxis,
+    max: winMax,
+    min: winMin,
+    minRange: winMinRange,
+  });
+
+  return {
+    pickMax: pickDomain.max,
+    pickMin: pickDomain.min,
+    winMax: winDomain.max,
+    winMin: winDomain.min,
+  };
 };
 
 const getExternalHeroMetricRank = (
@@ -866,7 +1105,10 @@ const getExternalHeroSignalKey = (
   rows: ExternalHeroMetaRow[],
 ): Exclude<ExternalHeroSignalFilter, 'all'> => {
   const avgPickRate = getExternalAverage(rows.map((row) => row.pickRate));
-  const avgWinRate = getExternalAverage(rows.map((row) => row.winRate));
+  const avgWinRate = getExternalAverage(
+    rows.map((row) => row.winRate),
+    { ignoreZero: true },
+  );
 
   if (
     hero.pickRate === null ||
@@ -2596,12 +2838,36 @@ interface ExternalHeroMetaRow {
   winRate: number | null;
 }
 
-interface ExternalHeroRoleSummary {
-  avgPickRate: number | null;
-  avgWinRate: number | null;
-  count: number;
-  role: MatchRole;
-  topPick: ExternalHeroMetaRow | null;
+interface ExternalHeroScatterAxis {
+  max: number;
+  min: number;
+  rawMax: number;
+  rawMin: number;
+  ticks: number[];
+}
+
+interface ExternalHeroScatterZoomDomain {
+  pickMax: number;
+  pickMin: number;
+  winMax: number;
+  winMin: number;
+}
+
+interface ExternalHeroScatterTooltipState {
+  heroId: string;
+  x: number;
+  y: number;
+}
+
+interface ExternalHeroScatterPanState {
+  height: number;
+  pickMax: number;
+  pickMin: number;
+  startX: number;
+  startY: number;
+  width: number;
+  winMax: number;
+  winMin: number;
 }
 
 interface ExternalScheduleRegionOption {
@@ -2792,8 +3058,21 @@ export const createExternalSourceCards = (
       };
     });
 
-const getExternalAverage = (values: Array<number | null>) => {
-  const numericValues = values.filter((value): value is number => value !== null);
+const getExternalValidPercentValues = (
+  values: Array<number | null>,
+  { ignoreZero = false }: { ignoreZero?: boolean } = {},
+) =>
+  values.filter(
+    (value): value is number =>
+      value !== null &&
+      Number.isFinite(value) &&
+      value >= 0 &&
+      value <= 100 &&
+      (!ignoreZero || value > 0),
+  );
+
+const getExternalAverage = (values: Array<number | null>, options?: { ignoreZero?: boolean }) => {
+  const numericValues = getExternalValidPercentValues(values, options);
 
   if (numericValues.length === 0) {
     return null;
@@ -2877,7 +3156,7 @@ const createExternalHeroMetaRows = (
         sourceLabels.length > 2
           ? `${sourceLabels.slice(0, 2).join(', ')} 외 ${sourceLabels.length - 2}`
           : sourceLabels.join(', ') || '소스 없음',
-      winRate: roundExternalMetric(getExternalAverage(group.winRates)),
+      winRate: roundExternalMetric(getExternalAverage(group.winRates, { ignoreZero: true })),
     };
   }).sort((left, right) => {
     const pickDelta = (right.pickRate ?? -1) - (left.pickRate ?? -1);
@@ -3101,7 +3380,6 @@ export const ExternalHeroMetaPanel = ({
     filterExternalHeroRowsBySignal(searchedHeroRows, signalFilter, heroRows),
     sortMode,
   );
-  const roleSummaries = createExternalHeroRoleSummaries(allHeroRows);
   const signalCounts = getExternalHeroSignalCounts(heroRows);
   const topPick =
     [...heroRows]
@@ -3115,21 +3393,29 @@ export const ExternalHeroMetaPanel = ({
       .sort((left, right) => (right.winRate ?? -1) - (left.winRate ?? -1))[0] ??
     heroRows[0] ??
     null;
-  const selectedHero =
-    (selectedHeroId
-      ? (visibleHeroRows.find((hero) => hero.heroId === selectedHeroId) ??
-        heroRows.find((hero) => hero.heroId === selectedHeroId))
-      : null) ??
-    topPick ??
-    visibleHeroRows[0] ??
-    null;
+  const selectedHero = selectedHeroId
+    ? (visibleHeroRows.find((hero) => hero.heroId === selectedHeroId) ?? null)
+    : null;
   const latestAt = getLatestExternalTimestamp(heroRates.map((snapshot) => snapshot.fetchedAt));
-  const resetHeroFilters = () => {
-    setRoleFilter('all');
+  const handleRoleChange = (value: ExternalHeroRoleFilter) => {
+    setRoleFilter(value);
+    setSelectedHeroId(null);
+  };
+  const handleQueryChange = (value: string) => {
+    setHeroQuery(value);
+    setSelectedHeroId(null);
+  };
+  const handleSignalChange = (value: ExternalHeroSignalFilter) => {
+    setSignalFilter(value);
+    setSelectedHeroId(null);
+  };
+  const focusHero = (heroId: string) => {
     setHeroQuery('');
     setSignalFilter('all');
-    setSortMode('pick');
-    setSelectedHeroId(null);
+    setSelectedHeroId(heroId);
+  };
+  const toggleHeroSelection = (heroId: string) => {
+    setSelectedHeroId((currentHeroId) => (currentHeroId === heroId ? null : heroId));
   };
 
   return (
@@ -3140,11 +3426,11 @@ export const ExternalHeroMetaPanel = ({
             <p className="metric-label">영웅 메타</p>
             <h2 className="mt-1 text-lg font-bold">역할별 픽률과 승률</h2>
             <p className="mt-1 text-sm font-semibold text-muted-foreground">
-              초상화와 표를 중심으로 현재 메타 상위 영웅을 확인합니다.
+              많이 쓰이는 영웅과 승률이 좋은 영웅을 비교합니다.
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-            <ExternalHeroRoleTabs value={roleFilter} onChange={setRoleFilter} />
+            <ExternalHeroRoleTabs value={roleFilter} onChange={handleRoleChange} />
             <Badge variant="outline" className="w-fit gap-1.5 bg-transparent">
               <Gauge className="h-3.5 w-3.5" />
               {getExternalFreshnessLabel(latestAt)}
@@ -3167,7 +3453,7 @@ export const ExternalHeroMetaPanel = ({
               metricLabel="픽률"
               metricValue={formatExternalPercent(topPick?.pickRate ?? null)}
               title="픽률 상위 영웅"
-              onSelect={setSelectedHeroId}
+              onSelect={focusHero}
             />
             <ExternalHeroFeatureCard
               hero={topWin}
@@ -3175,59 +3461,44 @@ export const ExternalHeroMetaPanel = ({
               metricLabel="승률"
               metricValue={formatExternalPercent(topWin?.winRate ?? null)}
               title="승률 상위 영웅"
-              onSelect={setSelectedHeroId}
+              onSelect={focusHero}
             />
           </div>
 
-          <ExternalHeroSpotlight
-            hero={selectedHero}
-            rows={heroRows}
-            onClear={() => setSelectedHeroId(null)}
-            onSelectHero={setSelectedHeroId}
-          />
-          <ExternalHeroSignalBoard
-            counts={signalCounts}
-            rows={heroRows}
-            value={signalFilter}
-            onChange={setSignalFilter}
-            onSelectHero={setSelectedHeroId}
-          />
-          <ExternalHeroRoleSummaryStrip
-            activeRole={roleFilter}
-            summaries={roleSummaries}
-            onSelectRole={setRoleFilter}
-            onSelectHero={setSelectedHeroId}
-          />
           <ExternalHeroMetaToolbar
             query={heroQuery}
             sortMode={sortMode}
             totalRows={heroRows.length}
             visibleRows={visibleHeroRows.length}
-            onQueryChange={setHeroQuery}
+            onQueryChange={handleQueryChange}
             onSortModeChange={setSortMode}
           />
-          <ExternalHeroActiveFilters
-            query={heroQuery}
-            roleFilter={roleFilter}
-            selectedHero={selectedHeroId ? selectedHero : null}
-            signalFilter={signalFilter}
-            visibleRows={visibleHeroRows.length}
-            onClearQuery={() => setHeroQuery('')}
-            onClearSelectedHero={() => setSelectedHeroId(null)}
-            onResetAll={resetHeroFilters}
-            onResetRole={() => setRoleFilter('all')}
-            onResetSignal={() => setSignalFilter('all')}
+          <ExternalHeroSignalBoard
+            counts={signalCounts}
+            value={signalFilter}
+            onChange={handleSignalChange}
           />
+          {selectedHero ? (
+            <ExternalHeroSpotlight
+              hero={selectedHero}
+              rows={visibleHeroRows}
+              onClear={() => setSelectedHeroId(null)}
+              onSelectHero={toggleHeroSelection}
+            />
+          ) : null}
           <ExternalHeroMetaScatterPlot
+            contextRows={heroRows}
             rows={visibleHeroRows}
             selectedHeroId={selectedHero?.heroId ?? null}
-            onSelectHero={setSelectedHeroId}
+            signalFilter={signalFilter}
+            onSelectHero={toggleHeroSelection}
           />
           <ExternalHeroComparisonTable
-            rows={visibleHeroRows.slice(0, 14)}
+            contextRows={heroRows}
+            rows={visibleHeroRows}
             selectedHeroId={selectedHero?.heroId ?? null}
             totalRows={visibleHeroRows.length}
-            onSelectHero={setSelectedHeroId}
+            onSelectHero={toggleHeroSelection}
           />
         </div>
       ) : (
@@ -3284,120 +3555,123 @@ const ExternalHeroSpotlight = ({
   onSelectHero,
   rows,
 }: {
-  hero: ExternalHeroMetaRow | null;
+  hero: ExternalHeroMetaRow;
   onClear: () => void;
   onSelectHero: (heroId: string) => void;
   rows: ExternalHeroMetaRow[];
 }) => {
   const pickRank = hero ? getExternalHeroMetricRank(rows, hero.heroId, 'pickRate') : null;
   const winRank = hero ? getExternalHeroMetricRank(rows, hero.heroId, 'winRate') : null;
-  const maxPickRate = Math.max(1, ...rows.map((row) => row.pickRate ?? 0));
-  const maxWinRate = Math.max(1, ...rows.map((row) => row.winRate ?? 0));
+  const pickAxis = createExternalHeroScatterAxis(
+    rows.map((row) => row.pickRate),
+    {
+      fallbackMax: 45,
+      fallbackMin: 0,
+      minPadding: 1.5,
+      minRange: 8,
+    },
+  );
+  const winAxis = createExternalHeroScatterAxis(
+    rows.map((row) => row.winRate),
+    {
+      fallbackMax: 55,
+      fallbackMin: 45,
+      ignoreZero: true,
+      minPadding: 0.8,
+      minRange: 6,
+    },
+  );
   const peerRows = hero ? getExternalHeroPeerRows(hero, rows) : [];
 
   return (
     <div className="border-b border-border/60 bg-card px-4 py-4 sm:px-5">
-      {hero ? (
-        <div className="grid gap-4 xl:grid-cols-[168px_minmax(0,1fr)] xl:items-stretch">
-          <div className="relative min-h-[168px] overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))]">
-            <ExternalHeroPortrait
-              heroId={hero.heroId}
-              className="h-full min-h-[168px] w-full rounded-none border-0"
-              imageClassName="object-cover object-top"
-              iconClassName="h-8 w-8"
-            />
-            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-background/95 to-transparent px-3 pb-3 pt-10">
-              <Badge variant="outline" className="bg-card/90">
-                {getExternalHeroSignalLabel(hero, rows)}
-              </Badge>
-            </div>
-          </div>
-
-          <div className="min-w-0 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div className="min-w-0">
-                <p className="metric-label">선택 영웅</p>
-                <h3 className="mt-1 truncate text-2xl font-black">{hero.name}</h3>
-                <p className="mt-1 truncate text-sm font-semibold text-muted-foreground">
-                  {hero.roleLabel} · {hero.regionLabel}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2 lg:justify-end">
-                <Badge variant="outline" className="bg-card">
-                  픽률 #{pickRank ?? '--'}
-                </Badge>
-                <Badge variant="outline" className="bg-card">
-                  승률 #{winRank ?? '--'}
-                </Badge>
-                <Button variant="ghost" size="sm" className="h-8" onClick={onClear}>
-                  초기화
-                </Button>
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <ExternalHeroSpotlightMetric
-                label="픽률"
-                value={formatExternalPercent(hero.pickRate)}
-                width={((hero.pickRate ?? 0) / maxPickRate) * 100}
-              />
-              <ExternalHeroSpotlightMetric
-                label="승률"
-                value={formatExternalPercent(hero.winRate)}
-                width={((hero.winRate ?? 0) / maxWinRate) * 100}
-              />
-            </div>
-
-            <div className="mt-4 grid gap-2 text-xs font-semibold text-muted-foreground md:grid-cols-3">
-              <p className="truncate rounded-md border border-border/60 bg-card px-3 py-2">
-                소스 {hero.sourceLabel}
-              </p>
-              <p className="truncate rounded-md border border-border/60 bg-card px-3 py-2">
-                {getExternalHeroCoverageLabel(hero)} · {hero.snapshotCount.toLocaleString('ko-KR')}
-                개
-              </p>
-              <p className="truncate rounded-md border border-border/60 bg-card px-3 py-2">
-                최근 {getExternalFreshnessLabel(hero.latestAt)}
-              </p>
-            </div>
-
-            {peerRows.length > 0 ? (
-              <div className="mt-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="metric-label">가까운 비교군</p>
-                  <span className="text-[11px] font-bold text-muted-foreground">
-                    동일 역할 기준
-                  </span>
-                </div>
-                <div className="mt-2 grid gap-2 md:grid-cols-3">
-                  {peerRows.map((peer) => (
-                    <button
-                      key={peer.heroId}
-                      type="button"
-                      className="grid min-w-0 grid-cols-[36px_minmax(0,1fr)] items-center gap-2 rounded-md border border-border/60 bg-card px-2.5 py-2 text-left transition-colors hover:border-primary/35 hover:bg-primary/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
-                      onClick={() => onSelectHero(peer.heroId)}
-                    >
-                      <ExternalHeroPortrait heroId={peer.heroId} className="h-9 w-9" />
-                      <span className="min-w-0">
-                        <span className="block truncate text-xs font-black">{peer.name}</span>
-                        <span className="mt-0.5 block truncate text-[11px] font-semibold text-muted-foreground">
-                          픽 {formatExternalPercent(peer.pickRate)} · 승{' '}
-                          {formatExternalPercent(peer.winRate)}
-                        </span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
+      <div className="grid gap-4 xl:grid-cols-[168px_minmax(0,1fr)] xl:items-stretch">
+        <div className="relative min-h-[168px] overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))]">
+          <ExternalHeroPortrait
+            heroId={hero.heroId}
+            className="h-full min-h-[168px] w-full rounded-none border-0"
+            imageClassName="object-cover object-top"
+            iconClassName="h-8 w-8"
+          />
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-background/95 to-transparent px-3 pb-3 pt-10">
+            <Badge variant="outline" className="bg-card/90">
+              {getExternalHeroSignalLabel(hero, rows)}
+            </Badge>
           </div>
         </div>
-      ) : (
-        <InlineEmptyState
-          title="선택할 영웅 데이터가 없습니다."
-          description="영웅 메타 수집이 완료되면 선택 보드가 표시됩니다."
-        />
-      )}
+
+        <div className="min-w-0 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <p className="metric-label">선택한 영웅</p>
+              <h3 className="mt-1 truncate text-2xl font-black">{hero.name}</h3>
+              <p className="mt-1 truncate text-sm font-semibold text-muted-foreground">
+                {hero.roleLabel}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 lg:justify-end">
+              <Badge variant="outline" className="bg-card">
+                픽률 #{pickRank ?? '--'}
+              </Badge>
+              <Badge variant="outline" className="bg-card">
+                승률 #{winRank ?? '--'}
+              </Badge>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                aria-label="선택 해제"
+                title="선택 해제"
+                onClick={onClear}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <ExternalHeroSpotlightMetric
+              label="픽률"
+              value={formatExternalPercent(hero.pickRate)}
+              width={getExternalHeroMetricRangeWidth(hero.pickRate, pickAxis.min, pickAxis.max)}
+            />
+            <ExternalHeroSpotlightMetric
+              label="승률"
+              value={formatExternalPercent(hero.winRate)}
+              width={getExternalHeroMetricRangeWidth(hero.winRate, winAxis.min, winAxis.max)}
+            />
+          </div>
+
+          {peerRows.length > 0 ? (
+            <div className="mt-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="metric-label">가까운 비교군</p>
+                <span className="text-[11px] font-bold text-muted-foreground">동일 역할 기준</span>
+              </div>
+              <div className="mt-2 grid gap-2 md:grid-cols-3">
+                {peerRows.map((peer) => (
+                  <button
+                    key={peer.heroId}
+                    type="button"
+                    className="grid min-w-0 grid-cols-[36px_minmax(0,1fr)] items-center gap-2 rounded-md border border-border/60 bg-card px-2.5 py-2 text-left transition-colors hover:border-primary/35 hover:bg-primary/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
+                    onClick={() => onSelectHero(peer.heroId)}
+                  >
+                    <ExternalHeroPortrait heroId={peer.heroId} className="h-9 w-9" />
+                    <span className="min-w-0">
+                      <span className="block truncate text-xs font-black">{peer.name}</span>
+                      <span className="mt-0.5 block truncate text-[11px] font-semibold text-muted-foreground">
+                        픽 {formatExternalPercent(peer.pickRate)} · 승{' '}
+                        {formatExternalPercent(peer.winRate)}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 };
@@ -3426,165 +3700,69 @@ const ExternalHeroSpotlightMetric = ({
 );
 
 const externalHeroSignalOptions = [
+  { description: '현재 조건의 모든 영웅', value: 'all' },
   { description: '픽률과 승률이 모두 평균 이상', value: 'core' },
   { description: '픽률은 낮지만 승률은 평균 이상', value: 'efficient' },
   { description: '픽률은 높지만 승률은 평균 이하', value: 'overheated' },
   { description: '추가 표본을 볼 필요가 있는 구간', value: 'watch' },
-] satisfies Array<{ description: string; value: Exclude<ExternalHeroSignalFilter, 'all'> }>;
+] satisfies Array<{ description: string; value: ExternalHeroSignalFilter }>;
 
 const ExternalHeroSignalBoard = ({
   counts,
   onChange,
-  onSelectHero,
-  rows,
   value,
 }: {
   counts: ReturnType<typeof getExternalHeroSignalCounts>;
   onChange: (value: ExternalHeroSignalFilter) => void;
-  onSelectHero: (heroId: string) => void;
-  rows: ExternalHeroMetaRow[];
   value: ExternalHeroSignalFilter;
-}) => (
-  <div className="border-b border-border/60 bg-card px-4 py-4 sm:px-5">
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+}) => {
+  const totalCount = counts.core + counts.efficient + counts.overheated + counts.watch;
+
+  return (
+    <div className="border-b border-border/60 bg-card px-4 py-4 sm:px-5">
       <div className="min-w-0">
-        <p className="metric-label">메타 신호</p>
-        <h3 className="mt-1 text-base font-bold">역할 안에서 해석하기</h3>
+        <p className="metric-label">메타 구간</p>
+        <h3 className="mt-1 text-base font-bold">구간별 영웅</h3>
       </div>
-      <Button
-        variant={value === 'all' ? 'secondary' : 'outline'}
-        size="sm"
-        className={cn(value !== 'all' && 'bg-transparent')}
-        onClick={() => onChange('all')}
-      >
-        전체 보기
-      </Button>
-    </div>
 
-    <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-      {externalHeroSignalOptions.map((option) => {
-        const signalRows = rows
-          .filter((hero) => getExternalHeroSignalKey(hero, rows) === option.value)
-          .sort((left, right) => (right.pickRate ?? -1) - (left.pickRate ?? -1));
-        const leadHero = signalRows[0] ?? null;
-        const isActive = value === option.value;
+      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+        {externalHeroSignalOptions.map((option) => {
+          const isActive = value === option.value;
+          const count = option.value === 'all' ? totalCount : counts[option.value];
 
-        return (
-          <button
-            key={option.value}
-            type="button"
-            aria-pressed={isActive}
-            className={cn(
-              'grid min-w-0 grid-cols-[minmax(0,1fr)_42px] gap-3 rounded-md border px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
-              isActive
-                ? 'border-primary/60 bg-primary/10'
-                : 'border-border/60 bg-[hsl(var(--surface-2))] hover:border-primary/30',
-            )}
-            onClick={() => {
-              onChange(option.value);
-
-              if (leadHero) {
-                onSelectHero(leadHero.heroId);
-              }
-            }}
-          >
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <p className="truncate text-sm font-black">
-                  {externalHeroSignalLabels[option.value]}
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={isActive}
+              className={cn(
+                'min-w-0 rounded-md border px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
+                isActive
+                  ? 'border-primary/60 bg-primary/10'
+                  : 'border-border/60 bg-[hsl(var(--surface-2))] hover:border-primary/30',
+              )}
+              onClick={() => onChange(option.value)}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-sm font-black">
+                    {externalHeroSignalLabels[option.value]}
+                  </p>
+                  <Badge variant="outline" className="shrink-0 bg-card text-[11px]">
+                    {count.toLocaleString('ko-KR')}
+                  </Badge>
+                </div>
+                <p className="mt-1 line-clamp-2 text-xs font-semibold leading-relaxed text-muted-foreground">
+                  {option.description}
                 </p>
-                <Badge variant="outline" className="shrink-0 bg-card text-[11px]">
-                  {counts[option.value].toLocaleString('ko-KR')}
-                </Badge>
               </div>
-              <p className="mt-1 line-clamp-2 text-xs font-semibold leading-relaxed text-muted-foreground">
-                {option.description}
-              </p>
-              <p className="mt-2 truncate text-[11px] font-bold text-muted-foreground">
-                {leadHero ? `대표 ${leadHero.name}` : '해당 영웅 없음'}
-              </p>
-            </div>
-            {leadHero ? (
-              <ExternalHeroPortrait heroId={leadHero.heroId} className="h-10 w-10" />
-            ) : (
-              <span className="h-10 w-10" />
-            )}
-          </button>
-        );
-      })}
+            </button>
+          );
+        })}
+      </div>
     </div>
-  </div>
-);
-
-const ExternalHeroRoleSummaryStrip = ({
-  activeRole,
-  onSelectHero,
-  onSelectRole,
-  summaries,
-}: {
-  activeRole: ExternalHeroRoleFilter;
-  onSelectHero: (heroId: string) => void;
-  onSelectRole: (value: ExternalHeroRoleFilter) => void;
-  summaries: ExternalHeroRoleSummary[];
-}) => (
-  <div className="border-b border-border/60 bg-card px-4 py-3 sm:px-5">
-    <div className="grid gap-2 lg:grid-cols-3">
-      {summaries.map((summary) => {
-        const isActive = activeRole === summary.role;
-        const topPick = summary.topPick;
-
-        return (
-          <button
-            key={summary.role}
-            type="button"
-            aria-pressed={isActive}
-            className={cn(
-              'grid min-w-0 grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3 rounded-md border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
-              isActive
-                ? 'border-primary/60 bg-primary/10'
-                : 'border-border/60 bg-[hsl(var(--surface-2))] hover:border-primary/30',
-            )}
-            onClick={() => onSelectRole(summary.role)}
-          >
-            <div className="flex h-10 w-10 items-center justify-center rounded-md border border-border/60 bg-card">
-              <MatchRoleIcon role={summary.role} className="h-5 w-5 text-primary" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2">
-                <p className="truncate text-sm font-black">{getExternalRoleLabel(summary.role)}</p>
-                <Badge variant="outline" className="shrink-0 bg-transparent text-[11px]">
-                  {summary.count.toLocaleString('ko-KR')}명
-                </Badge>
-              </div>
-              <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-                {summary.topPick ? `대표 픽 ${summary.topPick.name}` : '데이터 대기'}
-              </p>
-              <p className="mt-0.5 truncate text-[11px] font-semibold text-muted-foreground">
-                평균 승률 {formatExternalPercent(summary.avgWinRate)} · 평균 픽률{' '}
-                {formatExternalPercent(summary.avgPickRate)}
-              </p>
-            </div>
-            {topPick ? (
-              <button
-                type="button"
-                className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
-                aria-label={`${topPick.name} 선택`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onSelectHero(topPick.heroId);
-                }}
-              >
-                <ExternalHeroPortrait heroId={topPick.heroId} className="h-10 w-10" />
-              </button>
-            ) : (
-              <div className="h-10 w-10" />
-            )}
-          </button>
-        );
-      })}
-    </div>
-  </div>
-);
+  );
+};
 
 const ExternalHeroMetaToolbar = ({
   onQueryChange,
@@ -3600,152 +3778,248 @@ const ExternalHeroMetaToolbar = ({
   sortMode: ExternalHeroSortMode;
   totalRows: number;
   visibleRows: number;
-}) => (
-  <div className="border-b border-border/60 bg-card px-4 py-3 sm:px-5">
-    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-      <div className="relative min-w-0 flex-1">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          className="h-9 bg-[hsl(var(--surface-2))] pl-9 pr-9 text-sm font-semibold"
-          placeholder="영웅 이름, 역할, 지역 검색"
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-        />
-        {query ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
-            aria-label="검색어 지우기"
-            onClick={() => onQueryChange('')}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        ) : null}
-      </div>
-      <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-        <div className="grid grid-cols-3 overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-1">
-          {externalHeroSortOptions.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={sortMode === option.value}
-              className={cn(
-                'h-8 min-w-[54px] rounded-[5px] px-2 text-xs font-bold transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
-                sortMode === option.value
-                  ? 'bg-card text-foreground shadow-sm'
-                  : 'text-muted-foreground',
-              )}
-              onClick={() => onSortModeChange(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-        <Badge variant="outline" className="h-9 bg-transparent">
-          {visibleRows.toLocaleString('ko-KR')} / {totalRows.toLocaleString('ko-KR')}명
-        </Badge>
-      </div>
-    </div>
-  </div>
-);
-
-const ExternalHeroActiveFilters = ({
-  onClearQuery,
-  onClearSelectedHero,
-  onResetAll,
-  onResetRole,
-  onResetSignal,
-  query,
-  roleFilter,
-  selectedHero,
-  signalFilter,
-  visibleRows,
-}: {
-  onClearQuery: () => void;
-  onClearSelectedHero: () => void;
-  onResetAll: () => void;
-  onResetRole: () => void;
-  onResetSignal: () => void;
-  query: string;
-  roleFilter: ExternalHeroRoleFilter;
-  selectedHero: ExternalHeroMetaRow | null;
-  signalFilter: ExternalHeroSignalFilter;
-  visibleRows: number;
 }) => {
-  const chips = [
-    roleFilter !== 'all'
-      ? { label: `역할 ${getExternalRoleLabel(roleFilter)}`, onRemove: onResetRole }
-      : null,
-    signalFilter !== 'all'
-      ? { label: `신호 ${externalHeroSignalLabels[signalFilter]}`, onRemove: onResetSignal }
-      : null,
-    query.trim() ? { label: `검색 ${query.trim()}`, onRemove: onClearQuery } : null,
-    selectedHero ? { label: `선택 ${selectedHero.name}`, onRemove: onClearSelectedHero } : null,
-  ].filter((chip): chip is { label: string; onRemove: () => void } => chip !== null);
+  const rowCountLabel =
+    visibleRows === totalRows
+      ? `${totalRows.toLocaleString('ko-KR')}명`
+      : `${visibleRows.toLocaleString('ko-KR')}명`;
 
   return (
     <div className="border-b border-border/60 bg-card px-4 py-3 sm:px-5">
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="text-xs font-bold text-muted-foreground">
-            현재 {visibleRows.toLocaleString('ko-KR')}명 표시
-          </span>
-          {chips.length > 0 ? (
-            chips.map((chip) => (
-              <button
-                key={chip.label}
-                type="button"
-                className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-2 text-xs font-bold transition-colors hover:border-primary/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
-                onClick={chip.onRemove}
-              >
-                <span className="truncate">{chip.label}</span>
-                <X className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              </button>
-            ))
-          ) : (
-            <Badge variant="outline" className="bg-transparent">
-              필터 없음
-            </Badge>
-          )}
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="h-9 bg-[hsl(var(--surface-2))] pl-9 pr-9 text-sm font-semibold"
+            placeholder="영웅 이름 검색"
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+          />
+          {query ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
+              aria-label="검색어 지우기"
+              onClick={() => onQueryChange('')}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          ) : null}
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-fit"
-          disabled={chips.length === 0}
-          onClick={onResetAll}
-        >
-          전체 초기화
-        </Button>
+        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+          <div className="grid grid-cols-3 overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-1">
+            {externalHeroSortOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={sortMode === option.value}
+                className={cn(
+                  'h-8 min-w-[54px] rounded-[5px] px-2 text-xs font-bold transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
+                  sortMode === option.value
+                    ? 'bg-card text-foreground shadow-sm'
+                    : 'text-muted-foreground',
+                )}
+                onClick={() => onSortModeChange(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <Badge variant="outline" className="h-9 bg-transparent">
+            영웅 {rowCountLabel}
+          </Badge>
+        </div>
       </div>
     </div>
   );
 };
 
 const ExternalHeroMetaScatterPlot = ({
+  contextRows,
   onSelectHero,
   rows,
   selectedHeroId,
+  signalFilter,
 }: {
+  contextRows: ExternalHeroMetaRow[];
   onSelectHero: (heroId: string) => void;
   rows: ExternalHeroMetaRow[];
   selectedHeroId: string | null;
+  signalFilter: ExternalHeroSignalFilter;
 }) => {
-  const plottableRows = rows.filter((hero) => hero.pickRate !== null && hero.winRate !== null);
-  const pickValues = plottableRows.map((hero) => hero.pickRate ?? 0);
-  const winValues = plottableRows.map((hero) => hero.winRate ?? 0);
-  const minPick = Math.max(0, Math.min(...pickValues, 0));
-  const maxPick = Math.max(...pickValues, 1);
-  const minWin = Math.max(0, Math.min(...winValues, 45) - 1);
-  const maxWin = Math.max(...winValues, 55) + 1;
-  const avgPick = roundExternalMetric(getExternalAverage(pickValues));
-  const avgWin = roundExternalMetric(getExternalAverage(winValues));
+  const [tooltipState, setTooltipState] = useState<ExternalHeroScatterTooltipState | null>(null);
+  const [zoomState, setZoomState] = useState<{
+    domain: ExternalHeroScatterZoomDomain | null;
+    signalFilter: ExternalHeroSignalFilter;
+  }>({ domain: null, signalFilter: 'all' });
+  const panStateRef = useRef<ExternalHeroScatterPanState | null>(null);
+  const zoomDomain = zoomState.signalFilter === signalFilter ? zoomState.domain : null;
+  const setActiveZoomDomain = (domain: ExternalHeroScatterZoomDomain | null) => {
+    setZoomState({ domain, signalFilter });
+  };
+  const plottableRows = rows.filter(
+    (hero) =>
+      getExternalValidPercentValues([hero.pickRate]).length > 0 &&
+      getExternalValidPercentValues([hero.winRate], { ignoreZero: true }).length > 0,
+  );
+  const contextPlottableRows = contextRows.filter(
+    (hero) =>
+      getExternalValidPercentValues([hero.pickRate]).length > 0 &&
+      getExternalValidPercentValues([hero.winRate], { ignoreZero: true }).length > 0,
+  );
+  const contextPickValues = contextPlottableRows.map((hero) => hero.pickRate);
+  const contextWinValues = contextPlottableRows.map((hero) => hero.winRate);
+  const basePickAxis = createExternalHeroScatterAxis(contextPickValues, {
+    fallbackMax: 45,
+    fallbackMin: 0,
+    minPadding: 1.5,
+    minRange: 8,
+  });
+  const baseWinAxis = createExternalHeroScatterAxis(contextWinValues, {
+    fallbackMax: 55,
+    fallbackMin: 45,
+    ignoreZero: true,
+    minPadding: 0.8,
+    minRange: 6,
+  });
+  const pickMinRange = Math.max(1.5, (basePickAxis.max - basePickAxis.min) * 0.22);
+  const winMinRange = Math.max(1.2, (baseWinAxis.max - baseWinAxis.min) * 0.22);
+  const avgPick = roundExternalMetric(getExternalAverage(contextPickValues));
+  const avgWin = roundExternalMetric(getExternalAverage(contextWinValues, { ignoreZero: true }));
+  const focusDomain = getExternalHeroSignalFocusDomain({
+    avgPick,
+    avgWin,
+    basePickAxis,
+    baseWinAxis,
+    pickMinRange,
+    signalFilter,
+    winMinRange,
+  });
+  const activeDomain = zoomDomain ?? focusDomain;
+  const clampedActiveDomain = activeDomain
+    ? {
+        pick: clampExternalHeroAxisDomain({
+          baseAxis: basePickAxis,
+          max: activeDomain.pickMax,
+          min: activeDomain.pickMin,
+          minRange: pickMinRange,
+        }),
+        win: clampExternalHeroAxisDomain({
+          baseAxis: baseWinAxis,
+          max: activeDomain.winMax,
+          min: activeDomain.winMin,
+          minRange: winMinRange,
+        }),
+      }
+    : null;
+  const pickAxis = clampedActiveDomain
+    ? createExternalHeroScatterAxisFromDomain(
+        basePickAxis,
+        clampedActiveDomain.pick.min,
+        clampedActiveDomain.pick.max,
+      )
+    : basePickAxis;
+  const winAxis = clampedActiveDomain
+    ? createExternalHeroScatterAxisFromDomain(
+        baseWinAxis,
+        clampedActiveDomain.win.min,
+        clampedActiveDomain.win.max,
+      )
+    : baseWinAxis;
+  const isZoomed =
+    pickAxis.min !== basePickAxis.min ||
+    pickAxis.max !== basePickAxis.max ||
+    winAxis.min !== baseWinAxis.min ||
+    winAxis.max !== baseWinAxis.max;
+  const hasManualZoom = zoomDomain !== null;
   const avgPickPosition =
-    avgPick === null ? null : getExternalHeroScatterPosition(avgPick, minPick, maxPick);
+    avgPick === null || !isExternalMetricInsideAxis(avgPick, pickAxis)
+      ? null
+      : getExternalHeroScatterPosition(avgPick, pickAxis.min, pickAxis.max);
   const avgWinPosition =
-    avgWin === null ? null : getExternalHeroScatterPosition(avgWin, minWin, maxWin);
+    avgWin === null || !isExternalMetricInsideAxis(avgWin, winAxis)
+      ? null
+      : getExternalHeroScatterPosition(avgWin, winAxis.min, winAxis.max);
+  const tooltipHero = tooltipState
+    ? (plottableRows.find((hero) => hero.heroId === tooltipState.heroId) ?? null)
+    : null;
+  const visiblePlottableRows = plottableRows.filter(
+    (hero) =>
+      isExternalMetricInsideAxis(hero.pickRate, pickAxis) &&
+      isExternalMetricInsideAxis(hero.winRate, winAxis),
+  );
+  const contextSignalCounts = getExternalHeroSignalCounts(contextRows);
+  const visibleCountLabel =
+    signalFilter === 'all'
+      ? `${visiblePlottableRows.length.toLocaleString('ko-KR')}명`
+      : `${externalHeroSignalLabels[signalFilter]} ${visiblePlottableRows.length.toLocaleString(
+          'ko-KR',
+        )}명`;
+  const updateZoom = (scale: number, pickCenterRatio = 0.5, winCenterRatio = 0.5) => {
+    const nextPick = zoomExternalHeroAxisDomain({
+      axis: pickAxis,
+      baseAxis: basePickAxis,
+      centerRatio: pickCenterRatio,
+      minRange: pickMinRange,
+      scale,
+    });
+    const nextWin = zoomExternalHeroAxisDomain({
+      axis: winAxis,
+      baseAxis: baseWinAxis,
+      centerRatio: winCenterRatio,
+      minRange: winMinRange,
+      scale,
+    });
+    const nextIsBase =
+      nextPick.min === basePickAxis.min &&
+      nextPick.max === basePickAxis.max &&
+      nextWin.min === baseWinAxis.min &&
+      nextWin.max === baseWinAxis.max;
+
+    setActiveZoomDomain(
+      nextIsBase
+        ? null
+        : {
+            pickMax: nextPick.max,
+            pickMin: nextPick.min,
+            winMax: nextWin.max,
+            winMin: nextWin.min,
+          },
+    );
+  };
+  const panZoomDomain = (deltaX: number, deltaY: number) => {
+    const panState = panStateRef.current;
+
+    if (!panState || !isZoomed) {
+      return;
+    }
+
+    const pickRange = panState.pickMax - panState.pickMin;
+    const winRange = panState.winMax - panState.winMin;
+    const pickDelta = -(deltaX / Math.max(1, panState.width)) * pickRange;
+    const winDelta = (deltaY / Math.max(1, panState.height)) * winRange;
+    const nextPick = clampExternalHeroAxisDomain({
+      baseAxis: basePickAxis,
+      max: panState.pickMax + pickDelta,
+      min: panState.pickMin + pickDelta,
+      minRange: pickMinRange,
+    });
+    const nextWin = clampExternalHeroAxisDomain({
+      baseAxis: baseWinAxis,
+      max: panState.winMax + winDelta,
+      min: panState.winMin + winDelta,
+      minRange: winMinRange,
+    });
+
+    setActiveZoomDomain({
+      pickMax: nextPick.max,
+      pickMin: nextPick.min,
+      winMax: nextWin.max,
+      winMin: nextWin.min,
+    });
+  };
 
   return (
     <div className="border-b border-border/60 bg-card px-4 py-4 sm:px-5">
@@ -3754,7 +4028,47 @@ const ExternalHeroMetaScatterPlot = ({
           <p className="metric-label">메타 분포</p>
           <h3 className="mt-1 text-base font-bold">픽률 vs 승률</h3>
         </div>
-        <div className="flex flex-wrap gap-2 sm:justify-end">
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          <Badge variant="outline" className="h-8 bg-transparent">
+            {visibleCountLabel}
+          </Badge>
+          <Badge variant="outline" className="hidden h-8 bg-transparent sm:inline-flex">
+            기준 고정 · 핵심 {contextSignalCounts.core.toLocaleString('ko-KR')} · 고효율{' '}
+            {contextSignalCounts.efficient.toLocaleString('ko-KR')}
+          </Badge>
+          <div className="flex overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))]">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-none"
+              aria-label="그래프 확대"
+              onClick={() => updateZoom(0.72)}
+            >
+              <ZoomIn className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-none border-x border-border/60"
+              aria-label="그래프 축소"
+              onClick={() => updateZoom(1.35)}
+            >
+              <ZoomOut className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-none"
+              aria-label="직접 조정한 확대 초기화"
+              disabled={!hasManualZoom}
+              onClick={() => setActiveZoomDomain(null)}
+            >
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+          </div>
           {matchRoleOptions.map((role) => (
             <span
               key={role.value}
@@ -3773,79 +4087,316 @@ const ExternalHeroMetaScatterPlot = ({
       </div>
 
       {plottableRows.length > 0 ? (
-        <div
-          className="relative mt-3 h-56 overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))]"
-          aria-label="픽률과 승률 분포"
-        >
-          <span className="absolute right-3 top-3 rounded-md border border-border/50 bg-card/85 px-2 py-1 text-[11px] font-black text-foreground">
-            핵심 메타
-          </span>
-          <span className="absolute left-3 top-3 rounded-md border border-border/50 bg-card/70 px-2 py-1 text-[11px] font-bold text-muted-foreground">
-            고효율 픽
-          </span>
-          <span className="absolute bottom-8 right-3 rounded-md border border-border/50 bg-card/70 px-2 py-1 text-[11px] font-bold text-muted-foreground">
-            과열 픽
-          </span>
-          {Array.from({ length: 4 }, (_, index) => (
-            <span
-              key={`h-${index}`}
-              className="absolute left-0 right-0 border-t border-border/50"
-              style={{ top: `${(index + 1) * 20}%` }}
-            />
-          ))}
-          {Array.from({ length: 4 }, (_, index) => (
-            <span
-              key={`v-${index}`}
-              className="absolute bottom-0 top-0 border-l border-border/50"
-              style={{ left: `${(index + 1) * 20}%` }}
-            />
-          ))}
-          {avgPickPosition !== null ? (
-            <span
-              className="absolute bottom-7 top-4 border-l border-dashed border-primary/45"
-              style={{ left: `${avgPickPosition}%` }}
-            />
-          ) : null}
-          {avgWinPosition !== null ? (
-            <span
-              className="absolute left-8 right-4 border-t border-dashed border-primary/45"
-              style={{ bottom: `${avgWinPosition}%` }}
-            />
-          ) : null}
-          {plottableRows.map((hero) => {
-            const left = getExternalHeroScatterPosition(hero.pickRate ?? 0, minPick, maxPick);
-            const bottom = getExternalHeroScatterPosition(hero.winRate ?? 0, minWin, maxWin);
-            const isSelected = hero.heroId === selectedHeroId;
+        <>
+          <div
+            className="relative mt-3 h-[320px] rounded-md border border-border/70 bg-[hsl(var(--surface-2))]"
+            aria-label="픽률과 승률 분포"
+            onMouseLeave={() => setTooltipState(null)}
+          >
+            <span className="pointer-events-none absolute left-2 top-2 text-[11px] font-black text-muted-foreground">
+              승률
+            </span>
+            <span className="pointer-events-none absolute bottom-2 right-4 text-[11px] font-black text-muted-foreground">
+              픽률
+            </span>
 
-            return (
-              <button
-                key={hero.heroId}
-                type="button"
-                className={cn(
-                  'absolute -translate-x-1/2 translate-y-1/2 rounded-full border transition-[box-shadow,transform,width,height] hover:scale-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30',
-                  isSelected ? 'h-4 w-4 scale-125 ring-2 ring-primary/40' : 'h-3 w-3',
-                  getExternalHeroScatterRoleClassName(hero.role),
-                )}
-                style={{ bottom: `${bottom}%`, left: `${left}%` }}
-                title={`${hero.name} · 픽률 ${formatExternalPercent(hero.pickRate)} · 승률 ${formatExternalPercent(
-                  hero.winRate,
-                )}`}
-                aria-label={`${hero.name} 선택`}
-                onClick={() => onSelectHero(hero.heroId)}
-              />
-            );
-          })}
-          <div className="pointer-events-none absolute inset-x-3 bottom-2 flex justify-between text-[11px] font-bold text-muted-foreground">
-            <span>픽률 {formatExternalPercent(minPick)}</span>
-            <span>픽률 {formatExternalPercent(maxPick)}</span>
+            <div
+              className={cn(
+                'absolute bottom-12 left-12 right-4 top-7 overflow-hidden rounded-md border border-border/60 bg-card/55 touch-none',
+                isZoomed && 'cursor-grab active:cursor-grabbing',
+              )}
+              onPointerDown={(event) => {
+                if (!isZoomed || event.button !== 0) {
+                  return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                event.currentTarget.setPointerCapture(event.pointerId);
+                const bounds = event.currentTarget.getBoundingClientRect();
+
+                panStateRef.current = {
+                  height: bounds.height,
+                  pickMax: pickAxis.max,
+                  pickMin: pickAxis.min,
+                  startX: event.clientX,
+                  startY: event.clientY,
+                  width: bounds.width,
+                  winMax: winAxis.max,
+                  winMin: winAxis.min,
+                };
+              }}
+              onPointerMove={(event) => {
+                if (!panStateRef.current) {
+                  return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                panZoomDomain(
+                  event.clientX - panStateRef.current.startX,
+                  event.clientY - panStateRef.current.startY,
+                );
+              }}
+              onPointerUp={(event) => {
+                panStateRef.current = null;
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                }
+              }}
+              onPointerCancel={() => {
+                panStateRef.current = null;
+              }}
+              onWheel={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const bounds = event.currentTarget.getBoundingClientRect();
+                const pickCenterRatio = Math.min(
+                  0.95,
+                  Math.max(0.05, (event.clientX - bounds.left) / bounds.width),
+                );
+                const winCenterRatio = Math.min(
+                  0.95,
+                  Math.max(0.05, 1 - (event.clientY - bounds.top) / bounds.height),
+                );
+                const wheelSteps = Math.min(4, Math.max(-4, event.deltaY / 100));
+                const scale = Math.exp(wheelSteps * 0.18);
+
+                updateZoom(scale, pickCenterRatio, winCenterRatio);
+              }}
+            >
+              {avgPickPosition !== null && avgWinPosition !== null ? (
+                <>
+                  {signalFilter === 'all' ? (
+                    <>
+                      <span
+                        className="absolute right-0 top-0 bg-primary/[0.055]"
+                        style={{ bottom: `${avgWinPosition}%`, left: `${avgPickPosition}%` }}
+                      />
+                      <span
+                        className="absolute left-0 top-0 bg-[hsl(var(--success))]/[0.055]"
+                        style={{
+                          bottom: `${avgWinPosition}%`,
+                          right: `${100 - avgPickPosition}%`,
+                        }}
+                      />
+                      <span
+                        className="absolute bottom-0 right-0 bg-amber-400/[0.055]"
+                        style={{ left: `${avgPickPosition}%`, top: `${100 - avgWinPosition}%` }}
+                      />
+                      <span className="absolute right-2 top-2 rounded-md border border-border/50 bg-card/85 px-2 py-1 text-[11px] font-black text-foreground">
+                        핵심
+                      </span>
+                      <span className="absolute left-2 top-2 rounded-md border border-border/50 bg-card/80 px-2 py-1 text-[11px] font-bold text-muted-foreground">
+                        고효율
+                      </span>
+                      <span className="absolute bottom-2 right-2 rounded-md border border-border/50 bg-card/80 px-2 py-1 text-[11px] font-bold text-muted-foreground">
+                        과열
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span
+                        className={cn(
+                          'absolute rounded-sm border border-primary/15',
+                          signalFilter === 'core' && 'bg-primary/[0.09]',
+                          signalFilter === 'efficient' && 'bg-[hsl(var(--success))]/[0.09]',
+                          signalFilter === 'overheated' && 'bg-amber-400/[0.1]',
+                          signalFilter === 'watch' && 'bg-muted/40',
+                        )}
+                        style={
+                          signalFilter === 'core'
+                            ? {
+                                bottom: `${avgWinPosition}%`,
+                                left: `${avgPickPosition}%`,
+                                right: 0,
+                                top: 0,
+                              }
+                            : signalFilter === 'efficient'
+                              ? {
+                                  bottom: `${avgWinPosition}%`,
+                                  left: 0,
+                                  right: `${100 - avgPickPosition}%`,
+                                  top: 0,
+                                }
+                              : signalFilter === 'overheated'
+                                ? {
+                                    bottom: 0,
+                                    left: `${avgPickPosition}%`,
+                                    right: 0,
+                                    top: `${100 - avgWinPosition}%`,
+                                  }
+                                : {
+                                    bottom: 0,
+                                    left: 0,
+                                    right: `${100 - avgPickPosition}%`,
+                                    top: `${100 - avgWinPosition}%`,
+                                  }
+                        }
+                      />
+                      <span className="absolute left-2 top-2 rounded-md border border-border/50 bg-card/90 px-2 py-1 text-[11px] font-black text-foreground">
+                        {externalHeroSignalLabels[signalFilter]}
+                      </span>
+                    </>
+                  )}
+                </>
+              ) : null}
+
+              {pickAxis.ticks.map((tick) => (
+                <span
+                  key={`pick-grid-${tick}`}
+                  className="absolute bottom-0 top-0 border-l border-border/50"
+                  style={{
+                    left: `${getExternalHeroScatterPosition(tick, pickAxis.min, pickAxis.max)}%`,
+                  }}
+                />
+              ))}
+              {winAxis.ticks.map((tick) => (
+                <span
+                  key={`win-grid-${tick}`}
+                  className="absolute left-0 right-0 border-t border-border/50"
+                  style={{
+                    bottom: `${getExternalHeroScatterPosition(tick, winAxis.min, winAxis.max)}%`,
+                  }}
+                />
+              ))}
+              {avgPickPosition !== null ? (
+                <span
+                  className="absolute bottom-0 top-0 border-l border-dashed border-primary/60"
+                  style={{ left: `${avgPickPosition}%` }}
+                />
+              ) : null}
+              {avgWinPosition !== null ? (
+                <span
+                  className="absolute left-0 right-0 border-t border-dashed border-primary/60"
+                  style={{ bottom: `${avgWinPosition}%` }}
+                />
+              ) : null}
+
+              {visiblePlottableRows.map((hero) => {
+                const left = getExternalHeroScatterPosition(
+                  hero.pickRate ?? 0,
+                  pickAxis.min,
+                  pickAxis.max,
+                );
+                const bottom = getExternalHeroScatterPosition(
+                  hero.winRate ?? 0,
+                  winAxis.min,
+                  winAxis.max,
+                );
+                const isSelected = hero.heroId === selectedHeroId;
+                const pointScale =
+                  pickAxis.max > pickAxis.min
+                    ? ((hero.pickRate ?? 0) - pickAxis.min) / (pickAxis.max - pickAxis.min)
+                    : 0.5;
+                const pointSize = isSelected ? 18 : Math.max(9, Math.min(15, 9 + pointScale * 6));
+                const updateTooltipFromPointer = (
+                  clientX: number,
+                  clientY: number,
+                  bounds: DOMRect,
+                ) => {
+                  const tooltipWidth = Math.min(288, Math.max(220, bounds.width - 16));
+                  const tooltipHeight = 152;
+
+                  setTooltipState({
+                    heroId: hero.heroId,
+                    x: Math.min(
+                      bounds.width - tooltipWidth - 8,
+                      Math.max(8, clientX - bounds.left + 14),
+                    ),
+                    y: Math.min(
+                      bounds.height - tooltipHeight - 8,
+                      Math.max(8, clientY - bounds.top + 14),
+                    ),
+                  });
+                };
+
+                return (
+                  <button
+                    key={hero.heroId}
+                    type="button"
+                    className={cn(
+                      'absolute z-10 -translate-x-1/2 translate-y-1/2 rounded-full border transition-[box-shadow,transform,width,height] hover:z-20 hover:scale-150 focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30',
+                      isSelected && 'z-30 scale-125 ring-2 ring-primary/45',
+                      getExternalHeroScatterRoleClassName(hero.role),
+                    )}
+                    style={{
+                      bottom: `${bottom}%`,
+                      height: pointSize,
+                      left: `${left}%`,
+                      width: pointSize,
+                    }}
+                    aria-label={`${hero.name} 선택`}
+                    onBlur={() => setTooltipState(null)}
+                    onFocus={(event) => {
+                      const bounds = event.currentTarget.parentElement?.getBoundingClientRect();
+
+                      if (!bounds) {
+                        return;
+                      }
+
+                      updateTooltipFromPointer(
+                        bounds.left + event.currentTarget.offsetLeft,
+                        bounds.top + event.currentTarget.offsetTop,
+                        bounds,
+                      );
+                    }}
+                    onMouseMove={(event) => {
+                      const bounds = event.currentTarget.parentElement?.getBoundingClientRect();
+
+                      if (!bounds) {
+                        return;
+                      }
+
+                      updateTooltipFromPointer(event.clientX, event.clientY, bounds);
+                    }}
+                    onMouseLeave={() => setTooltipState(null)}
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                    }}
+                    onClick={() => onSelectHero(hero.heroId)}
+                  />
+                );
+              })}
+
+              {tooltipHero && tooltipState ? (
+                <ExternalHeroScatterTooltip
+                  hero={tooltipHero}
+                  rows={contextRows}
+                  x={tooltipState.x}
+                  y={tooltipState.y}
+                />
+              ) : null}
+            </div>
+
+            <div className="pointer-events-none absolute bottom-5 left-12 right-4 h-4">
+              {pickAxis.ticks.map((tick) => (
+                <span
+                  key={`pick-label-${tick}`}
+                  className="absolute -translate-x-1/2 text-[10px] font-bold text-muted-foreground"
+                  style={{
+                    left: `${getExternalHeroScatterPosition(tick, pickAxis.min, pickAxis.max)}%`,
+                  }}
+                >
+                  {formatExternalPercent(tick)}
+                </span>
+              ))}
+            </div>
+            <div className="pointer-events-none absolute bottom-12 left-2 top-7 w-9">
+              {winAxis.ticks.map((tick) => (
+                <span
+                  key={`win-label-${tick}`}
+                  className="absolute right-0 translate-y-1/2 text-right text-[10px] font-bold text-muted-foreground"
+                  style={{
+                    bottom: `${getExternalHeroScatterPosition(tick, winAxis.min, winAxis.max)}%`,
+                  }}
+                >
+                  {formatExternalPercent(tick)}
+                </span>
+              ))}
+            </div>
           </div>
-          <div className="pointer-events-none absolute left-3 top-2 text-[11px] font-bold text-muted-foreground">
-            승률 {formatExternalPercent(maxWin)}
-          </div>
-          <div className="pointer-events-none absolute left-3 bottom-7 text-[11px] font-bold text-muted-foreground">
-            승률 {formatExternalPercent(minWin)}
-          </div>
-        </div>
+        </>
       ) : (
         <InlineEmptyState
           className="mt-3"
@@ -3856,6 +4407,46 @@ const ExternalHeroMetaScatterPlot = ({
     </div>
   );
 };
+
+const ExternalHeroScatterTooltip = ({
+  hero,
+  rows,
+  x,
+  y,
+}: {
+  hero: ExternalHeroMetaRow;
+  rows: ExternalHeroMetaRow[];
+  x: number;
+  y: number;
+}) => (
+  <div
+    className="pointer-events-none absolute z-50 w-72 max-w-[calc(100%-1rem)] rounded-md border border-border/70 bg-background/95 p-3 shadow-xl backdrop-blur"
+    style={{ left: x, top: y }}
+  >
+    <div className="grid grid-cols-[44px_minmax(0,1fr)] items-center gap-3">
+      <ExternalHeroPortrait heroId={hero.heroId} className="h-11 w-11" />
+      <div className="min-w-0">
+        <p className="truncate text-sm font-black">{hero.name}</p>
+        <p className="mt-0.5 truncate text-xs font-semibold text-muted-foreground">
+          {hero.roleLabel} · {getExternalHeroSignalLabel(hero, rows)}
+        </p>
+      </div>
+    </div>
+    <div className="mt-3 grid grid-cols-2 gap-2">
+      <div className="rounded-md border border-border/60 bg-card px-2.5 py-2">
+        <p className="metric-label">픽률</p>
+        <p className="mt-1 text-sm font-black">{formatExternalPercent(hero.pickRate)}</p>
+      </div>
+      <div className="rounded-md border border-border/60 bg-card px-2.5 py-2">
+        <p className="metric-label">승률</p>
+        <p className="mt-1 text-sm font-black">{formatExternalPercent(hero.winRate)}</p>
+      </div>
+    </div>
+    <p className="mt-2 truncate text-[11px] font-semibold text-muted-foreground">
+      {getExternalHeroCoverageLabel(hero)} · {hero.regionLabel}
+    </p>
+  </div>
+);
 
 const ExternalHeroFeatureCard = ({
   hero,
@@ -3907,12 +4498,6 @@ const ExternalHeroFeatureCard = ({
           <p className="mt-3 truncate text-sm font-semibold text-muted-foreground">
             승률 {formatExternalPercent(hero.winRate)} · 픽률 {formatExternalPercent(hero.pickRate)}
           </p>
-          <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-            {hero.sourceLabel} · {hero.regionLabel}
-          </p>
-          <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-            {hero.snapshotCount.toLocaleString('ko-KR')}개 표본
-          </p>
         </div>
       </div>
     ) : (
@@ -3926,17 +4511,37 @@ const ExternalHeroFeatureCard = ({
 );
 
 const ExternalHeroComparisonTable = ({
+  contextRows,
   onSelectHero,
   rows,
   selectedHeroId,
   totalRows,
 }: {
+  contextRows: ExternalHeroMetaRow[];
   onSelectHero: (heroId: string) => void;
   rows: ExternalHeroMetaRow[];
   selectedHeroId: string | null;
   totalRows: number;
 }) => {
+  const initialVisibleRows = 10;
+  const visibleRowStep = 10;
+  const rowSignature = rows.map((row) => row.heroId).join('|');
+  const [visibleState, setVisibleState] = useState({
+    limit: initialVisibleRows,
+    rowSignature: '',
+  });
+  const visibleLimit =
+    visibleState.rowSignature === rowSignature ? visibleState.limit : initialVisibleRows;
+  const visibleTableRows = rows.slice(0, visibleLimit);
+  const canShowMore = visibleLimit < rows.length;
+  const canCollapse = visibleLimit > initialVisibleRows;
   const maxPickRate = Math.max(1, ...rows.map((row) => row.pickRate ?? 0));
+  const avgWinRate = roundExternalMetric(
+    getExternalAverage(
+      contextRows.map((row) => row.winRate),
+      { ignoreZero: true },
+    ),
+  );
 
   return (
     <div className="bg-card px-4 py-4 sm:px-5">
@@ -3946,67 +4551,119 @@ const ExternalHeroComparisonTable = ({
           <h3 className="mt-1 text-base font-bold">픽률 막대와 승률</h3>
         </div>
         <Badge variant="outline" className="w-fit bg-transparent">
-          상위 {rows.length.toLocaleString('ko-KR')} / {totalRows.toLocaleString('ko-KR')}명
+          표시 {visibleTableRows.length.toLocaleString('ko-KR')} /{' '}
+          {totalRows.toLocaleString('ko-KR')}명
         </Badge>
       </div>
 
       {rows.length > 0 ? (
         <div className="mt-3 overflow-hidden rounded-md border border-border/70">
-          <div className="hidden grid-cols-[minmax(220px,1.3fr)_minmax(170px,1fr)_80px_minmax(120px,0.8fr)] gap-3 border-b border-border/60 bg-[hsl(var(--surface-2))] px-3 py-2 text-xs font-bold text-muted-foreground lg:grid">
+          <div className="hidden grid-cols-[minmax(220px,1.35fr)_minmax(170px,1fr)_112px] gap-3 border-b border-border/60 bg-[hsl(var(--surface-2))] px-3 py-2 text-xs font-bold text-muted-foreground lg:grid">
             <span>영웅</span>
             <span>픽률</span>
-            <span className="text-right">승률</span>
-            <span>소스</span>
+            <span className="text-right">승률 / 평균차</span>
           </div>
           <div>
-            {rows.map((hero) => (
-              <button
-                key={hero.heroId}
-                type="button"
-                className={cn(
-                  'grid w-full gap-3 border-b border-border/60 px-3 py-3 text-left transition-colors last:border-b-0 hover:bg-primary/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 lg:grid-cols-[minmax(220px,1.3fr)_minmax(170px,1fr)_80px_minmax(120px,0.8fr)] lg:items-center',
-                  selectedHeroId === hero.heroId && 'bg-primary/[0.08]',
-                )}
-                onClick={() => onSelectHero(hero.heroId)}
-              >
-                <div className="grid min-w-0 grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3 lg:grid-cols-[44px_minmax(0,1fr)]">
-                  <ExternalHeroPortrait heroId={hero.heroId} className="h-11 w-11" />
+            {visibleTableRows.map((hero) => {
+              const winDelta =
+                hero.winRate !== null && avgWinRate !== null
+                  ? roundExternalMetric(hero.winRate - avgWinRate)
+                  : null;
+
+              return (
+                <button
+                  key={hero.heroId}
+                  type="button"
+                  className={cn(
+                    'grid w-full gap-3 border-b border-border/60 px-3 py-3 text-left transition-colors last:border-b-0 hover:bg-primary/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 lg:grid-cols-[minmax(220px,1.35fr)_minmax(170px,1fr)_112px] lg:items-center',
+                    selectedHeroId === hero.heroId && 'bg-primary/[0.08]',
+                  )}
+                  onClick={() => onSelectHero(hero.heroId)}
+                >
+                  <div className="grid min-w-0 grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3 lg:grid-cols-[44px_minmax(0,1fr)]">
+                    <ExternalHeroPortrait heroId={hero.heroId} className="h-11 w-11" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold">{hero.name}</p>
+                      <p className="mt-0.5 truncate text-xs font-semibold text-muted-foreground">
+                        {hero.roleLabel}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="bg-transparent lg:hidden">
+                      {formatExternalPercent(hero.winRate)}
+                    </Badge>
+                  </div>
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-bold">{hero.name}</p>
-                    <p className="mt-0.5 truncate text-xs font-semibold text-muted-foreground">
-                      {hero.roleLabel} · {hero.snapshotCount.toLocaleString('ko-KR')}개 표본
+                    <div className="flex items-center justify-between gap-3 text-xs font-bold">
+                      <span className="text-muted-foreground">픽률</span>
+                      <span>{formatExternalPercent(hero.pickRate)}</span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted/60">
+                      <span
+                        className="block h-full rounded-full bg-primary"
+                        style={{ width: `${((hero.pickRate ?? 0) / maxPickRate) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div className="hidden text-right lg:block">
+                    <p className="text-sm font-black">{formatExternalPercent(hero.winRate)}</p>
+                    <p
+                      className={cn(
+                        'mt-0.5 text-[11px] font-bold',
+                        winDelta === null
+                          ? 'text-muted-foreground'
+                          : winDelta >= 0
+                            ? 'text-[hsl(var(--success))]'
+                            : 'text-amber-500',
+                      )}
+                    >
+                      평균 {formatExternalSignedPercent(winDelta)}
                     </p>
                   </div>
-                  <Badge variant="outline" className="bg-transparent lg:hidden">
-                    {formatExternalPercent(hero.winRate)}
-                  </Badge>
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center justify-between gap-3 text-xs font-bold">
-                    <span className="text-muted-foreground">픽률</span>
-                    <span>{formatExternalPercent(hero.pickRate)}</span>
-                  </div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted/60">
-                    <span
-                      className="block h-full rounded-full bg-primary"
-                      style={{ width: `${((hero.pickRate ?? 0) / maxPickRate) * 100}%` }}
-                    />
-                  </div>
-                </div>
-                <div className="hidden text-right text-sm font-bold lg:block">
-                  {formatExternalPercent(hero.winRate)}
-                </div>
-                <div className="hidden min-w-0 lg:block">
-                  <p className="truncate text-xs font-semibold text-muted-foreground">
-                    {hero.sourceLabel}
-                  </p>
-                  <p className="mt-0.5 truncate text-[11px] font-semibold text-muted-foreground">
-                    {hero.regionLabel}
-                  </p>
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
+          {canShowMore || canCollapse ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 bg-[hsl(var(--surface-2))] px-3 py-3">
+              <span className="text-xs font-bold text-muted-foreground">
+                {rows.length.toLocaleString('ko-KR')}명 중{' '}
+                {visibleTableRows.length.toLocaleString('ko-KR')}명 표시
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {canCollapse ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      setVisibleState({
+                        limit: initialVisibleRows,
+                        rowSignature,
+                      })
+                    }
+                  >
+                    접기
+                  </Button>
+                ) : null}
+                {canShowMore ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="bg-card"
+                    onClick={() =>
+                      setVisibleState({
+                        limit: Math.min(rows.length, visibleLimit + visibleRowStep),
+                        rowSignature,
+                      })
+                    }
+                  >
+                    더보기
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : (
         <InlineEmptyState
@@ -4036,19 +4693,21 @@ const ExternalHeroPortrait = ({
   return (
     <div
       className={cn(
-        'flex shrink-0 items-center justify-center overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))]',
+        'relative flex shrink-0 items-center justify-center overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))]',
         className,
       )}
     >
+      <Swords className={cn('absolute h-5 w-5 text-muted-foreground', iconClassName)} />
       {src ? (
         <img
           alt={label}
-          className={cn('h-full w-full object-cover object-top', imageClassName)}
+          className={cn('relative z-10 h-full w-full object-cover object-top', imageClassName)}
           src={src}
+          onError={(event) => {
+            event.currentTarget.style.display = 'none';
+          }}
         />
-      ) : (
-        <Swords className={cn('h-5 w-5 text-muted-foreground', iconClassName)} />
-      )}
+      ) : null}
     </div>
   );
 };
@@ -4061,6 +4720,7 @@ export const ExternalEsportsSchedulePanel = ({
   isLoading: boolean;
 }) => {
   const [now] = useState(() => Date.now());
+  const { data: userSettings } = useUserSettings();
   const [calendarMode, setCalendarMode] = useState<ExternalScheduleViewMode>('month');
   const [regionFilter, setRegionFilter] = useState<ExternalScheduleRegionFilter>('all');
   const [sourceFilter, setSourceFilter] = useState<ExternalScheduleSourceFilter>('all');
@@ -4101,6 +4761,11 @@ export const ExternalEsportsSchedulePanel = ({
     () => filterExternalScheduleEventsByStatus(queryFilteredEvents, statusFilter),
     [queryFilteredEvents, statusFilter],
   );
+  const favoriteTeam = userSettings?.favoriteEsportsTeam ?? null;
+  const favoriteEvents = useMemo(
+    () => getFavoriteEsportsTeamEvents(filteredEvents, favoriteTeam),
+    [favoriteTeam, filteredEvents],
+  );
   const eventsByDate = useMemo(() => {
     const groups = new Map<string, ExternalEsportsEventItem[]>();
 
@@ -4128,8 +4793,12 @@ export const ExternalEsportsSchedulePanel = ({
     .filter((event) => event.startsAt && new Date(event.startsAt).getTime() >= now)
     .sort((left, right) => compareExternalTimestampAsc(left.startsAt, right.startsAt));
   const nextEvent = upcomingEvents[0] ?? null;
+  const nextFavoriteEvent = getNextFavoriteEsportsTeamEvent(filteredEvents, favoriteTeam, now);
+  const primaryNextEvent = nextFavoriteEvent ?? nextEvent;
   const upcomingRailEvents = getExternalUpcomingEvents(filteredEvents, now, 8);
+  const favoriteUpcomingRailEvents = getExternalUpcomingEvents(favoriteEvents, now, 8);
   const preferredEvent =
+    nextFavoriteEvent ??
     nextEvent ??
     [...filteredEvents]
       .filter((event) => event.startsAt)
@@ -4147,11 +4816,18 @@ export const ExternalEsportsSchedulePanel = ({
     calendarCursor ??
     (calendarMode === 'week' ? getWeekStart(selectedDateValue) : getMonthStart(selectedDateValue));
   const latestAt = getLatestExternalTimestamp(esportsEvents.map((event) => event.fetchedAt));
-  const selectedEvents = eventsByDate.get(selectedDate) ?? [];
+  const selectedEvents = [...(eventsByDate.get(selectedDate) ?? [])].sort((left, right) => {
+    const leftFavorite = isFavoriteEsportsTeamEvent(left, favoriteTeam);
+    const rightFavorite = isFavoriteEsportsTeamEvent(right, favoriteTeam);
+
+    if (leftFavorite !== rightFavorite) {
+      return leftFavorite ? -1 : 1;
+    }
+
+    return getExternalEventSortTime(left) - getExternalEventSortTime(right);
+  });
   const calendarDays = getExternalCalendarDays(visibleDate, calendarMode);
-  const statusCounts = getExternalEventStatusCounts(filteredEvents);
-  const busiestDate = getExternalBusiestScheduleDate(filteredEvents);
-  const nextEventDateKey = nextEvent ? getExternalEventDateKey(nextEvent) : null;
+  const nextEventDateKey = primaryNextEvent ? getExternalEventDateKey(primaryNextEvent) : null;
   const selectedRegionLabel =
     regionOptions.find((option) => option.value === activeRegionFilter)?.label ??
     getExternalRegionLabel(activeRegionFilter);
@@ -4173,11 +4849,11 @@ export const ExternalEsportsSchedulePanel = ({
     goToDate(new Date());
   };
   const goToNextEvent = () => {
-    if (!nextEvent?.startsAt) {
+    if (!primaryNextEvent?.startsAt) {
       return;
     }
 
-    const date = new Date(nextEvent.startsAt);
+    const date = new Date(primaryNextEvent.startsAt);
 
     if (!Number.isNaN(date.getTime())) {
       goToDate(date);
@@ -4217,14 +4893,6 @@ export const ExternalEsportsSchedulePanel = ({
     setSelectedDateOverride(null);
     setCalendarCursor(null);
   };
-  const resetScheduleFilters = () => {
-    setRegionFilter('all');
-    setSourceFilter('all');
-    setStatusFilter('all');
-    setEventQuery('');
-    setSelectedDateOverride(null);
-    setCalendarCursor(null);
-  };
 
   return (
     <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
@@ -4247,6 +4915,40 @@ export const ExternalEsportsSchedulePanel = ({
         </div>
       ) : esportsEvents.length > 0 ? (
         <div>
+          <ExternalNextEventFeature
+            event={primaryNextEvent}
+            favoriteTeam={nextFavoriteEvent ? favoriteTeam : null}
+            now={now}
+          />
+          <ExternalScheduleCalendar
+            days={calendarDays}
+            eventsByDate={eventsByDate}
+            favoriteTeam={favoriteTeam}
+            hasNextEvent={Boolean(primaryNextEvent)}
+            mode={calendarMode}
+            nextEventDateKey={nextEventDateKey}
+            selectedDate={selectedDate}
+            visibleDate={visibleDate}
+            onGoToNextEvent={goToNextEvent}
+            onGoToToday={goToToday}
+            onModeChange={changeCalendarMode}
+            onMove={moveCalendar}
+            onSelectDate={selectCalendarDate}
+          />
+          <ExternalSelectedDateEvents
+            dateKey={selectedDate}
+            events={selectedEvents}
+            favoriteTeam={favoriteTeam}
+            regionLabel={selectedRegionLabel}
+          />
+          {favoriteTeam && favoriteUpcomingRailEvents.length > 0 ? (
+            <ExternalUpcomingMatchRail
+              events={favoriteUpcomingRailEvents}
+              favoriteTeam={favoriteTeam}
+              title={`${favoriteTeam.name} 경기`}
+              onSelectDate={goToDate}
+            />
+          ) : null}
           <ExternalScheduleRegionTabs
             options={regionOptions}
             value={activeRegionFilter}
@@ -4264,50 +4966,7 @@ export const ExternalEsportsSchedulePanel = ({
             onSourceChange={changeSourceFilter}
             onStatusChange={changeStatusFilter}
           />
-          <ExternalScheduleActiveFilters
-            query={eventQuery}
-            regionLabel={selectedRegionLabel}
-            regionValue={activeRegionFilter}
-            sourceLabel={
-              sourceOptions.find((option) => option.value === activeSourceFilter)?.label ??
-              getExternalCompactSourceLabel(activeSourceFilter)
-            }
-            sourceValue={activeSourceFilter}
-            statusValue={statusFilter}
-            visibleEvents={filteredEvents.length}
-            onClearQuery={() => setEventQuery('')}
-            onResetAll={resetScheduleFilters}
-            onResetRegion={() => changeRegionFilter('all')}
-            onResetSource={() => changeSourceFilter('all')}
-            onResetStatus={() => changeStatusFilter('all')}
-          />
-          <ExternalScheduleSummaryStrip
-            busiestDate={busiestDate}
-            events={filteredEvents}
-            regionLabel={selectedRegionLabel}
-            statusCounts={statusCounts}
-          />
-          <ExternalNextEventFeature event={nextEvent} now={now} />
           <ExternalUpcomingMatchRail events={upcomingRailEvents} onSelectDate={goToDate} />
-          <ExternalScheduleCalendar
-            days={calendarDays}
-            eventsByDate={eventsByDate}
-            hasNextEvent={Boolean(nextEvent)}
-            mode={calendarMode}
-            nextEventDateKey={nextEventDateKey}
-            selectedDate={selectedDate}
-            visibleDate={visibleDate}
-            onGoToNextEvent={goToNextEvent}
-            onGoToToday={goToToday}
-            onModeChange={changeCalendarMode}
-            onMove={moveCalendar}
-            onSelectDate={selectCalendarDate}
-          />
-          <ExternalSelectedDateEvents
-            dateKey={selectedDate}
-            events={selectedEvents}
-            regionLabel={selectedRegionLabel}
-          />
         </div>
       ) : (
         <div className="p-4 sm:p-5">
@@ -4344,6 +5003,10 @@ const ExternalScheduleExplorerBar = ({
   totalEvents: number;
   visibleEvents: number;
 }) => {
+  const eventCountLabel =
+    visibleEvents === totalEvents
+      ? `${totalEvents.toLocaleString('ko-KR')}경기`
+      : `${visibleEvents.toLocaleString('ko-KR')}경기`;
   const statusOptions = [
     {
       count: statusCounts.scheduled + statusCounts.live + statusCounts.completed,
@@ -4400,7 +5063,7 @@ const ExternalScheduleExplorerBar = ({
               ))}
             </div>
             <Badge variant="outline" className="h-9 bg-transparent">
-              {visibleEvents.toLocaleString('ko-KR')} / {totalEvents.toLocaleString('ko-KR')}경기
+              경기 {eventCountLabel}
             </Badge>
           </div>
         </div>
@@ -4432,16 +5095,20 @@ const ExternalScheduleExplorerBar = ({
 
 const ExternalUpcomingMatchRail = ({
   events,
+  favoriteTeam = null,
   onSelectDate,
+  title = '다가오는 경기',
 }: {
   events: ExternalEsportsEventItem[];
+  favoriteTeam?: FavoriteEsportsTeam | null;
   onSelectDate: (date: Date) => void;
+  title?: string;
 }) => (
   <div className="border-b border-border/60 bg-card px-4 py-4 sm:px-5">
     <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
-        <p className="metric-label">다가오는 경기</p>
-        <h3 className="mt-1 text-base font-bold">빠른 이동 타임라인</h3>
+        <p className="metric-label">타임라인</p>
+        <h3 className="mt-1 text-base font-bold">{title}</h3>
       </div>
       <Badge variant="outline" className="w-fit bg-transparent">
         {events.length.toLocaleString('ko-KR')}개 표시
@@ -4449,16 +5116,22 @@ const ExternalUpcomingMatchRail = ({
     </div>
 
     {events.length > 0 ? (
-      <div className="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 pb-1">
+      <div className="-mx-1 mt-3 flex gap-2.5 overflow-x-auto px-1 pb-1">
         {events.map((event) => {
           const startsAt = event.startsAt ? new Date(event.startsAt) : null;
           const isValidDate = startsAt !== null && !Number.isNaN(startsAt.getTime());
+          const isFavoriteEvent = isFavoriteEsportsTeamEvent(event, favoriteTeam);
 
           return (
             <button
               key={event.id}
               type="button"
-              className="min-w-[220px] rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
+              className={cn(
+                'min-w-[248px] rounded-md border p-2.5 text-left transition-colors hover:border-primary/40 hover:bg-primary/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 sm:min-w-[268px] sm:p-3',
+                isFavoriteEvent
+                  ? 'border-primary/45 bg-primary/[0.08]'
+                  : 'border-border/70 bg-[hsl(var(--surface-2))]',
+              )}
               disabled={!isValidDate}
               onClick={() => {
                 if (startsAt && isValidDate) {
@@ -4467,19 +5140,52 @@ const ExternalUpcomingMatchRail = ({
               }}
             >
               <div className="flex items-center justify-between gap-2">
-                <Badge variant="outline" className="bg-card text-[11px]">
-                  {formatExternalEventTime(event.startsAt)}
-                </Badge>
-                <span className="truncate text-[11px] font-bold text-muted-foreground">
+                <div className="flex min-w-0 items-center gap-2">
+                  <ExternalScheduleCompetitionMark event={event} />
+                  {isFavoriteEvent ? (
+                    <Badge variant="outline" className="bg-card text-[11px]">
+                      <Star className="h-3 w-3 fill-primary text-primary" />
+                      응원팀
+                    </Badge>
+                  ) : null}
+                  <Badge variant="outline" className="bg-card text-[11px]">
+                    {formatExternalEventTime(event.startsAt)}
+                  </Badge>
+                </div>
+                <Badge variant="outline" className="shrink-0 bg-card text-[11px]">
                   {event.region
                     ? getExternalRegionLabel(event.region)
                     : getExternalCompactSourceLabel(event.sourceId)}
-                </span>
+                </Badge>
               </div>
-              <p className="mt-2 line-clamp-2 text-sm font-black leading-tight">
-                {event.teamA || 'TBD'} vs {event.teamB || 'TBD'}
-              </p>
-              <p className="mt-2 truncate text-xs font-semibold text-muted-foreground">
+              <div className="mt-3 grid grid-cols-[36px_minmax(0,1fr)_auto_minmax(0,1fr)_36px] items-center gap-2">
+                <ExternalScheduleLogo
+                  label={event.teamA || 'TBD'}
+                  size="sm"
+                  url={getExternalEventTeamLogoUrl(event, 'A')}
+                />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-black">{event.teamA || 'TBD'}</span>
+                  <span className="mt-0.5 block truncate text-[10px] font-bold text-muted-foreground">
+                    {getExternalEventTeamCode(event, 'A')}
+                  </span>
+                </span>
+                <span className="rounded-md border border-border/60 bg-card px-1.5 py-1 text-[10px] font-black text-muted-foreground">
+                  vs
+                </span>
+                <span className="min-w-0 text-right">
+                  <span className="block truncate text-sm font-black">{event.teamB || 'TBD'}</span>
+                  <span className="mt-0.5 block truncate text-[10px] font-bold text-muted-foreground">
+                    {getExternalEventTeamCode(event, 'B')}
+                  </span>
+                </span>
+                <ExternalScheduleLogo
+                  label={event.teamB || 'TBD'}
+                  size="sm"
+                  url={getExternalEventTeamLogoUrl(event, 'B')}
+                />
+              </div>
+              <p className="mt-2.5 truncate text-xs font-semibold text-muted-foreground">
                 {event.stage || event.series || event.tournament || '대회 정보 없음'}
               </p>
             </button>
@@ -4493,154 +5199,6 @@ const ExternalUpcomingMatchRail = ({
         description="필터를 조정하거나 다른 지역을 선택해주세요."
       />
     )}
-  </div>
-);
-
-const ExternalScheduleActiveFilters = ({
-  onClearQuery,
-  onResetAll,
-  onResetRegion,
-  onResetSource,
-  onResetStatus,
-  query,
-  regionLabel,
-  regionValue,
-  sourceLabel,
-  sourceValue,
-  statusValue,
-  visibleEvents,
-}: {
-  onClearQuery: () => void;
-  onResetAll: () => void;
-  onResetRegion: () => void;
-  onResetSource: () => void;
-  onResetStatus: () => void;
-  query: string;
-  regionLabel: string;
-  regionValue: ExternalScheduleRegionFilter;
-  sourceLabel: string;
-  sourceValue: ExternalScheduleSourceFilter;
-  statusValue: ExternalScheduleStatusFilter;
-  visibleEvents: number;
-}) => {
-  const chips = [
-    regionValue !== 'all' ? { label: `지역 ${regionLabel}`, onRemove: onResetRegion } : null,
-    sourceValue !== 'all' ? { label: `출처 ${sourceLabel}`, onRemove: onResetSource } : null,
-    statusValue !== 'all'
-      ? {
-          label: `상태 ${getExternalScheduleStatusFilterLabel(statusValue)}`,
-          onRemove: onResetStatus,
-        }
-      : null,
-    query.trim() ? { label: `검색 ${query.trim()}`, onRemove: onClearQuery } : null,
-  ].filter((chip): chip is { label: string; onRemove: () => void } => chip !== null);
-
-  return (
-    <div className="border-b border-border/60 bg-card px-4 py-3 sm:px-5">
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="text-xs font-bold text-muted-foreground">
-            현재 {visibleEvents.toLocaleString('ko-KR')}경기 표시
-          </span>
-          {chips.length > 0 ? (
-            chips.map((chip) => (
-              <button
-                key={chip.label}
-                type="button"
-                className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-2 text-xs font-bold transition-colors hover:border-primary/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
-                onClick={chip.onRemove}
-              >
-                <span className="truncate">{chip.label}</span>
-                <X className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              </button>
-            ))
-          ) : (
-            <Badge variant="outline" className="bg-transparent">
-              필터 없음
-            </Badge>
-          )}
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-fit"
-          disabled={chips.length === 0}
-          onClick={onResetAll}
-        >
-          전체 초기화
-        </Button>
-      </div>
-    </div>
-  );
-};
-
-const ExternalScheduleSummaryStrip = ({
-  busiestDate,
-  events,
-  regionLabel,
-  statusCounts,
-}: {
-  busiestDate: { count: number; dateKey: string } | null;
-  events: ExternalEsportsEventItem[];
-  regionLabel: string;
-  statusCounts: { completed: number; live: number; scheduled: number };
-}) => {
-  const total = Math.max(1, events.length);
-
-  return (
-    <div className="border-b border-border/60 bg-card px-4 py-3 sm:px-5">
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        <ExternalScheduleSummaryItem
-          icon={CalendarDays}
-          label={regionLabel}
-          value={`${events.length.toLocaleString('ko-KR')}경기`}
-          detail={`예정 ${statusCounts.scheduled.toLocaleString('ko-KR')} · 종료 ${statusCounts.completed.toLocaleString('ko-KR')}`}
-        />
-        <ExternalScheduleSummaryItem
-          icon={Clock3}
-          label="예정 비중"
-          value={`${Math.round((statusCounts.scheduled / total) * 100)}%`}
-          detail={`${statusCounts.scheduled.toLocaleString('ko-KR')}경기 대기 중`}
-        />
-        <ExternalScheduleSummaryItem
-          icon={ListOrdered}
-          label="가장 많은 날"
-          value={busiestDate ? `${busiestDate.count.toLocaleString('ko-KR')}경기` : '--'}
-          detail={busiestDate ? formatExternalFullDate(busiestDate.dateKey) : '일정 없음'}
-        />
-        <ExternalScheduleSummaryItem
-          icon={Globe2}
-          label="데이터 출처"
-          value={getExternalEventSourceSummary(events)}
-          detail="선택 지역 기준"
-        />
-      </div>
-    </div>
-  );
-};
-
-const ExternalScheduleSummaryItem = ({
-  detail,
-  icon: Icon,
-  label,
-  value,
-}: {
-  detail: string;
-  icon: LucideIcon;
-  label: string;
-  value: string;
-}) => (
-  <div className="min-w-0 rounded-md border border-border/60 bg-[hsl(var(--surface-2))] px-3 py-2.5">
-    <div className="flex items-start gap-2.5">
-      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/60 bg-card text-primary">
-        <Icon className="h-3.5 w-3.5" />
-      </div>
-      <div className="min-w-0">
-        <p className="truncate text-[11px] font-bold text-muted-foreground">{label}</p>
-        <p className="mt-0.5 truncate text-sm font-black">{value}</p>
-        <p className="mt-0.5 truncate text-[11px] font-semibold text-muted-foreground">{detail}</p>
-      </div>
-    </div>
   </div>
 );
 
@@ -4687,21 +5245,209 @@ const ExternalScheduleRegionTabs = ({
   </div>
 );
 
+const externalScheduleLogoSizeClassNames = {
+  lg: 'h-16 w-16',
+  md: 'h-12 w-12',
+  sm: 'h-9 w-9',
+  xs: 'h-6 w-6',
+} satisfies Record<'lg' | 'md' | 'sm' | 'xs', string>;
+
+const externalScheduleLogoPaddingClassNames = {
+  lg: 'p-2',
+  md: 'p-1.5',
+  sm: 'p-1',
+  xs: 'p-0.5',
+} satisfies Record<'lg' | 'md' | 'sm' | 'xs', string>;
+
+const ExternalScheduleLogo = ({
+  className,
+  label,
+  size = 'md',
+  url,
+}: {
+  className?: string;
+  label: string;
+  size?: keyof typeof externalScheduleLogoSizeClassNames;
+  url: string;
+}) => (
+  <span
+    className={cn(
+      'flex shrink-0 items-center justify-center overflow-hidden rounded-md border border-white/10 text-white/80 ring-1 ring-black/20',
+      externalScheduleLogoSizeClassNames[size],
+      className,
+    )}
+    style={externalScheduleLogoWellStyle}
+  >
+    {url ? (
+      <img
+        src={url}
+        alt={label}
+        loading="lazy"
+        className={cn(
+          externalScheduleLogoImageClassName,
+          externalScheduleLogoPaddingClassNames[size],
+        )}
+      />
+    ) : (
+      <span className={cn('font-black', size === 'xs' ? 'text-[9px]' : 'text-xs')}>
+        {getExternalTeamInitials(label)}
+      </span>
+    )}
+  </span>
+);
+
+const ExternalScheduleTeamIdentity = ({
+  align = 'left',
+  event,
+  side,
+  size = 'md',
+}: {
+  align?: 'left' | 'right';
+  event: ExternalEsportsEventItem;
+  side: 'A' | 'B';
+  size?: 'lg' | 'md' | 'sm';
+}) => {
+  const teamName = side === 'A' ? event.teamA || 'TBD' : event.teamB || 'TBD';
+  const teamCode = getExternalEventTeamCode(event, side);
+  const logoUrl = getExternalEventTeamLogoUrl(event, side);
+  const gridClassName =
+    size === 'lg'
+      ? 'grid-cols-[56px_minmax(0,1fr)] sm:grid-cols-[64px_minmax(0,1fr)]'
+      : size === 'md'
+        ? 'grid-cols-[44px_minmax(0,1fr)] sm:grid-cols-[48px_minmax(0,1fr)]'
+        : 'grid-cols-[36px_minmax(0,1fr)]';
+  const reverseGridClassName =
+    size === 'lg'
+      ? 'sm:grid-cols-[minmax(0,1fr)_64px]'
+      : size === 'md'
+        ? 'sm:grid-cols-[minmax(0,1fr)_48px]'
+        : 'sm:grid-cols-[minmax(0,1fr)_36px]';
+
+  return (
+    <div
+      className={cn(
+        'grid min-w-0 items-center',
+        size === 'lg' ? 'gap-3' : 'gap-2.5',
+        gridClassName,
+        align === 'right' && cn(reverseGridClassName, 'sm:text-right'),
+      )}
+    >
+      <ExternalScheduleLogo
+        className={cn(align === 'right' && 'sm:order-2')}
+        label={teamName}
+        size={size}
+        url={logoUrl}
+      />
+      <div className="min-w-0">
+        <p
+          className={cn(
+            'truncate font-black text-muted-foreground',
+            size === 'lg' ? 'text-[11px]' : 'text-[10px]',
+          )}
+        >
+          {teamCode}
+        </p>
+        <p
+          className={cn(
+            'mt-0.5 break-words font-black leading-tight',
+            size === 'lg' ? 'text-xl sm:text-2xl' : size === 'md' ? 'text-base' : 'text-sm',
+          )}
+        >
+          {teamName}
+        </p>
+      </div>
+    </div>
+  );
+};
+
+const ExternalScheduleMatchupBlock = ({
+  event,
+  size = 'md',
+}: {
+  event: ExternalEsportsEventItem;
+  size?: 'lg' | 'md';
+}) => {
+  const scoreLabel =
+    event.status === 'completed' && event.scoreA !== null && event.scoreB !== null
+      ? `${event.scoreA} - ${event.scoreB}`
+      : 'vs';
+
+  return (
+    <div
+      className={cn(
+        'grid min-w-0 items-center',
+        size === 'lg'
+          ? 'gap-3 lg:grid-cols-[minmax(0,1fr)_88px_minmax(0,1fr)]'
+          : 'gap-2.5 sm:grid-cols-[minmax(0,1fr)_62px_minmax(0,1fr)]',
+      )}
+    >
+      <ExternalScheduleTeamIdentity event={event} side="A" size={size === 'lg' ? 'lg' : 'sm'} />
+      <div
+        className={cn(
+          'flex items-center justify-center rounded-md border border-border/70 bg-card text-center',
+          size === 'lg' ? 'min-h-16 px-3' : 'min-h-11 px-2',
+        )}
+      >
+        <div>
+          <p className={cn('font-black leading-none', size === 'lg' ? 'text-2xl' : 'text-sm')}>
+            {scoreLabel}
+          </p>
+          <p className="mt-1 text-[10px] font-bold text-muted-foreground">
+            {event.status === 'completed' ? 'FINAL' : 'MATCH'}
+          </p>
+        </div>
+      </div>
+      <ExternalScheduleTeamIdentity
+        align="right"
+        event={event}
+        side="B"
+        size={size === 'lg' ? 'lg' : 'sm'}
+      />
+    </div>
+  );
+};
+
+const ExternalScheduleCompetitionMark = ({ event }: { event: ExternalEsportsEventItem }) => {
+  const logoUrl = getExternalEventCompetitionLogoUrl(event);
+
+  if (!logoUrl) {
+    return null;
+  }
+
+  return (
+    <ExternalScheduleLogo
+      className="rounded-[6px]"
+      label={event.series || event.tournament || 'Competition'}
+      size="xs"
+      url={logoUrl}
+    />
+  );
+};
+
 const ExternalNextEventFeature = ({
   event,
+  favoriteTeam,
   now,
 }: {
   event: ExternalEsportsEventItem | null;
+  favoriteTeam: FavoriteEsportsTeam | null;
   now: number;
 }) => (
-  <div className="border-b border-border/60 bg-[hsl(var(--surface-2))] px-4 py-4 sm:px-5">
+  <div className="border-b border-border/60 bg-[hsl(var(--surface-2))] px-4 py-3.5 sm:px-5 sm:py-4">
     {event ? (
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-stretch">
-        <div className="min-w-0">
-          <div className="flex flex-wrap gap-2">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_248px] lg:items-stretch xl:grid-cols-[minmax(0,1fr)_260px]">
+        <div className="min-w-0 rounded-md border border-border/70 bg-card/70 p-3.5 sm:p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <ExternalScheduleCompetitionMark event={event} />
             <Badge variant="outline" className="bg-card">
-              다음 경기
+              {favoriteTeam ? `${favoriteTeam.name} 다음 경기` : '다음 경기'}
             </Badge>
+            {favoriteTeam ? (
+              <Badge variant="outline" className="gap-1 bg-card">
+                <Star className="h-3 w-3 fill-primary text-primary" />
+                응원팀
+              </Badge>
+            ) : null}
             <Badge variant="outline" className="bg-card">
               {getExternalCompactSourceLabel(event.sourceId)}
             </Badge>
@@ -4711,15 +5457,15 @@ const ExternalNextEventFeature = ({
               </Badge>
             ) : null}
           </div>
-          <h3 className="mt-1 break-words text-2xl font-black leading-tight sm:text-3xl">
-            {event.teamA || 'TBD'} vs {event.teamB || 'TBD'}
-          </h3>
-          <p className="mt-2 text-sm font-semibold text-muted-foreground">
+          <div className="mt-3.5">
+            <ExternalScheduleMatchupBlock event={event} size="lg" />
+          </div>
+          <p className="mt-3 truncate text-sm font-semibold text-muted-foreground">
             {[event.stage, event.series, event.tournament].filter(Boolean).join(' · ') ||
               '대회 정보 없음'}
           </p>
         </div>
-        <div className="rounded-md border border-border/70 bg-card p-3">
+        <div className="flex flex-col rounded-md border border-border/70 bg-card p-3.5">
           <p className="metric-label">시작</p>
           <p className="mt-1 text-lg font-black">
             {event.startsAt ? formatExternalEventTime(event.startsAt) : '미정'}
@@ -4735,7 +5481,7 @@ const ExternalNextEventFeature = ({
               {getExternalEventStatusLabel(event.status)}
             </Badge>
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-auto flex flex-wrap gap-2 pt-3.5">
             <Button asChild variant="default" size="sm">
               <Link to={getExternalEsportsMatchPath(event)}>
                 <Swords className="h-4 w-4" />
@@ -4758,6 +5504,7 @@ const ExternalNextEventFeature = ({
 const ExternalScheduleCalendar = ({
   days,
   eventsByDate,
+  favoriteTeam,
   hasNextEvent,
   mode,
   nextEventDateKey,
@@ -4771,6 +5518,7 @@ const ExternalScheduleCalendar = ({
 }: {
   days: Date[];
   eventsByDate: Map<string, ExternalEsportsEventItem[]>;
+  favoriteTeam: FavoriteEsportsTeam | null;
   hasNextEvent: boolean;
   mode: ExternalScheduleViewMode;
   nextEventDateKey: string | null;
@@ -4832,7 +5580,7 @@ const ExternalScheduleCalendar = ({
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-7 gap-1">
+      <div className="mt-4 grid grid-cols-7 gap-1.5">
         {calendarWeekdayLabels.map((label) => (
           <span
             key={label}
@@ -4848,12 +5596,16 @@ const ExternalScheduleCalendar = ({
           const isSelected = dateKey === selectedDate;
           const isToday = dateKey === today;
           const isNextEventDate = dateKey === nextEventDateKey;
+          const hasFavoriteEvent = events.some((event) =>
+            isFavoriteEsportsTeamEvent(event, favoriteTeam),
+          );
 
           return (
             <ExternalScheduleCalendarDay
               key={dateKey}
               date={date}
               events={events}
+              hasFavoriteEvent={hasFavoriteEvent}
               isNextEventDate={isNextEventDate}
               isOutsideMonth={isOutsideMonth}
               isSelected={isSelected}
@@ -4872,6 +5624,7 @@ const ExternalScheduleCalendar = ({
 const ExternalScheduleCalendarDay = ({
   date,
   events,
+  hasFavoriteEvent,
   isNextEventDate,
   isOutsideMonth,
   isSelected,
@@ -4881,6 +5634,7 @@ const ExternalScheduleCalendarDay = ({
 }: {
   date: Date;
   events: ExternalEsportsEventItem[];
+  hasFavoriteEvent: boolean;
   isNextEventDate: boolean;
   isOutsideMonth: boolean;
   isSelected: boolean;
@@ -4889,15 +5643,18 @@ const ExternalScheduleCalendarDay = ({
   onSelect: () => void;
 }) => {
   const counts = getExternalEventStatusCounts(events);
+  const hasEvents = events.length > 0;
 
   return (
     <button
       type="button"
       className={cn(
-        'flex min-w-0 flex-col items-start rounded-md border border-border/50 bg-[hsl(var(--surface-2))] p-1.5 text-left transition-[border-color,background-color,box-shadow] hover:border-primary/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
-        mode === 'week' ? 'min-h-[96px]' : 'min-h-[76px]',
+        'relative flex min-w-0 flex-col items-start rounded-md border border-border/50 bg-[hsl(var(--surface-2))] p-1.5 text-left transition-[border-color,background-color,box-shadow] hover:border-primary/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 sm:p-2',
+        mode === 'week' ? 'min-h-[104px]' : 'min-h-[72px] sm:min-h-[78px]',
         isOutsideMonth && 'opacity-45',
+        hasEvents && 'bg-card',
         isNextEventDate && !isSelected && 'border-primary/55 bg-primary/[0.07]',
+        hasFavoriteEvent && !isSelected && 'border-primary/45 bg-primary/[0.06]',
         isSelected &&
           'border-primary/70 bg-primary/10 shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.18)]',
         isToday && !isSelected && 'border-primary/30',
@@ -4907,11 +5664,25 @@ const ExternalScheduleCalendarDay = ({
       )}경기`}
       onClick={onSelect}
     >
-      <span className="text-xs font-black">{date.getDate()}</span>
-      <span className="mt-auto text-[11px] font-bold text-muted-foreground">
-        {events.length > 0 ? `${events.length}경기` : ''}
+      <span className="flex w-full items-start justify-between gap-1">
+        <span className="text-xs font-black">{date.getDate()}</span>
+        <span className="flex items-center gap-1">
+          {hasFavoriteEvent ? (
+            <Star className="h-3 w-3 fill-primary text-primary" aria-label="응원팀 경기" />
+          ) : null}
+          {hasEvents ? (
+            <span className="rounded-md border border-border/60 bg-[hsl(var(--surface-2))] px-1.5 py-0.5 text-[10px] font-black tabular-nums">
+              {events.length}
+            </span>
+          ) : null}
+        </span>
       </span>
-      <ExternalEventStatusDots counts={counts} />
+      <span className="mt-auto flex w-full items-end justify-between gap-2">
+        <span className="truncate text-[10px] font-bold text-muted-foreground">
+          {hasEvents ? '경기' : ''}
+        </span>
+        <ExternalEventStatusDots counts={counts} />
+      </span>
     </button>
   );
 };
@@ -4948,13 +5719,18 @@ const ExternalScheduleLegend = () => (
 const ExternalSelectedDateEvents = ({
   dateKey,
   events,
+  favoriteTeam,
   regionLabel,
 }: {
   dateKey: string;
   events: ExternalEsportsEventItem[];
+  favoriteTeam: FavoriteEsportsTeam | null;
   regionLabel: string;
 }) => {
   const counts = getExternalEventStatusCounts(events);
+  const favoriteCount = events.filter((event) =>
+    isFavoriteEsportsTeamEvent(event, favoriteTeam),
+  ).length;
 
   return (
     <div className="bg-card px-4 py-4 sm:px-5">
@@ -4970,6 +5746,12 @@ const ExternalSelectedDateEvents = ({
           </Badge>
           {events.length > 0 ? (
             <>
+              {favoriteCount > 0 ? (
+                <Badge variant="outline" className="w-fit gap-1 bg-transparent">
+                  <Star className="h-3 w-3 fill-primary text-primary" />
+                  응원팀 {favoriteCount.toLocaleString('ko-KR')}
+                </Badge>
+              ) : null}
               <Badge variant="outline" className="w-fit bg-transparent">
                 예정 {counts.scheduled.toLocaleString('ko-KR')}
               </Badge>
@@ -4985,9 +5767,9 @@ const ExternalSelectedDateEvents = ({
       </div>
 
       {events.length > 0 ? (
-        <div className="mt-3 grid gap-2">
+        <div className="mt-3 grid gap-2.5">
           {events.map((event) => (
-            <ExternalEsportsEventRow key={event.id} event={event} />
+            <ExternalEsportsEventRow key={event.id} event={event} favoriteTeam={favoriteTeam} />
           ))}
         </div>
       ) : (
@@ -5055,15 +5837,25 @@ export const ExternalDataKindPanel = ({
   );
 };
 
-const ExternalEsportsEventRow = ({ event }: { event: ExternalEsportsEventItem }) => {
-  const scoreLabel =
-    event.status === 'completed' && event.scoreA !== null && event.scoreB !== null
-      ? `${event.scoreA} - ${event.scoreB}`
-      : 'vs';
+const ExternalEsportsEventRow = ({
+  event,
+  favoriteTeam,
+}: {
+  event: ExternalEsportsEventItem;
+  favoriteTeam?: FavoriteEsportsTeam | null;
+}) => {
+  const isFavoriteEvent = isFavoriteEsportsTeamEvent(event, favoriteTeam);
 
   return (
-    <article className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3 transition-colors hover:border-primary/30">
-      <div className="grid gap-3 md:grid-cols-[84px_minmax(0,1fr)_auto] md:items-start">
+    <article
+      className={cn(
+        'rounded-md border p-2.5 transition-colors hover:border-primary/30 sm:p-3',
+        isFavoriteEvent
+          ? 'border-primary/45 bg-primary/[0.07]'
+          : 'border-border/70 bg-[hsl(var(--surface-2))]',
+      )}
+    >
+      <div className="grid gap-3 xl:grid-cols-[88px_minmax(0,1fr)_132px] xl:items-start">
         <div className="min-w-0 rounded-md border border-border/60 bg-card px-2.5 py-2">
           <p className="text-sm font-black">{formatExternalEventTime(event.startsAt)}</p>
           <div className="mt-1 flex items-center gap-1.5">
@@ -5083,7 +5875,14 @@ const ExternalEsportsEventRow = ({ event }: { event: ExternalEsportsEventItem })
           </div>
         </div>
         <div className="min-w-0">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <ExternalScheduleCompetitionMark event={event} />
+            {isFavoriteEvent ? (
+              <Badge variant="outline" className="gap-1 bg-card">
+                <Star className="h-3 w-3 fill-primary text-primary" />
+                응원팀
+              </Badge>
+            ) : null}
             <Badge variant="outline" className="bg-card">
               {getExternalCompactSourceLabel(event.sourceId)}
             </Badge>
@@ -5096,39 +5895,31 @@ const ExternalEsportsEventRow = ({ event }: { event: ExternalEsportsEventItem })
           <p className="mt-2 truncate text-xs font-semibold text-muted-foreground">
             {event.stage || 'Stage 미정'}
           </p>
-          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2">
-            <span className="break-words text-base font-black leading-tight">
-              {event.teamA || 'TBD'}
-            </span>
-            <Badge variant="outline" className="bg-card px-2 font-black">
-              {scoreLabel}
-            </Badge>
-            <span className="break-words text-base font-black leading-tight">
-              {event.teamB || 'TBD'}
-            </span>
+          <div className="mt-2.5">
+            <ExternalScheduleMatchupBlock event={event} />
           </div>
-          <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+          <p className="mt-2 truncate text-xs font-semibold text-muted-foreground">
             {event.series || event.tournament || '대회 정보 없음'}
           </p>
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
-          <Button asChild variant="default" size="sm">
+        <div className="flex shrink-0 flex-wrap gap-2 xl:flex-col xl:items-stretch">
+          <Button asChild variant="default" size="sm" className="xl:w-full">
             <Link to={getExternalEsportsMatchPath(event)}>
               <Swords className="h-4 w-4" />
               상세
             </Link>
           </Button>
-          <ExternalWatchLinks urls={event.watchUrls} />
+          <ExternalWatchLinks urls={event.watchUrls} className="xl:w-full" />
         </div>
       </div>
     </article>
   );
 };
 
-const ExternalWatchLinks = ({ urls }: { urls: string[] }) => (
+const ExternalWatchLinks = ({ className, urls }: { className?: string; urls: string[] }) => (
   <>
     {urls.slice(0, 2).map((url) => (
-      <Button key={url} asChild variant="outline" size="sm" className="bg-card">
+      <Button key={url} asChild variant="outline" size="sm" className={cn('bg-card', className)}>
         <a href={url} target="_blank" rel="noreferrer">
           <ExternalLink className="h-4 w-4" />
           {getExternalWatchLinkLabel(url)}

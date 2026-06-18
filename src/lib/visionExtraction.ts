@@ -599,17 +599,28 @@ const loadHeroTemplates = (logger: VisionLogger) => {
 
   loadedHeroTemplates = Promise.all(
     heroOptions.map(async (hero) => {
-      const heroImage = await loadHtmlImage(getHeroPortraitPath(hero.value));
+      try {
+        const heroImage = await loadHtmlImage(getHeroPortraitPath(hero.value));
 
-      return {
-        heroId: hero.value,
-        image: createPixelImage(heroImage, undefined, {
-          ...heroMatchSize,
-          fillStyle: '#142235',
-        }),
-        role: hero.role,
-      };
+        return {
+          heroId: hero.value,
+          image: createPixelImage(heroImage, undefined, {
+            ...heroMatchSize,
+            fillStyle: '#142235',
+          }),
+          role: hero.role,
+        };
+      } catch (error) {
+        logger.warn('hero-match:template-missing', {
+          error: error instanceof Error ? error.message : String(error),
+          heroId: hero.value,
+        });
+
+        return null;
+      }
     }),
+  ).then((templates) =>
+    templates.filter((template): template is NonNullable<typeof template> => template !== null),
   );
 
   return loadedHeroTemplates;
@@ -623,13 +634,26 @@ const runMapSelectionDetection = async ({
   screenshotPixels: PixelImage;
 }) => {
   logger.start('screen:map-selection');
-  const mapTemplates = await Promise.all(
-    mapOptions.map(async (map) => ({
-      image: await loadMapSelectionFeatureVector(map.value),
-      mapId: map.value,
-      modeId: map.modeId,
-    })),
-  );
+  const mapTemplates = (
+    await Promise.all(
+      mapOptions.map(async (map) => {
+        try {
+          return {
+            image: await loadMapSelectionFeatureVector(map.value),
+            mapId: map.value,
+            modeId: map.modeId,
+          };
+        } catch (error) {
+          logger.warn('screen:map-selection-template-missing', {
+            error: error instanceof Error ? error.message : String(error),
+            mapId: map.value,
+          });
+
+          return null;
+        }
+      }),
+    )
+  ).filter((template): template is NonNullable<typeof template> => template !== null);
   const detection = detectMapSelection(screenshotPixels, mapTemplates);
 
   logger.end('screen:map-selection', {

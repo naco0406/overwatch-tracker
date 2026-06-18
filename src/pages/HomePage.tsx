@@ -1,10 +1,11 @@
 import {
+  CalendarCheck2,
   Clipboard,
   ImagePlus,
   Loader2,
   Pencil,
   Play,
-  Plus,
+  Star,
   Square,
   Trash2,
   Wand2,
@@ -19,6 +20,7 @@ import {
   type ClipboardEvent,
   type DragEvent,
 } from 'react';
+import { Link } from 'react-router-dom';
 
 import { SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -38,12 +40,18 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
+import { useExternalDataOverview } from '@/hooks/useExternalData';
 import { useCreateMatch, useDeleteMatch, useMatches, useUpdateMatch } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { getMapLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
 import { getMapScreenshotPath } from '@/data/masterAssets';
 import { activeSessionStorageKey } from '@/lib/clientSessionState';
+import {
+  getExternalEsportsTeamLogoUrl,
+  getFavoriteEsportsTeamSide,
+  getNextFavoriteEsportsTeamEvent,
+} from '@/lib/externalEsports';
 import { calculateWinRate, compareMatchesByTimelineDesc, getCurrentStreak } from '@/lib/matchStats';
 import { createSessionId, groupMatchesBySession, shouldReuseSession } from '@/lib/session';
 import { cn } from '@/lib/utils';
@@ -54,6 +62,8 @@ import {
 } from '@/lib/visionExtraction';
 import type { Match, MatchCreateInput } from '@/types/match';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
+import type { ExternalEsportsEvent } from '@/types/externalData';
+import type { FavoriteEsportsTeam } from '@/types/userSettings';
 
 const recentPreviewCount = 4;
 const sessionTimelineCount = 8;
@@ -78,6 +88,30 @@ const formatTime = (value?: string) => {
     minute: '2-digit',
   }).format(new Date(value));
 };
+
+const formatHomeDate = (value?: string | null) => {
+  if (!value) {
+    return '일정 미정';
+  }
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    month: 'short',
+    day: 'numeric',
+    weekday: 'short',
+  }).format(new Date(value));
+};
+
+const getExternalMatchPath = (event: ExternalEsportsEvent) =>
+  `/external-data/esports/matches/${encodeURIComponent(event.id)}`;
+
+const getHomeTeamInitials = (teamName: string) =>
+  teamName
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || 'T';
 
 const formatFileSize = (size: number) => {
   if (size < 1024 * 1024) {
@@ -139,6 +173,84 @@ const getSummaryMetrics = (matches: Match[], isManualSessionActive: boolean) => 
   ];
 };
 
+const FavoriteTeamHomeWidget = ({
+  event,
+  favoriteTeam,
+  isLoading,
+}: {
+  event: ExternalEsportsEvent | null;
+  favoriteTeam: FavoriteEsportsTeam;
+  isLoading: boolean;
+}) => {
+  if (isLoading) {
+    return (
+      <div className="hidden min-w-[260px] rounded-md border border-border/70 bg-card px-3 py-2 sm:block">
+        <SkeletonBlock className="h-4 w-32" />
+        <SkeletonBlock className="mt-2 h-3 w-48" />
+      </div>
+    );
+  }
+
+  if (!event) {
+    return (
+      <Button asChild variant="outline" className="hidden bg-transparent sm:inline-flex">
+        <Link to="/external-data/esports">
+          <Star className="h-4 w-4 fill-primary text-primary" />
+          {favoriteTeam.name}
+        </Link>
+      </Button>
+    );
+  }
+
+  const favoriteSide = getFavoriteEsportsTeamSide(event, favoriteTeam);
+  const opponentName =
+    favoriteSide === 'A'
+      ? event.teamB || 'TBD'
+      : favoriteSide === 'B'
+        ? event.teamA || 'TBD'
+        : 'TBD';
+  const logoUrl =
+    favoriteSide === 'A'
+      ? getExternalEsportsTeamLogoUrl(event, 'A')
+      : favoriteSide === 'B'
+        ? getExternalEsportsTeamLogoUrl(event, 'B')
+        : favoriteTeam.logoUrl;
+
+  return (
+    <Link
+      to={getExternalMatchPath(event)}
+      className="group hidden min-w-[288px] rounded-md border border-primary/35 bg-primary/[0.07] px-3 py-2 text-left transition-colors hover:border-primary/60 hover:bg-primary/[0.1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 sm:block"
+    >
+      <div className="grid grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-2">
+        <span className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-md border border-white/10 bg-[linear-gradient(145deg,hsl(222_20%_15%),hsl(220_16%_8%))] text-[10px] font-black text-white/80">
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt={favoriteTeam.name}
+              className="h-full w-full object-contain p-1 drop-shadow-[0_1px_1px_rgba(0,0,0,0.65)]"
+            />
+          ) : (
+            getHomeTeamInitials(favoriteTeam.name)
+          )}
+        </span>
+        <span className="min-w-0">
+          <span className="flex items-center gap-1 text-[11px] font-black text-primary">
+            <Star className="h-3 w-3 fill-primary" />
+            응원팀 다음 경기
+          </span>
+          <span className="mt-0.5 block truncate text-sm font-black">
+            {favoriteTeam.name} vs {opponentName}
+          </span>
+          <span className="mt-0.5 block truncate text-[11px] font-semibold text-muted-foreground">
+            {formatHomeDate(event.startsAt)} · {formatTime(event.startsAt ?? undefined)}
+          </span>
+        </span>
+        <CalendarCheck2 className="h-4 w-4 text-primary transition-transform group-hover:translate-x-0.5" />
+      </div>
+    </Link>
+  );
+};
+
 const HomePage = () => {
   const [entryDialogOpen, setEntryDialogOpen] = useState(false);
   const [entrySource, setEntrySource] = useState<MatchCreateInput['source']>('manual');
@@ -150,6 +262,7 @@ const HomePage = () => {
   const [visionResult, setVisionResult] = useState<VisionExtractionResult | null>(null);
   const [isExtractingVision, setIsExtractingVision] = useState(false);
   const [stickyNotesDesktopOpen, setStickyNotesDesktopOpen] = useState(false);
+  const [externalNow] = useState(() => Date.now());
   const [manualSessionId, setManualSessionId] = useState<string | null>(() => {
     if (typeof window === 'undefined') {
       return null;
@@ -168,6 +281,10 @@ const HomePage = () => {
   const { data: matches = [], isLoading: isMatchesLoading } = useMatches();
   const { data: userSettings, isLoading: isSettingsLoading } = useUserSettings();
   const { data: playerAccounts = [], isLoading: isAccountsLoading } = usePlayerAccounts();
+  const favoriteTeam = userSettings?.favoriteEsportsTeam ?? null;
+  const { data: externalDataOverview, isLoading: isExternalDataLoading } = useExternalDataOverview(
+    Boolean(favoriteTeam),
+  );
   const createMatchMutation = useCreateMatch();
   const updateMatchMutation = useUpdateMatch();
   const deleteMatchMutation = useDeleteMatch();
@@ -187,6 +304,15 @@ const HomePage = () => {
     return shouldReuseSession(latestSession.endedAt, new Date()) ? latestSession : null;
   }, [manualSessionId, sessions]);
   const sessionMatches = useMemo(() => activeSession?.matches ?? [], [activeSession]);
+  const favoriteTeamNextEvent = useMemo(
+    () =>
+      getNextFavoriteEsportsTeamEvent(
+        externalDataOverview?.esportsEvents ?? [],
+        favoriteTeam,
+        externalNow,
+      ),
+    [externalDataOverview?.esportsEvents, externalNow, favoriteTeam],
+  );
 
   const sortedSessionMatches = useMemo(
     () => [...sessionMatches].sort(compareMatchesByTimelineDesc),
@@ -564,15 +690,13 @@ const HomePage = () => {
           eyebrow="오늘"
           title="경기 기록"
           actions={
-            <Button
-              variant="outline"
-              className="bg-transparent"
-              type="button"
-              onClick={() => setToolsOpen(true)}
-            >
-              <Plus className="h-4 w-4" />
-              상세/이미지
-            </Button>
+            favoriteTeam ? (
+              <FavoriteTeamHomeWidget
+                event={favoriteTeamNextEvent}
+                favoriteTeam={favoriteTeam}
+                isLoading={isExternalDataLoading}
+              />
+            ) : null
           }
         />
         <input

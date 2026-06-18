@@ -107,6 +107,7 @@ export const mapOptions = [
   { label: '샴발리 수도원', modeId: 'escort', value: 'shambali-monastery' },
   { label: '감시 기지: 지브롤터', modeId: 'escort', value: 'watchpoint-gibraltar' },
   { label: '아틀리스', modeId: 'flashpoint', value: 'aatlis' },
+  { label: '네온 정션', modeId: 'flashpoint', value: 'neon-junction' },
   { label: '뉴 정크 시티', modeId: 'flashpoint', value: 'new-junk-city' },
   { label: '수라바사', modeId: 'flashpoint', value: 'suravasa' },
 ] satisfies MapOption[];
@@ -145,6 +146,7 @@ export const heroOptions = [
   { label: '파라', role: 'damage', value: 'pharah' },
   { label: '리퍼', role: 'damage', value: 'reaper' },
   { label: '시에라', role: 'damage', value: 'sierra' },
+  { label: '시온', role: 'damage', value: 'shion' },
   { label: '소전', role: 'damage', value: 'sojourn' },
   { label: '솔저: 76', role: 'damage', value: 'soldier-76' },
   { label: '솜브라', role: 'damage', value: 'sombra' },

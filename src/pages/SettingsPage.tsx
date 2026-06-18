@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -54,6 +55,7 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useOwnProfile, useSaveOwnProfile } from '@/hooks/useCommunity';
+import { useExternalDataOverview } from '@/hooks/useExternalData';
 import { prepareAvatarImage, uploadAvatarImage } from '@/lib/avatarUpload';
 import { cn } from '@/lib/utils';
 import { matchRoleOptions, queueOptions } from '@/data/matchOptions';
@@ -68,9 +70,15 @@ import {
 } from '@/hooks/usePlayerAccounts';
 import { useUpdateUserSettings, useUserSettings } from '@/hooks/useUserSettings';
 import { buildMatchesCsv, createCsvFileName, parseMatchesCsv } from '@/lib/matchCsv';
+import {
+  createExternalEsportsTeamOptions,
+  createFavoriteEsportsTeam,
+  type ExternalEsportsTeamOption,
+} from '@/lib/externalEsports';
 import type { MatchRole, QueueType } from '@/types/match';
 import type { PlayerAccount } from '@/types/playerAccount';
 import { getPlayerAccountLabel } from '@/types/playerAccount';
+import type { FavoriteEsportsTeam } from '@/types/userSettings';
 
 type SettingsSection = 'account' | 'battle-net' | 'data';
 
@@ -112,6 +120,8 @@ const SettingsPage = () => {
   const { data: playerAccounts = [], isLoading: isAccountsLoading } = usePlayerAccounts();
   const { data: matches = [], isLoading: isMatchesLoading } = useMatches();
   const { data: userSettings, isLoading: isUserSettingsLoading } = useUserSettings();
+  const { data: externalDataOverview, isLoading: isExternalDataLoading } =
+    useExternalDataOverview();
   const createPlayerAccount = useCreatePlayerAccount();
   const createMatch = useCreateMatch();
   const updatePlayerAccount = useUpdatePlayerAccount();
@@ -149,6 +159,10 @@ const SettingsPage = () => {
   const [permanentDeleteAccountId, setPermanentDeleteAccountId] = useState<string | null>(null);
   const activeAccounts = playerAccounts.filter((account) => account.isActive);
   const inactiveAccounts = playerAccounts.filter((account) => !account.isActive);
+  const esportsTeamOptions = useMemo(
+    () => createExternalEsportsTeamOptions(externalDataOverview?.esportsEvents ?? []),
+    [externalDataOverview?.esportsEvents],
+  );
   const permanentDeleteAccount =
     playerAccounts.find((account) => account.id === permanentDeleteAccountId) ?? null;
   const isAccountMutating =
@@ -172,6 +186,7 @@ const SettingsPage = () => {
     defaultQueueTypeDraft ?? userSettings?.defaultQueueType ?? 'solo';
   const effectiveDefaultMatchRole =
     defaultMatchRoleDraft ?? userSettings?.defaultMatchRole ?? 'damage';
+  const savedFavoriteEsportsTeam = userSettings?.favoriteEsportsTeam ?? null;
   const defaultSettingsDirty = Boolean(
     userSettings &&
     (!userSettings.createdAt ||
@@ -392,6 +407,27 @@ const SettingsPage = () => {
         description: error instanceof Error ? error.message : '잠시 후 다시 시도하세요.',
         variant: 'destructive',
       });
+    }
+  };
+
+  const handleSaveFavoriteEsportsTeam = async (favoriteTeam: FavoriteEsportsTeam | null) => {
+    try {
+      await updateUserSettings.mutateAsync({
+        favoriteEsportsTeam: favoriteTeam,
+      });
+      toast({
+        title: favoriteTeam ? '응원팀 저장 완료' : '응원팀 해제 완료',
+        description: favoriteTeam
+          ? '홈과 e스포츠 일정에서 우선 표시합니다.'
+          : '응원팀 위젯을 숨깁니다.',
+      });
+    } catch (error) {
+      toast({
+        title: '응원팀 저장 실패',
+        description: error instanceof Error ? error.message : '잠시 후 다시 시도하세요.',
+        variant: 'destructive',
+      });
+      throw error;
     }
   };
 
@@ -722,11 +758,15 @@ const SettingsPage = () => {
           defaultPlayerAccountId={effectiveDefaultPlayerAccountId}
           defaultQueueType={effectiveDefaultQueueType}
           defaultSettingsDirty={defaultSettingsDirty}
+          esportsTeamOptions={esportsTeamOptions}
+          favoriteEsportsTeam={savedFavoriteEsportsTeam}
           hasAvatar={Boolean(avatarUrlInput)}
           isAvatarDragging={isAvatarDragging}
           isAvatarUploading={isAvatarUploading}
           isDefaultSettingsLoading={isUserSettingsLoading || isAccountsLoading}
+          isFavoriteEsportsTeamLoading={isUserSettingsLoading || isExternalDataLoading}
           isOwnProfileLoading={isOwnProfileLoading}
+          isSavingFavoriteEsportsTeam={updateUserSettings.isPending}
           isSavingDefaultSettings={updateUserSettings.isPending}
           isSavingNickname={saveOwnProfile.isPending}
           nickname={ownProfile?.nickname ?? null}
@@ -760,6 +800,7 @@ const SettingsPage = () => {
           onPasswordCurrentChange={setPasswordCurrent}
           onPasswordNextChange={setPasswordNext}
           onSaveDefaultSettings={handleSaveDefaultSettings}
+          onSaveFavoriteEsportsTeam={handleSaveFavoriteEsportsTeam}
           onSaveNickname={handleSaveNickname}
           onSignOut={handleSignOut}
           onUpdatePassword={handleUpdatePassword}
@@ -852,11 +893,15 @@ interface AccountSettingsSectionProps {
   defaultPlayerAccountId: string;
   defaultQueueType: QueueType;
   defaultSettingsDirty: boolean;
+  esportsTeamOptions: ExternalEsportsTeamOption[];
+  favoriteEsportsTeam: FavoriteEsportsTeam | null;
   hasAvatar: boolean;
   isAvatarDragging: boolean;
   isAvatarUploading: boolean;
   isDefaultSettingsLoading: boolean;
+  isFavoriteEsportsTeamLoading: boolean;
   isOwnProfileLoading: boolean;
+  isSavingFavoriteEsportsTeam: boolean;
   isSavingDefaultSettings: boolean;
   isSavingNickname: boolean;
   nickname: string | null;
@@ -880,6 +925,7 @@ interface AccountSettingsSectionProps {
   onPasswordCurrentChange: (value: string) => void;
   onPasswordNextChange: (value: string) => void;
   onSaveDefaultSettings: () => void;
+  onSaveFavoriteEsportsTeam: (favoriteTeam: FavoriteEsportsTeam | null) => Promise<void> | void;
   onSaveNickname: () => void;
   onSignOut: () => void;
   onUpdatePassword: () => void;
@@ -893,11 +939,15 @@ const AccountSettingsSection = ({
   defaultPlayerAccountId,
   defaultQueueType,
   defaultSettingsDirty,
+  esportsTeamOptions,
+  favoriteEsportsTeam,
   hasAvatar,
   isAvatarDragging,
   isAvatarUploading,
   isDefaultSettingsLoading,
+  isFavoriteEsportsTeamLoading,
   isOwnProfileLoading,
+  isSavingFavoriteEsportsTeam,
   isSavingDefaultSettings,
   isSavingNickname,
   nickname,
@@ -921,6 +971,7 @@ const AccountSettingsSection = ({
   onPasswordCurrentChange,
   onPasswordNextChange,
   onSaveDefaultSettings,
+  onSaveFavoriteEsportsTeam,
   onSaveNickname,
   onSignOut,
   onUpdatePassword,
@@ -1100,6 +1151,14 @@ const AccountSettingsSection = ({
         onDefaultPlayerAccountIdChange={onDefaultPlayerAccountIdChange}
         onDefaultQueueTypeChange={onDefaultQueueTypeChange}
         onSave={onSaveDefaultSettings}
+      />
+
+      <FavoriteEsportsTeamPanel
+        favoriteTeam={favoriteEsportsTeam}
+        isLoading={isFavoriteEsportsTeamLoading}
+        isSaving={isSavingFavoriteEsportsTeam}
+        teams={esportsTeamOptions}
+        onSave={onSaveFavoriteEsportsTeam}
       />
 
       <div className="grid gap-5 px-4 py-5 sm:px-5 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-6">
@@ -1307,6 +1366,406 @@ const QuickInputDefaultsPanel = ({
     )}
   </div>
 );
+
+interface FavoriteEsportsTeamPanelProps {
+  favoriteTeam: FavoriteEsportsTeam | null;
+  isLoading: boolean;
+  isSaving: boolean;
+  teams: ExternalEsportsTeamOption[];
+  onSave: (favoriteTeam: FavoriteEsportsTeam | null) => Promise<void> | void;
+}
+
+const getSettingsTeamInitials = (teamName: string) =>
+  teamName
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || 'T';
+
+const SettingsTeamLogo = ({ logoUrl, name }: { logoUrl?: string | null; name: string }) => (
+  <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-md border border-white/10 bg-[linear-gradient(145deg,hsl(222_20%_15%),hsl(220_16%_8%))] text-xs font-black text-white/80 ring-1 ring-black/20">
+    {logoUrl ? (
+      <img
+        src={logoUrl}
+        alt={name}
+        loading="lazy"
+        className="h-full w-full object-contain p-1.5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.65)]"
+      />
+    ) : (
+      getSettingsTeamInitials(name)
+    )}
+  </span>
+);
+
+const settingsEsportsRegionOrder = [
+  'korea',
+  'japan',
+  'pacific',
+  'china',
+  'asia',
+  'na',
+  'north_america',
+  'emea',
+  'europe',
+  'americas',
+  'owwc',
+  'global',
+  'unknown',
+] as const;
+
+const settingsEsportsRegionLabels: Record<string, string> = {
+  americas: '미주',
+  asia: '아시아',
+  china: '중국',
+  emea: 'EMEA',
+  europe: '유럽',
+  global: '글로벌',
+  japan: '일본',
+  korea: '한국',
+  na: '북미',
+  north_america: '북미',
+  owwc: 'OWWC',
+  pacific: '퍼시픽',
+  unknown: '미지정',
+};
+
+const getSettingsEsportsRegionLabel = (region: string | null | undefined) =>
+  settingsEsportsRegionLabels[region || 'unknown'] ?? region ?? '미지정';
+
+const FavoriteEsportsTeamPanel = ({
+  favoriteTeam,
+  isLoading,
+  isSaving,
+  onSave,
+  teams,
+}: FavoriteEsportsTeamPanelProps) => {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const handleSave = async (nextTeam: FavoriteEsportsTeam | null) => {
+    try {
+      await onSave(nextTeam);
+      setDialogOpen(false);
+    } catch {
+      // The parent handler already shows the failure toast. Keep the dialog open.
+    }
+  };
+
+  return (
+    <div className="grid gap-3 px-4 py-3.5 sm:px-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="metric-label">e스포츠</p>
+          <Badge variant="outline" className="bg-transparent text-[10px]">
+            선택사항
+          </Badge>
+        </div>
+        <h2 className="mt-1 text-sm font-black">응원팀</h2>
+        <p className="mt-1 text-xs font-semibold leading-relaxed text-muted-foreground">
+          홈과 일정에서 우선 표시할 팀입니다.
+        </p>
+      </div>
+
+      {isLoading ? (
+        <SkeletonBlock className="h-11 lg:w-80" />
+      ) : (
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center lg:justify-end">
+          <div className="min-w-0 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-2.5 py-2 sm:min-w-72">
+            {favoriteTeam ? (
+              <div className="grid min-w-0 grid-cols-[44px_minmax(0,1fr)] items-center gap-2.5">
+                <SettingsTeamLogo logoUrl={favoriteTeam.logoUrl} name={favoriteTeam.name} />
+                <div className="min-w-0">
+                  <p className="metric-label">현재 설정</p>
+                  <h3 className="truncate text-sm font-black">{favoriteTeam.name}</h3>
+                  <p className="mt-0.5 truncate text-xs font-semibold text-muted-foreground">
+                    {getSettingsEsportsRegionLabel(favoriteTeam.region)}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="min-w-0">
+                <p className="metric-label">현재 설정</p>
+                <h3 className="truncate text-sm font-black">선택된 팀 없음</h3>
+                <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
+                  필요할 때만 설정합니다.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0 bg-card"
+            disabled={isSaving}
+            onClick={() => setDialogOpen(true)}
+          >
+            <Pencil className="h-4 w-4" />
+            {favoriteTeam ? '변경' : '선택'}
+          </Button>
+        </div>
+      )}
+
+      <FavoriteEsportsTeamDialog
+        favoriteTeam={favoriteTeam}
+        isSaving={isSaving}
+        open={dialogOpen}
+        teams={teams}
+        onOpenChange={setDialogOpen}
+        onSave={handleSave}
+      />
+    </div>
+  );
+};
+
+interface FavoriteEsportsTeamDialogProps {
+  favoriteTeam: FavoriteEsportsTeam | null;
+  isSaving: boolean;
+  open: boolean;
+  teams: ExternalEsportsTeamOption[];
+  onOpenChange: (open: boolean) => void;
+  onSave: (favoriteTeam: FavoriteEsportsTeam | null) => Promise<void> | void;
+}
+
+const FavoriteEsportsTeamDialog = ({
+  favoriteTeam,
+  isSaving,
+  onOpenChange,
+  onSave,
+  open,
+  teams,
+}: FavoriteEsportsTeamDialogProps) => {
+  const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(favoriteTeam?.id ?? null);
+  const regionOptions = useMemo(() => {
+    const regionMap = teams.reduce((map, team) => {
+      const value = team.region || 'unknown';
+      const current = map.get(value) ?? {
+        count: 0,
+        label: getSettingsEsportsRegionLabel(value),
+        upcomingCount: 0,
+        value,
+      };
+
+      current.count += 1;
+      current.upcomingCount += team.upcomingCount;
+      map.set(value, current);
+
+      return map;
+    }, new Map<string, { count: number; label: string; upcomingCount: number; value: string }>());
+
+    return Array.from(regionMap.values()).sort((left, right) => {
+      const leftPriority = settingsEsportsRegionOrder.indexOf(
+        left.value as (typeof settingsEsportsRegionOrder)[number],
+      );
+      const rightPriority = settingsEsportsRegionOrder.indexOf(
+        right.value as (typeof settingsEsportsRegionOrder)[number],
+      );
+      const safeLeftPriority = leftPriority >= 0 ? leftPriority : settingsEsportsRegionOrder.length;
+      const safeRightPriority =
+        rightPriority >= 0 ? rightPriority : settingsEsportsRegionOrder.length;
+
+      return (
+        safeLeftPriority - safeRightPriority ||
+        right.upcomingCount - left.upcomingCount ||
+        left.label.localeCompare(right.label, 'ko-KR')
+      );
+    });
+  }, [teams]);
+  const selectedTeam = teams.find((team) => team.id === selectedTeamId) ?? null;
+  const activeRegion =
+    (selectedRegion && regionOptions.some((region) => region.value === selectedRegion)
+      ? selectedRegion
+      : favoriteTeam?.region && regionOptions.some((region) => region.value === favoriteTeam.region)
+        ? favoriteTeam.region
+        : regionOptions[0]?.value) ?? null;
+  const activeRegionLabel = getSettingsEsportsRegionLabel(activeRegion);
+  const visibleTeams = activeRegion
+    ? teams.filter((team) => (team.region || 'unknown') === activeRegion)
+    : teams;
+  const selectedTeamInActiveRegion =
+    selectedTeam && (!activeRegion || (selectedTeam.region || 'unknown') === activeRegion)
+      ? selectedTeam
+      : null;
+  const handleRegionSelect = (regionValue: string) => {
+    setSelectedRegion(regionValue);
+    setSelectedTeamId((currentTeamId) => {
+      const currentTeam = teams.find((team) => team.id === currentTeamId);
+
+      return currentTeam && (currentTeam.region || 'unknown') === regionValue
+        ? currentTeamId
+        : null;
+    });
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) {
+          setSelectedRegion(null);
+          setSelectedTeamId(favoriteTeam?.id ?? null);
+        }
+
+        onOpenChange(nextOpen);
+      }}
+    >
+      <DialogContent className="flex h-[calc(100dvh-1rem)] max-w-5xl flex-col gap-0 p-0 sm:h-[720px] sm:max-h-[calc(100dvh-3rem)]">
+        <DialogHeader className="border-b border-border/70 bg-card px-4 py-4 pr-12 sm:px-5">
+          <DialogTitle>응원팀 선택</DialogTitle>
+          <DialogDescription>리전을 먼저 고른 뒤 팀을 선택합니다.</DialogDescription>
+        </DialogHeader>
+
+        <div className="grid min-h-0 flex-1 gap-3 overflow-hidden p-4 sm:p-5 xl:grid-cols-[240px_minmax(0,1fr)]">
+          <div className="min-h-0 rounded-md border border-border/70 bg-card p-2.5">
+            <div className="px-1 pb-2">
+              <p className="metric-label">1. 리전</p>
+              <h3 className="mt-1 text-sm font-black">먼저 지역을 선택</h3>
+            </div>
+            <div className="max-h-[calc(100%-44px)] overflow-y-auto pr-1">
+              {regionOptions.length > 0 ? (
+                <div className="grid gap-1.5">
+                  {regionOptions.map((region) => {
+                    const isActive = activeRegion === region.value;
+
+                    return (
+                      <button
+                        key={region.value}
+                        type="button"
+                        aria-pressed={isActive}
+                        className={cn(
+                          'flex min-h-11 items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
+                          isActive
+                            ? 'border-primary/60 bg-primary/10'
+                            : 'border-transparent bg-[hsl(var(--surface-2))] hover:border-primary/30',
+                        )}
+                        disabled={isSaving}
+                        onClick={() => handleRegionSelect(region.value)}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-black">{region.label}</span>
+                          <span className="mt-0.5 block truncate text-[11px] font-semibold text-muted-foreground">
+                            예정 {region.upcomingCount.toLocaleString('ko-KR')}
+                          </span>
+                        </span>
+                        <Badge variant="outline" className="shrink-0 bg-card text-[11px]">
+                          {region.count.toLocaleString('ko-KR')}
+                        </Badge>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed border-border/70 bg-[hsl(var(--surface-2))] px-3 py-4">
+                  <p className="text-sm font-bold">리전 데이터 없음</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="min-h-0 rounded-md border border-border/70 bg-card p-2.5">
+            <div className="flex flex-col gap-2 px-1 pb-2 sm:flex-row sm:items-end sm:justify-between">
+              <div className="min-w-0">
+                <p className="metric-label">2. 팀</p>
+                <h3 className="mt-1 truncate text-sm font-black">{activeRegionLabel}</h3>
+              </div>
+              <Badge variant="outline" className="w-fit bg-transparent">
+                {visibleTeams.length.toLocaleString('ko-KR')}팀
+              </Badge>
+            </div>
+
+            <div className="max-h-[calc(100%-44px)] overflow-y-auto pr-1">
+              {visibleTeams.length > 0 ? (
+                <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
+                  {visibleTeams.map((team) => {
+                    const isSelected = selectedTeamId === team.id;
+
+                    return (
+                      <button
+                        key={team.id}
+                        type="button"
+                        aria-pressed={isSelected}
+                        className={cn(
+                          'grid min-w-0 grid-cols-[44px_minmax(0,1fr)] items-center gap-3 rounded-md border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
+                          isSelected
+                            ? 'border-primary/60 bg-primary/10'
+                            : 'border-border/70 bg-[hsl(var(--surface-2))] hover:border-primary/35 hover:bg-primary/[0.04]',
+                        )}
+                        disabled={isSaving}
+                        onClick={() => setSelectedTeamId(team.id)}
+                      >
+                        <SettingsTeamLogo logoUrl={team.logoUrl} name={team.name} />
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-black">{team.name}</span>
+                          <span className="mt-0.5 block truncate text-[11px] font-semibold text-muted-foreground">
+                            예정 {team.upcomingCount.toLocaleString('ko-KR')} · 전체{' '}
+                            {team.totalCount.toLocaleString('ko-KR')}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed border-border/70 bg-[hsl(var(--surface-2))] px-3 py-4">
+                  <p className="text-sm font-bold">선택할 팀 데이터가 없습니다.</p>
+                  <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                    외부 e스포츠 일정 수집 후 팀 목록이 표시됩니다.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter className="border-t border-border/70 bg-card px-4 py-3 sm:px-5">
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full justify-start sm:w-auto"
+              disabled={isSaving || !favoriteTeam}
+              onClick={() => {
+                void onSave(null);
+              }}
+            >
+              <X className="h-4 w-4" />
+              응원팀 해제
+            </Button>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                className="bg-transparent"
+                disabled={isSaving}
+                onClick={() => onOpenChange(false)}
+              >
+                취소
+              </Button>
+              <Button
+                type="button"
+                disabled={isSaving || !selectedTeamInActiveRegion}
+                onClick={() => {
+                  if (selectedTeamInActiveRegion) {
+                    void onSave(createFavoriteEsportsTeam(selectedTeamInActiveRegion));
+                  }
+                }}
+              >
+                {isSaving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                선택 저장
+              </Button>
+            </div>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
 
 interface BattleNetSettingsSectionProps {
   activeAccounts: PlayerAccount[];

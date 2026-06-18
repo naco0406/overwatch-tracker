@@ -1,19 +1,12 @@
 import {
-  Activity,
   BarChart3,
   CalendarDays,
-  Clock3,
   Database,
   Globe2,
-  Layers3,
   Loader2,
   RefreshCw,
   ShieldCheck,
-  Sparkles,
   Swords,
-  Target,
-  Trophy,
-  UsersRound,
 } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink, Navigate, useParams } from 'react-router-dom';
@@ -23,8 +16,6 @@ import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { heroOptions, roleLabels } from '@/data/matchOptions';
-import { getHeroPortraitPath } from '@/data/masterAssets';
 import { toast } from '@/hooks/use-toast';
 import { useCollectExternalData, useExternalDataOverview } from '@/hooks/useExternalData';
 import {
@@ -38,7 +29,6 @@ import type {
   ExternalSource,
   ExternalSourceType,
 } from '@/types/externalData';
-import type { MatchRole } from '@/types/match';
 import {
   createExternalSourceCards,
   ExternalDataWarningsPanel,
@@ -55,11 +45,11 @@ import {
 
 const externalDataSections = [
   {
-    description: '공식/서드파티 소스, TTL, 제공 데이터, 수집 최신성을 레지스트리로 봅니다.',
-    eyebrow: 'Sources',
-    label: '데이터 소스 현황',
-    title: '데이터 소스 현황',
-    value: 'sources',
+    description: '외부 영웅 픽률과 승률을 역할, 메타 신호, 영웅 초상화 중심으로 봅니다.',
+    eyebrow: 'Hero Meta',
+    label: '영웅 메타',
+    title: '영웅 메타',
+    value: 'heroes',
   },
   {
     description: '공식 일정과 OWTICS 보강 일정을 날짜, 지역, 경기 상태 기준으로 봅니다.',
@@ -69,44 +59,26 @@ const externalDataSections = [
     value: 'esports',
   },
   {
-    description: '외부 영웅 픽률과 승률을 역할, 메타 신호, 영웅 초상화 중심으로 봅니다.',
-    eyebrow: 'Hero Meta',
-    label: '영웅 메타',
-    title: '영웅 메타',
-    value: 'heroes',
+    description: '공식/서드파티 소스, TTL, 제공 데이터, 수집 최신성을 레지스트리로 봅니다.',
+    eyebrow: 'Sources',
+    label: '데이터 소스 현황',
+    title: '데이터 소스 현황',
+    value: 'sources',
   },
 ] as const;
 
 const externalDataNavSections = [
-  ...externalDataSections,
+  externalDataSections[0],
+  externalDataSections[1],
   {
     label: '오버워치 에셋',
     to: '/external-data/assets',
     value: 'assets',
   },
+  externalDataSections[2],
 ] as const;
 
 type ExternalDataSection = (typeof externalDataSections)[number]['value'];
-
-interface ExternalHeroSignalRow {
-  heroId: string;
-  latestAt: string | null;
-  name: string;
-  pickRate: number | null;
-  regionCount: number;
-  role: MatchRole | null;
-  snapshotCount: number;
-  sourceCount: number;
-  winRate: number | null;
-}
-
-interface ExternalRoleCoverageRow {
-  avgPickRate: number | null;
-  avgWinRate: number | null;
-  count: number;
-  label: string;
-  role: MatchRole;
-}
 
 const externalSourceTypeLabels = {
   official_api: '공식 API',
@@ -130,8 +102,6 @@ const externalRegionLabels = {
   owwc: '월드컵',
   pacific: '퍼시픽',
 } as const;
-
-const externalRoleOrder: MatchRole[] = ['tank', 'damage', 'support'];
 
 const isExternalDataSection = (value: string | undefined): value is ExternalDataSection =>
   externalDataSections.some((section) => section.value === value);
@@ -224,9 +194,6 @@ const getExternalFreshnessLabel = (value: string | null) => {
   return `${Math.floor(diffHours / 24)}일 전`;
 };
 
-const formatExternalPercent = (value: number | null) =>
-  value === null ? '--' : `${value.toFixed(1)}%`;
-
 const formatExternalTtl = (seconds: number) => {
   if (seconds >= 86400) {
     return `${Math.round(seconds / 86400)}일`;
@@ -246,38 +213,6 @@ const getExternalRegionLabel = (value: string) =>
   value in externalRegionLabels
     ? externalRegionLabels[value as keyof typeof externalRegionLabels]
     : value || '미지정';
-
-const getExternalHeroOption = (heroId: string) =>
-  heroOptions.find((hero) => hero.value === heroId) ?? null;
-
-const getExternalHeroLabel = (heroId: string) => getExternalHeroOption(heroId)?.label ?? heroId;
-
-const getExternalHeroRole = (heroId: string, fallbackRole?: string) => {
-  const hero = getExternalHeroOption(heroId);
-
-  if (hero) {
-    return hero.role;
-  }
-
-  return fallbackRole === 'tank' || fallbackRole === 'damage' || fallbackRole === 'support'
-    ? fallbackRole
-    : null;
-};
-
-const getExternalRoleLabel = (role: MatchRole | null) => (role ? roleLabels[role] : '미지정');
-
-const getExternalAverage = (values: Array<number | null>) => {
-  const numericValues = values.filter((value): value is number => value !== null);
-
-  if (numericValues.length === 0) {
-    return null;
-  }
-
-  return numericValues.reduce((sum, value) => sum + value, 0) / numericValues.length;
-};
-
-const roundExternalMetric = (value: number | null) =>
-  value === null ? null : Math.round(value * 10) / 10;
 
 const getExternalEventTime = (value: string | null) => {
   if (!value) {
@@ -371,84 +306,6 @@ const getEsportsRegionSummaries = (events: ExternalEsportsEventItem[]) => {
   return Array.from(summaries.values()).sort((left, right) => right.count - left.count);
 };
 
-const createExternalHeroSignalRows = (
-  heroRates: ExternalHeroRateItem[],
-): ExternalHeroSignalRow[] => {
-  const groups = heroRates.reduce(
-    (map, snapshot) => {
-      const current = map.get(snapshot.heroId) ?? {
-        latestAt: null as string | null,
-        pickRates: [] as Array<number | null>,
-        regions: new Set<string>(),
-        role: getExternalHeroRole(snapshot.heroId, snapshot.role),
-        sourceIds: new Set<string>(),
-        snapshots: 0,
-        winRates: [] as Array<number | null>,
-      };
-
-      current.latestAt = getLatestExternalTimestamp(
-        [current.latestAt, snapshot.fetchedAt].filter((value): value is string => Boolean(value)),
-      );
-      current.pickRates.push(snapshot.pickRate);
-      current.regions.add(snapshot.region);
-      current.role = current.role ?? getExternalHeroRole(snapshot.heroId, snapshot.role);
-      current.snapshots += 1;
-      current.sourceIds.add(snapshot.sourceId);
-      current.winRates.push(snapshot.winRate);
-      map.set(snapshot.heroId, current);
-
-      return map;
-    },
-    new Map<
-      string,
-      {
-        latestAt: string | null;
-        pickRates: Array<number | null>;
-        regions: Set<string>;
-        role: MatchRole | null;
-        sourceIds: Set<string>;
-        snapshots: number;
-        winRates: Array<number | null>;
-      }
-    >(),
-  );
-
-  return Array.from(groups, ([heroId, group]) => ({
-    heroId,
-    latestAt: group.latestAt,
-    name: getExternalHeroLabel(heroId),
-    pickRate: roundExternalMetric(getExternalAverage(group.pickRates)),
-    regionCount: group.regions.size,
-    role: group.role,
-    snapshotCount: group.snapshots,
-    sourceCount: group.sourceIds.size,
-    winRate: roundExternalMetric(getExternalAverage(group.winRates)),
-  })).sort((left, right) => {
-    const pickDelta = (right.pickRate ?? -1) - (left.pickRate ?? -1);
-
-    if (pickDelta !== 0) {
-      return pickDelta;
-    }
-
-    return (right.winRate ?? -1) - (left.winRate ?? -1);
-  });
-};
-
-const createExternalRoleCoverageRows = (
-  heroRows: ExternalHeroSignalRow[],
-): ExternalRoleCoverageRow[] =>
-  externalRoleOrder.map((role) => {
-    const rows = heroRows.filter((hero) => hero.role === role);
-
-    return {
-      avgPickRate: roundExternalMetric(getExternalAverage(rows.map((hero) => hero.pickRate))),
-      avgWinRate: roundExternalMetric(getExternalAverage(rows.map((hero) => hero.winRate))),
-      count: rows.length,
-      label: roleLabels[role],
-      role,
-    };
-  });
-
 const getExternalSourceDataKindLabels = (card: ExternalSourceCardModel) => {
   const labels = [
     card.heroRateCount > 0 ? `영웅 메타 ${card.heroRateCount.toLocaleString('ko-KR')}` : '',
@@ -469,11 +326,6 @@ const getExternalSourceDataKindLabels = (card: ExternalSourceCardModel) => {
 
   return [card.primaryLabel];
 };
-
-const getSourceCardLatestAt = (cards: ExternalSourceCardModel[]) =>
-  getLatestExternalTimestamp(
-    cards.map((card) => card.latestAt).filter((value): value is string => Boolean(value)),
-  );
 
 const OWTICS_ASSET_BATCH_SIZE = 12;
 const OWTICS_DETAIL_BATCH_SIZE = 4;
@@ -565,7 +417,7 @@ const formatExternalCollectionSummary = (
 
 const ExternalDataPage = () => {
   const { section } = useParams();
-  const activeSection = isExternalDataSection(section) ? section : 'sources';
+  const activeSection = isExternalDataSection(section) ? section : 'heroes';
   const activeSectionMeta =
     externalDataSections.find((item) => item.value === activeSection) ?? externalDataSections[0];
   const isConfigured = isExternalDataApiConfigured();
@@ -582,7 +434,7 @@ const ExternalDataPage = () => {
     collectExternalDataMutation.isPending || collectionProgressLabel !== null;
 
   if (section && !isExternalDataSection(section)) {
-    return <Navigate to="/external-data/sources" replace />;
+    return <Navigate to="/external-data/heroes" replace />;
   }
 
   const handleCollectExternalData = async () => {
@@ -669,18 +521,20 @@ const ExternalDataPage = () => {
         description={activeSectionMeta.description}
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button
-              variant="default"
-              disabled={isCollectingExternalData || !isConfigured}
-              onClick={() => void handleCollectExternalData()}
-            >
-              {isCollectingExternalData ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Database className="h-4 w-4" />
-              )}
-              {collectionProgressLabel ?? '수집 실행'}
-            </Button>
+            {activeSection === 'sources' ? (
+              <Button
+                variant="default"
+                disabled={isCollectingExternalData || !isConfigured}
+                onClick={() => void handleCollectExternalData()}
+              >
+                {isCollectingExternalData ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Database className="h-4 w-4" />
+                )}
+                {collectionProgressLabel ?? '데이터 수집'}
+              </Button>
+            ) : null}
             <Button
               variant="outline"
               className="bg-transparent"
@@ -692,7 +546,7 @@ const ExternalDataPage = () => {
               ) : (
                 <RefreshCw className="h-4 w-4" />
               )}
-              새로고침
+              업데이트
             </Button>
           </div>
         }
@@ -776,7 +630,6 @@ const ExternalDataSectionBody = ({
       <ExternalEsportsDetailPage
         esportsEvents={esportsEvents}
         isLoading={isLoading}
-        sourceCards={sourceCards}
         warnings={warnings}
       />
     );
@@ -806,94 +659,35 @@ const ExternalDataSectionBody = ({
 const ExternalEsportsDetailPage = ({
   esportsEvents,
   isLoading,
-  sourceCards,
   warnings,
 }: {
   esportsEvents: ExternalEsportsEventItem[];
   isLoading: boolean;
-  sourceCards: ExternalSourceCardModel[];
   warnings: NonNullable<ExternalDataOverview['warnings']>;
 }) => {
   const [referenceTime] = useState(() => Date.now());
-  const metrics = createExternalEsportsMetrics(
-    esportsEvents,
-    sourceCards,
-    isLoading,
-    referenceTime,
-  );
 
   return (
     <div className="space-y-4">
+      <ExternalEsportsSchedulePanel esportsEvents={esportsEvents} isLoading={isLoading} />
       <ExternalEsportsBriefing
         esportsEvents={esportsEvents}
         isLoading={isLoading}
         referenceTime={referenceTime}
-        sourceCards={sourceCards}
       />
-      <MetricGrid metrics={metrics} />
       {warnings.length > 0 ? <ExternalDataWarningsPanel warnings={warnings} /> : null}
-      <ExternalEsportsSchedulePanel esportsEvents={esportsEvents} isLoading={isLoading} />
     </div>
   );
-};
-
-const createExternalEsportsMetrics = (
-  events: ExternalEsportsEventItem[],
-  sourceCards: ExternalSourceCardModel[],
-  isLoading: boolean,
-  referenceTime: number,
-): MetricCellProps[] => {
-  const statusCounts = getExternalEventStatusCounts(events);
-  const sourceCount = sourceCards.filter((card) => card.eventCount > 0).length;
-  const scoreCount = events.filter(
-    (event) => event.status === 'completed' && event.scoreA !== null && event.scoreB !== null,
-  ).length;
-  const regions = new Set(events.map((event) => event.region).filter(Boolean));
-  const upcomingEvents = getUpcomingEsportsEvents(events, referenceTime);
-
-  return [
-    {
-      detail: `${regions.size.toLocaleString('ko-KR')}개 지역 · ${sourceCount.toLocaleString('ko-KR')}개 일정 소스`,
-      icon: CalendarDays,
-      label: '총 경기',
-      value: isLoading ? '...' : events.length.toLocaleString('ko-KR'),
-    },
-    {
-      detail: `진행 ${statusCounts.live.toLocaleString('ko-KR')} · 예정 ${statusCounts.scheduled.toLocaleString('ko-KR')}`,
-      icon: Clock3,
-      label: '다가오는 경기',
-      value: isLoading ? '...' : upcomingEvents.length.toLocaleString('ko-KR'),
-    },
-    {
-      detail: `점수 기록 ${scoreCount.toLocaleString('ko-KR')}경기`,
-      icon: Trophy,
-      label: '완료 경기',
-      value: isLoading ? '...' : statusCounts.completed.toLocaleString('ko-KR'),
-    },
-    {
-      detail:
-        sourceCards
-          .filter((card) => card.eventCount > 0)
-          .map((card) => card.source.displayName)
-          .slice(0, 2)
-          .join(', ') || '일정 소스 대기',
-      icon: Globe2,
-      label: '일정 커버리지',
-      value: isLoading ? '...' : sourceCount.toLocaleString('ko-KR'),
-    },
-  ];
 };
 
 const ExternalEsportsBriefing = ({
   esportsEvents,
   isLoading,
   referenceTime,
-  sourceCards,
 }: {
   esportsEvents: ExternalEsportsEventItem[];
   isLoading: boolean;
   referenceTime: number;
-  sourceCards: ExternalSourceCardModel[];
 }) => {
   const statusCounts = getExternalEventStatusCounts(esportsEvents);
   const totalStatusCount =
@@ -910,7 +704,6 @@ const ExternalEsportsBriefing = ({
     },
   ).length;
   const regionSummaries = getEsportsRegionSummaries(esportsEvents).slice(0, 6);
-  const eventSourceCards = sourceCards.filter((card) => card.eventCount > 0);
 
   return (
     <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
@@ -918,8 +711,8 @@ const ExternalEsportsBriefing = ({
         <div className="bg-card px-4 py-4 sm:px-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="metric-label">일정 운영 보드</p>
-              <h2 className="mt-1 text-xl font-black">지역별 경기 밀도와 상태 흐름</h2>
+              <p className="metric-label">일정 요약</p>
+              <h2 className="mt-1 text-xl font-black">오늘과 가까운 경기 흐름</h2>
             </div>
             <Badge variant="outline" className="gap-1.5 bg-transparent">
               <Swords className="h-3.5 w-3.5" />
@@ -962,7 +755,7 @@ const ExternalEsportsBriefing = ({
         </div>
 
         <div className="bg-[hsl(var(--surface-2))] px-4 py-4 sm:px-5">
-          <p className="metric-label">커버리지</p>
+          <p className="metric-label">지역별 일정</p>
           <div className="mt-3 grid gap-3">
             {regionSummaries.length > 0 ? (
               regionSummaries.map((region) => (
@@ -982,18 +775,6 @@ const ExternalEsportsBriefing = ({
                 description="일정이 수집되면 지역별 경기 밀도가 표시됩니다."
               />
             )}
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {eventSourceCards.map((card) => (
-              <Badge key={card.source.id} variant="outline" className="gap-1.5 bg-card">
-                {card.source.isOfficial ? (
-                  <ShieldCheck className="h-3 w-3" />
-                ) : (
-                  <Globe2 className="h-3 w-3" />
-                )}
-                {card.source.displayName}
-              </Badge>
-            ))}
           </div>
         </div>
       </div>
@@ -1097,210 +878,10 @@ const ExternalHeroesDetailPage = ({
   sources: ExternalSource[];
   warnings: NonNullable<ExternalDataOverview['warnings']>;
 }) => {
-  const heroRows = createExternalHeroSignalRows(heroRates);
-  const roleRows = createExternalRoleCoverageRows(heroRows);
-  const metrics = createExternalHeroMetrics(heroRates, heroRows, sources, isLoading);
-
   return (
     <div className="space-y-4">
-      <ExternalHeroMetaBriefing
-        heroRows={heroRows}
-        isLoading={isLoading}
-        roleRows={roleRows}
-        sources={sources}
-      />
-      <MetricGrid metrics={metrics} />
-      {warnings.length > 0 ? <ExternalDataWarningsPanel warnings={warnings} /> : null}
       <ExternalHeroMetaPanel heroRates={heroRates} isLoading={isLoading} sources={sources} />
-    </div>
-  );
-};
-
-const createExternalHeroMetrics = (
-  heroRates: ExternalHeroRateItem[],
-  heroRows: ExternalHeroSignalRow[],
-  sources: ExternalSource[],
-  isLoading: boolean,
-): MetricCellProps[] => {
-  const topPick = [...heroRows].sort(
-    (left, right) => (right.pickRate ?? -1) - (left.pickRate ?? -1),
-  )[0];
-  const topWin = [...heroRows].sort(
-    (left, right) => (right.winRate ?? -1) - (left.winRate ?? -1),
-  )[0];
-  const sourceCount = new Set(heroRates.map((snapshot) => snapshot.sourceId)).size;
-  const regionCount = new Set(heroRates.map((snapshot) => snapshot.region).filter(Boolean)).size;
-  const latestAt = getLatestExternalTimestamp(heroRates.map((snapshot) => snapshot.fetchedAt));
-
-  return [
-    {
-      detail: `${heroRates.length.toLocaleString('ko-KR')}개 snapshot · ${regionCount.toLocaleString('ko-KR')}개 지역`,
-      icon: UsersRound,
-      label: '분석 영웅',
-      value: isLoading ? '...' : heroRows.length.toLocaleString('ko-KR'),
-    },
-    {
-      detail: `전체 ${sources.length.toLocaleString('ko-KR')}개 중 ${sourceCount.toLocaleString('ko-KR')}개 · 최근 ${getExternalFreshnessLabel(latestAt)}`,
-      icon: Globe2,
-      label: '메타 소스',
-      value: isLoading ? '...' : sourceCount.toLocaleString('ko-KR'),
-    },
-    {
-      detail: topPick
-        ? `${getExternalRoleLabel(topPick.role)} · 승률 ${formatExternalPercent(topPick.winRate)}`
-        : '픽률 대기',
-      icon: Target,
-      label: '픽률 리더',
-      value: isLoading ? '...' : (topPick?.name ?? '--'),
-    },
-    {
-      detail: topWin
-        ? `${getExternalRoleLabel(topWin.role)} · 픽률 ${formatExternalPercent(topWin.pickRate)}`
-        : '승률 대기',
-      icon: Trophy,
-      label: '승률 리더',
-      value: isLoading ? '...' : (topWin?.name ?? '--'),
-    },
-  ];
-};
-
-const ExternalHeroMetaBriefing = ({
-  heroRows,
-  isLoading,
-  roleRows,
-  sources,
-}: {
-  heroRows: ExternalHeroSignalRow[];
-  isLoading: boolean;
-  roleRows: ExternalRoleCoverageRow[];
-  sources: ExternalSource[];
-}) => {
-  const topPick =
-    [...heroRows].sort((left, right) => (right.pickRate ?? -1) - (left.pickRate ?? -1))[0] ?? null;
-  const topWin =
-    [...heroRows].sort((left, right) => (right.winRate ?? -1) - (left.winRate ?? -1))[0] ?? null;
-  const maxRoleCount = Math.max(1, ...roleRows.map((row) => row.count));
-  const heroMetaSources = sources.filter(
-    (source) => source.id === 'blizzard_hero_rates' || source.id === 'overfast',
-  );
-
-  return (
-    <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
-      <div className="grid gap-px bg-border/60 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
-        <div className="bg-card px-4 py-4 sm:px-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="metric-label">메타 랩</p>
-              <h2 className="mt-1 text-xl font-black">역할 커버리지와 표본 품질</h2>
-            </div>
-            <Badge variant="outline" className="gap-1.5 bg-transparent">
-              <Sparkles className="h-3.5 w-3.5" />
-              {heroRows.length.toLocaleString('ko-KR')} heroes
-            </Badge>
-          </div>
-
-          {isLoading && heroRows.length === 0 ? (
-            <div className="mt-5 grid gap-3">
-              <SkeletonBlock className="h-14" />
-              <SkeletonBlock className="h-14" />
-              <SkeletonBlock className="h-14" />
-            </div>
-          ) : (
-            <div className="mt-5 grid gap-4">
-              {roleRows.map((role) => (
-                <ExternalRoleCoverageBar key={role.role} maxCount={maxRoleCount} role={role} />
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="bg-[hsl(var(--surface-2))] px-4 py-4 sm:px-5">
-          <div className="flex items-center justify-between gap-3">
-            <p className="metric-label">주요 신호</p>
-            <div className="flex flex-wrap justify-end gap-1.5">
-              {heroMetaSources.map((source) => (
-                <Badge key={source.id} variant="outline" className="bg-card text-[11px]">
-                  {source.displayName}
-                </Badge>
-              ))}
-            </div>
-          </div>
-          <div className="mt-4 grid gap-3">
-            <ExternalHeroSignalCell
-              hero={topPick}
-              label="픽률 집중"
-              metric={topPick ? formatExternalPercent(topPick.pickRate) : '--'}
-            />
-            <ExternalHeroSignalCell
-              hero={topWin}
-              label="승률 효율"
-              metric={topWin ? formatExternalPercent(topWin.winRate) : '--'}
-            />
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-};
-
-const ExternalRoleCoverageBar = ({
-  maxCount,
-  role,
-}: {
-  maxCount: number;
-  role: ExternalRoleCoverageRow;
-}) => (
-  <div>
-    <div className="grid gap-3 sm:grid-cols-[96px_minmax(0,1fr)_140px] sm:items-center">
-      <div className="flex items-center gap-2">
-        <span className="h-2.5 w-2.5 rounded-full bg-primary" />
-        <span className="text-sm font-black">{role.label}</span>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-border/70">
-        <div
-          className="h-full rounded-full bg-primary"
-          style={{ width: `${Math.max(4, (role.count / maxCount) * 100)}%` }}
-        />
-      </div>
-      <div className="text-left text-xs font-bold text-muted-foreground sm:text-right">
-        {role.count.toLocaleString('ko-KR')}명 · 픽 {formatExternalPercent(role.avgPickRate)} · 승{' '}
-        {formatExternalPercent(role.avgWinRate)}
-      </div>
-    </div>
-  </div>
-);
-
-const ExternalHeroSignalCell = ({
-  hero,
-  label,
-  metric,
-}: {
-  hero: ExternalHeroSignalRow | null;
-  label: string;
-  metric: string;
-}) => {
-  const heroOption = hero ? getExternalHeroOption(hero.heroId) : null;
-  const portraitSrc = heroOption ? getHeroPortraitPath(heroOption.value) : null;
-
-  return (
-    <div className="grid min-h-[76px] grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-3 border-b border-border/60 pb-3 last:border-b-0 last:pb-0">
-      <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-md border border-border/70 bg-card">
-        {portraitSrc ? (
-          <img src={portraitSrc} alt={hero?.name ?? label} className="h-full w-full object-cover" />
-        ) : (
-          <UsersRound className="h-5 w-5 text-muted-foreground" />
-        )}
-      </div>
-      <div className="min-w-0">
-        <p className="metric-label">{label}</p>
-        <p className="mt-1 truncate text-base font-black">{hero?.name ?? '데이터 대기'}</p>
-        <p className="truncate text-xs font-semibold text-muted-foreground">
-          {hero
-            ? `${getExternalRoleLabel(hero.role)} · ${hero.snapshotCount.toLocaleString('ko-KR')} snapshots`
-            : '수집 후 표시'}
-        </p>
-      </div>
-      <span className="shrink-0 text-lg font-black">{metric}</span>
+      {warnings.length > 0 ? <ExternalDataWarningsPanel warnings={warnings} /> : null}
     </div>
   );
 };
@@ -1316,55 +897,13 @@ const ExternalSourcesDetailPage = ({
   sources: ExternalSource[];
   warnings: NonNullable<ExternalDataOverview['warnings']>;
 }) => {
-  const metrics = createExternalSourceMetrics(sourceCards, sources, isLoading);
-
   return (
     <div className="space-y-4">
       <ExternalSourcesBriefing isLoading={isLoading} sourceCards={sourceCards} sources={sources} />
-      <MetricGrid metrics={metrics} />
       {warnings.length > 0 ? <ExternalDataWarningsPanel warnings={warnings} /> : null}
       <ExternalSourceRegistry isLoading={isLoading} sourceCards={sourceCards} />
     </div>
   );
-};
-
-const createExternalSourceMetrics = (
-  sourceCards: ExternalSourceCardModel[],
-  sources: ExternalSource[],
-  isLoading: boolean,
-): MetricCellProps[] => {
-  const officialCount = sources.filter((source) => source.isOfficial).length;
-  const enabledCount = sources.filter((source) => source.isEnabled).length;
-  const heroSourceCount = sourceCards.filter((card) => card.heroRateCount > 0).length;
-  const eventSourceCount = sourceCards.filter((card) => card.eventCount > 0).length;
-  const latestAt = getSourceCardLatestAt(sourceCards);
-
-  return [
-    {
-      detail: `${officialCount.toLocaleString('ko-KR')}개 공식 · ${Math.max(0, sources.length - officialCount).toLocaleString('ko-KR')}개 서드파티`,
-      icon: Database,
-      label: '등록 소스',
-      value: isLoading ? '...' : sources.length.toLocaleString('ko-KR'),
-    },
-    {
-      detail: 'Worker 수집 대상 기준',
-      icon: Activity,
-      label: '활성 소스',
-      value: isLoading ? '...' : enabledCount.toLocaleString('ko-KR'),
-    },
-    {
-      detail: `영웅 ${heroSourceCount.toLocaleString('ko-KR')} · 일정 ${eventSourceCount.toLocaleString('ko-KR')}`,
-      icon: Layers3,
-      label: '제공 데이터',
-      value: isLoading ? '...' : (heroSourceCount + eventSourceCount).toLocaleString('ko-KR'),
-    },
-    {
-      detail: latestAt ? formatExternalDateTime(latestAt) : '수집 대기',
-      icon: Clock3,
-      label: '최근 수집',
-      value: isLoading ? '...' : getExternalFreshnessLabel(latestAt),
-    },
-  ];
 };
 
 const ExternalSourcesBriefing = ({
@@ -1394,8 +933,8 @@ const ExternalSourcesBriefing = ({
         <div className="bg-card px-4 py-4 sm:px-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="metric-label">소스 레지스트리</p>
-              <h2 className="mt-1 text-xl font-black">신뢰도, TTL, 제공 데이터 분리</h2>
+              <p className="metric-label">연결 상태</p>
+              <h2 className="mt-1 text-xl font-black">어떤 보조 데이터가 준비됐는지</h2>
             </div>
             <Badge variant="outline" className="gap-1.5 bg-transparent">
               <ShieldCheck className="h-3.5 w-3.5" />
@@ -1429,7 +968,7 @@ const ExternalSourcesBriefing = ({
           )}
         </div>
         <div className="bg-[hsl(var(--surface-2))] px-4 py-4 sm:px-5">
-          <p className="metric-label">타입 분포</p>
+          <p className="metric-label">제공 방식</p>
           <div className="mt-3 grid gap-2">
             {typeSummaries.length > 0 ? (
               typeSummaries.map(([type, count]) => (
@@ -1465,7 +1004,7 @@ const ExternalSourceRegistry = ({
 }) => (
   <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
     <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-      <p className="metric-label">Registry</p>
+      <p className="metric-label">상세 상태</p>
       <h2 className="mt-1 text-lg font-bold">소스별 제공 데이터</h2>
     </div>
     <div className="hidden grid-cols-[minmax(220px,1.2fr)_140px_minmax(180px,0.9fr)_130px_90px] gap-3 border-b border-border/60 bg-[hsl(var(--surface-2))] px-4 py-2 text-xs font-bold text-muted-foreground lg:grid">
@@ -1473,7 +1012,7 @@ const ExternalSourceRegistry = ({
       <span>타입</span>
       <span>제공 데이터</span>
       <span>최근 수집</span>
-      <span>TTL</span>
+      <span>갱신 주기</span>
     </div>
     {isLoading && sourceCards.length === 0 ? (
       <div className="grid gap-0">
@@ -1522,7 +1061,7 @@ const ExternalSourceRegistryRow = ({ card }: { card: ExternalSourceCardModel }) 
         </div>
         <h3 className="mt-2 truncate text-base font-black">{source.displayName}</h3>
         <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-          {source.notes || source.baseUrl || source.id}
+          {source.notes || (source.isOfficial ? '공식 데이터' : '외부 보강 데이터')}
         </p>
       </div>
       <div className="text-sm font-bold text-muted-foreground">

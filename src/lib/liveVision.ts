@@ -55,7 +55,7 @@ const ocrCachePath = 'overwatch-tracker-live-ocr-v1';
 const ocrLanguages = ['kor', 'eng'];
 const loadedMapSelectionTemplates = new Map<
   MapOption['value'],
-  Promise<MapTemplate<MapOption['value']>>
+  Promise<MapTemplate<MapOption['value']> | null>
 >();
 let labelOcrWorker: Promise<LabelOcrWorker> | null = null;
 
@@ -288,28 +288,32 @@ const loadMapSelectionTemplate = (map: MapOption) => {
     return cached;
   }
 
-  const promise = loadHtmlImage(getMapScreenshotPath(map.value)).then((image) => ({
-    image: createPixelImageFromImage(
-      image,
-      getCoverSourceRect(
-        {
-          height: image.naturalHeight,
-          width: image.naturalWidth,
-        },
+  const promise = loadHtmlImage(getMapScreenshotPath(map.value))
+    .then((image) => ({
+      image: createPixelImageFromImage(
+        image,
+        getCoverSourceRect(
+          {
+            height: image.naturalHeight,
+            width: image.naturalWidth,
+          },
+          mapSelectionMatchSize,
+        ),
         mapSelectionMatchSize,
       ),
-      mapSelectionMatchSize,
-    ),
-    mapId: map.value,
-    modeId: map.modeId,
-  }));
+      mapId: map.value,
+      modeId: map.modeId,
+    }))
+    .catch(() => null);
 
   loadedMapSelectionTemplates.set(map.value, promise);
   return promise;
 };
 
 const loadMapSelectionTemplates = async () =>
-  Promise.all(mapOptions.map((map) => loadMapSelectionTemplate(map)));
+  (await Promise.all(mapOptions.map((map) => loadMapSelectionTemplate(map)))).filter(
+    (template): template is MapTemplate<MapOption['value']> => template !== null,
+  );
 
 const getMapTextOptions = (): VisionTextOption<MapOption['value']>[] =>
   mapOptions.map((map) => ({

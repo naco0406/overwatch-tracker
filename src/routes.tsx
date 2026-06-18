@@ -92,7 +92,7 @@ const AppRoutes = () => (
           }
         />
         <Route path="/stats" element={<Navigate to="/stats/maps" replace />} />
-        <Route path="/stats/external" element={<Navigate to="/external-data/sources" replace />} />
+        <Route path="/stats/external" element={<Navigate to="/external-data/heroes" replace />} />
         <Route
           path="/stats/:section"
           element={
@@ -101,10 +101,10 @@ const AppRoutes = () => (
             </LazyPage>
           }
         />
-        <Route path="/external-data" element={<Navigate to="/external-data/sources" replace />} />
+        <Route path="/external-data" element={<Navigate to="/external-data/heroes" replace />} />
         <Route
           path="/external-data/overview"
-          element={<Navigate to="/external-data/sources" replace />}
+          element={<Navigate to="/external-data/heroes" replace />}
         />
         <Route path="/external-data/assets" element={<MasterDataPage />} />
         <Route

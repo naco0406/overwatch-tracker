@@ -1,7 +1,12 @@
 import { supabase } from '@/supabase/client';
 import { getCurrentUserOrThrow } from '@/supabase/currentUser';
 import type { Database, Json } from '@/supabase/database.types';
-import type { RoiConfig, UserSettings, UserSettingsUpdateInput } from '@/types/userSettings';
+import type {
+  FavoriteEsportsTeam,
+  RoiConfig,
+  UserSettings,
+  UserSettingsUpdateInput,
+} from '@/types/userSettings';
 
 type UserSettingsInsert = Database['public']['Tables']['user_settings']['Insert'];
 type UserSettingsRow = Database['public']['Tables']['user_settings']['Row'];
@@ -14,12 +19,39 @@ const jsonToRoiConfig = (value: Json | null) => {
   return value as RoiConfig;
 };
 
+const jsonToFavoriteEsportsTeam = (value: Json | null): FavoriteEsportsTeam | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === 'string' ? record.id.trim() : '';
+  const name = typeof record.name === 'string' ? record.name.trim() : '';
+
+  if (!id || !name) {
+    return null;
+  }
+
+  return {
+    aliases: Array.isArray(record.aliases)
+      ? record.aliases.filter((alias): alias is string => typeof alias === 'string')
+      : undefined,
+    id,
+    logoUrl: typeof record.logoUrl === 'string' ? record.logoUrl : null,
+    name,
+    region: typeof record.region === 'string' ? record.region : null,
+    selectedAt: typeof record.selectedAt === 'string' ? record.selectedAt : undefined,
+    sourceId: typeof record.sourceId === 'string' ? record.sourceId : null,
+  };
+};
+
 const rowToUserSettings = (row: UserSettingsRow): UserSettings => ({
   createdAt: row.created_at,
   defaultAccount: row.default_account,
   defaultMatchRole: row.default_match_role ?? 'damage',
   defaultPlayerAccountId: row.default_player_account_id,
   defaultQueueType: row.default_queue_type,
+  favoriteEsportsTeam: jsonToFavoriteEsportsTeam(row.favorite_esports_team),
   roiConfig: jsonToRoiConfig(row.roi_config),
   updatedAt: row.updated_at,
   userId: row.user_id,
@@ -47,6 +79,7 @@ export const getUserSettings = async () => {
     defaultMatchRole: 'damage',
     defaultPlayerAccountId: null,
     defaultQueueType: 'solo',
+    favoriteEsportsTeam: null,
     updatedAt: '',
     userId: user.id,
   } satisfies UserSettings;
@@ -64,6 +97,9 @@ export const upsertUserSettings = async (input: UserSettingsUpdateInput) => {
     row.default_player_account_id = input.defaultPlayerAccountId;
   }
   if (input.defaultQueueType !== undefined) row.default_queue_type = input.defaultQueueType;
+  if (input.favoriteEsportsTeam !== undefined) {
+    row.favorite_esports_team = input.favoriteEsportsTeam as Json | null;
+  }
   if (input.roiConfig !== undefined) row.roi_config = input.roiConfig as Json | null;
 
   const { data, error } = await supabase

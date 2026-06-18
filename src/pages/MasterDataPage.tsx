@@ -192,19 +192,18 @@ const MasterDataPage = () => {
                   key={hero.value}
                   className="group overflow-hidden rounded-lg border border-border/70 bg-card transition-[border-color,background-color] hover:border-primary/35"
                 >
-                  <div className="relative aspect-[16/11] overflow-hidden bg-[hsl(var(--surface-2))]">
-                    <img
-                      alt={hero.label}
-                      className="h-full w-full object-cover object-top transition-transform duration-300 group-hover:scale-[1.03]"
-                      src={getHeroPortraitPath(hero.value)}
-                      loading="lazy"
-                    />
-                  </div>
+                  <AssetArtwork
+                    alt={hero.label}
+                    className="aspect-[16/11]"
+                    fallbackLabel={hero.label}
+                    imageClassName="object-cover object-top transition-transform duration-300 group-hover:scale-[1.03]"
+                    src={getHeroPortraitPath(hero.value)}
+                  />
                   <div className="grid gap-2 border-t border-border/70 p-2.5 sm:flex sm:items-center sm:justify-between sm:gap-3 sm:p-3">
                     <div className="min-w-0">
                       <h2 className="truncate text-base font-bold">{hero.label}</h2>
                       <p className="mt-1 text-xs font-semibold text-muted-foreground">
-                        {hero.value}
+                        영웅 초상화
                       </p>
                     </div>
                     <Badge
@@ -267,19 +266,18 @@ const MasterDataPage = () => {
                   key={map.value}
                   className="group overflow-hidden rounded-lg border border-border/70 bg-card transition-[border-color,background-color] hover:border-primary/35"
                 >
-                  <div className="aspect-[16/8.5] overflow-hidden bg-[hsl(var(--surface-2))]">
-                    <img
-                      alt={map.label}
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.025]"
-                      src={getMapScreenshotPath(map.value)}
-                      loading="lazy"
-                    />
-                  </div>
+                  <AssetArtwork
+                    alt={map.label}
+                    className="aspect-[16/8.5]"
+                    fallbackLabel={map.label}
+                    imageClassName="object-cover transition-transform duration-300 group-hover:scale-[1.025]"
+                    src={getMapScreenshotPath(map.value)}
+                  />
                   <div className="grid gap-3 border-t border-border/70 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                     <div className="min-w-0">
                       <h2 className="truncate text-base font-bold">{getMapLabel(map.value)}</h2>
                       <p className="mt-1 text-xs font-semibold text-muted-foreground">
-                        {map.value}
+                        전장 이미지
                       </p>
                     </div>
                     <Badge
@@ -460,8 +458,7 @@ const SeasonCard = ({ current, season }: SeasonCardProps) => {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 divide-x divide-border/70 rounded-md border border-border/70 bg-[hsl(var(--surface-2))]">
-          <SeasonInfoItem compact label="시즌 ID" value={season.id} />
+        <div className="grid grid-cols-2 divide-x divide-border/70 rounded-md border border-border/70 bg-[hsl(var(--surface-2))]">
           <SeasonInfoItem compact label="연도" value={String(season.year)} />
           <SeasonInfoItem compact label="번호" value={`${season.seasonNumber}시즌`} />
         </div>
@@ -496,6 +493,44 @@ interface AssetIconProps {
   size?: 'sm' | 'md';
   src: string;
 }
+
+interface AssetArtworkProps {
+  alt: string;
+  className?: string;
+  fallbackLabel: string;
+  imageClassName?: string;
+  src: string;
+}
+
+const AssetArtwork = ({
+  alt,
+  className,
+  fallbackLabel,
+  imageClassName,
+  src,
+}: AssetArtworkProps) => (
+  <div
+    className={cn(
+      'relative overflow-hidden bg-[radial-gradient(circle_at_50%_30%,hsl(var(--primary)/0.20),transparent_48%),linear-gradient(145deg,hsl(var(--surface-2)),hsl(var(--background)))]',
+      className,
+    )}
+  >
+    <div className="absolute inset-0 flex items-center justify-center p-4 text-center">
+      <span className="rounded-md border border-border/60 bg-card/75 px-3 py-2 text-sm font-black shadow-sm">
+        {fallbackLabel}
+      </span>
+    </div>
+    <img
+      alt={alt}
+      className={cn('relative z-10 h-full w-full', imageClassName)}
+      src={src}
+      loading="lazy"
+      onError={(event) => {
+        event.currentTarget.style.display = 'none';
+      }}
+    />
+  </div>
+);
 
 const AssetIcon = ({ alt = '', className, size = 'md', src }: AssetIconProps) => (
   <span

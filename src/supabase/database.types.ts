@@ -371,6 +371,7 @@ export interface Database {
           default_match_role: Database['public']['Enums']['match_role'];
           default_player_account_id: string | null;
           default_queue_type: Database['public']['Enums']['queue_type'];
+          favorite_esports_team: Json | null;
           roi_config: Json | null;
           updated_at: string;
           user_id: string;
@@ -381,6 +382,7 @@ export interface Database {
           default_match_role?: Database['public']['Enums']['match_role'];
           default_player_account_id?: string | null;
           default_queue_type?: Database['public']['Enums']['queue_type'];
+          favorite_esports_team?: Json | null;
           roi_config?: Json | null;
           updated_at?: string;
           user_id: string;
@@ -391,6 +393,7 @@ export interface Database {
           default_match_role?: Database['public']['Enums']['match_role'];
           default_player_account_id?: string | null;
           default_queue_type?: Database['public']['Enums']['queue_type'];
+          favorite_esports_team?: Json | null;
           roi_config?: Json | null;
           updated_at?: string;
           user_id?: string;
