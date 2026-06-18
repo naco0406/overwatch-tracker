@@ -1452,7 +1452,7 @@ const FavoriteEsportsTeamPanel = ({
   };
 
   return (
-    <div className="grid gap-3 px-4 py-3.5 sm:px-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+    <div className="grid gap-5 px-4 py-3.5 sm:px-5 lg:grid-cols-[240px_minmax(0,1fr)] lg:items-center lg:gap-6">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <p className="metric-label">e스포츠</p>
@@ -1467,10 +1467,10 @@ const FavoriteEsportsTeamPanel = ({
       </div>
 
       {isLoading ? (
-        <SkeletonBlock className="h-11 lg:w-80" />
+        <SkeletonBlock className="h-11 max-w-md" />
       ) : (
-        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center lg:justify-end">
-          <div className="min-w-0 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-2.5 py-2 sm:min-w-72">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="min-w-0 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] px-2.5 py-2 sm:w-full sm:max-w-md">
             {favoriteTeam ? (
               <div className="grid min-w-0 grid-cols-[44px_minmax(0,1fr)] items-center gap-2.5">
                 <SettingsTeamLogo logoUrl={favoriteTeam.logoUrl} name={favoriteTeam.name} />
