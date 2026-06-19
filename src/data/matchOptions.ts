@@ -92,6 +92,7 @@ export const mapOptions = [
   { label: '할리우드', modeId: 'hybrid', value: 'hollywood' },
   { label: '왕의 길', modeId: 'hybrid', value: 'kings-row' },
   { label: '미드타운', modeId: 'hybrid', value: 'midtown' },
+  { label: '네온 교차로', modeId: 'hybrid', value: 'neon-junction' },
   { label: '눔바니', modeId: 'hybrid', value: 'numbani' },
   { label: '파라이수', modeId: 'hybrid', value: 'paraiso' },
   { label: '콜로세오', modeId: 'push', value: 'colosseo' },
@@ -107,7 +108,6 @@ export const mapOptions = [
   { label: '샴발리 수도원', modeId: 'escort', value: 'shambali-monastery' },
   { label: '감시 기지: 지브롤터', modeId: 'escort', value: 'watchpoint-gibraltar' },
   { label: '아틀리스', modeId: 'flashpoint', value: 'aatlis' },
-  { label: '네온 정션', modeId: 'flashpoint', value: 'neon-junction' },
   { label: '뉴 정크 시티', modeId: 'flashpoint', value: 'new-junk-city' },
   { label: '수라바사', modeId: 'flashpoint', value: 'suravasa' },
 ] satisfies MapOption[];
