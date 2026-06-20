@@ -151,19 +151,24 @@ const getEsportsEventsPath = () => {
   return `/external/esports-events?from=${encodeURIComponent(from)}&limit=800`;
 };
 
+const getHeroRatesPath = () => {
+  const from = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const params = new URLSearchParams({
+    from,
+    limit: '5000',
+  });
+
+  return `/external/global-hero-rates?${params.toString()}`;
+};
+
 const getExternalDataOverview = async (): Promise<ExternalDataOverview> => {
   const sources = await listExternalSources();
   const [heroRatesResult, esportsEventsResult] = await Promise.all([
-    optionalExternalFetch<GlobalHeroRateSnapshot[]>(
-      '/external/global-hero-rates?limit=300',
-      '영웅 메타',
-      [],
-      (body) => {
-        const response = body as GlobalHeroRatesResponse;
+    optionalExternalFetch<GlobalHeroRateSnapshot[]>(getHeroRatesPath(), '영웅 메타', [], (body) => {
+      const response = body as GlobalHeroRatesResponse;
 
-        return Array.isArray(response.heroRates) ? response.heroRates : [];
-      },
-    ),
+      return Array.isArray(response.heroRates) ? response.heroRates : [];
+    }),
     optionalExternalFetch<ExternalEsportsEvent[]>(getEsportsEventsPath(), 'e스포츠', [], (body) => {
       const response = body as ExternalEsportsEventsResponse;
 

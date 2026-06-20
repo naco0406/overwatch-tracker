@@ -1451,6 +1451,32 @@ const getLimitParam = (request, fallback, max) => {
   return Math.max(1, Math.min(max, Math.floor(value)));
 };
 
+const appendSupabaseEqFilter = (params, url, searchKey, columnName = searchKey) => {
+  const value = url.searchParams.get(searchKey);
+
+  if (!value || value === 'all') {
+    return;
+  }
+
+  params.set(columnName, `eq.${value}`);
+};
+
+const appendSupabaseTimestampFilter = (params, url, searchKey, columnName, operator) => {
+  const value = url.searchParams.get(searchKey);
+
+  if (!value || value === 'all') {
+    return;
+  }
+
+  const time = new Date(value).getTime();
+
+  if (!Number.isFinite(time)) {
+    return;
+  }
+
+  params.set(columnName, `${operator}.${new Date(time).toISOString()}`);
+};
+
 const getBoundedSearchInteger = (url, key, fallback, min, max) => {
   const value = Number(url.searchParams.get(key) ?? fallback);
 
@@ -1462,11 +1488,24 @@ const getBoundedSearchInteger = (url, key, fallback, min, max) => {
 };
 
 const handleGlobalHeroRates = async (request, env, origin) => {
-  const limit = getLimitParam(request, 96, 300);
-  const rows = await supabaseRestFetch(
-    env,
-    `global_hero_rate_snapshots?select=${GLOBAL_HERO_RATE_SELECT_COLUMNS}&order=fetched_at.desc&limit=${limit}`,
-  );
+  const url = new URL(request.url);
+  const limit = getLimitParam(request, 1200, 5000);
+  const params = new URLSearchParams({
+    limit: String(limit),
+    order: 'fetched_at.desc',
+    select: GLOBAL_HERO_RATE_SELECT_COLUMNS,
+  });
+
+  appendSupabaseTimestampFilter(params, url, 'from', 'fetched_at', 'gte');
+  appendSupabaseTimestampFilter(params, url, 'to', 'fetched_at', 'lte');
+  appendSupabaseEqFilter(params, url, 'heroId', 'hero_id');
+  appendSupabaseEqFilter(params, url, 'sourceId', 'source_id');
+  appendSupabaseEqFilter(params, url, 'region');
+  appendSupabaseEqFilter(params, url, 'gamemode');
+  appendSupabaseEqFilter(params, url, 'tier');
+  appendSupabaseEqFilter(params, url, 'mapId', 'map_id');
+  appendSupabaseEqFilter(params, url, 'role');
+  const rows = await supabaseRestFetch(env, `global_hero_rate_snapshots?${params.toString()}`);
 
   return jsonResponse(
     {

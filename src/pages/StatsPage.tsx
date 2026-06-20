@@ -290,12 +290,12 @@ const formatExternalTtl = (seconds: number) => {
 const formatExternalPercent = (value: number | null) =>
   value === null ? '--' : `${value.toFixed(1)}%`;
 
-const formatExternalSignedPercent = (value: number | null) => {
+const formatExternalSignedPoint = (value: number | null) => {
   if (value === null) {
     return '--';
   }
 
-  return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`;
+  return `${value > 0 ? '+' : ''}${value.toFixed(1)}%p`;
 };
 
 const getExternalSourceTypeLabel = (value: ExternalSource['sourceType']) =>
@@ -2824,18 +2824,30 @@ type ExternalScheduleRegionFilter = 'all' | string;
 type ExternalScheduleSourceFilter = 'all' | string;
 type ExternalScheduleStatusFilter = 'all' | 'completed' | 'live' | 'scheduled';
 
+interface ExternalHeroTrendPoint {
+  fetchedAt: string;
+  pickRate: number | null;
+  sampleCount: number;
+  winRate: number | null;
+}
+
 interface ExternalHeroMetaRow {
   heroId: string;
   latestAt: string | null;
   name: string;
   pickRate: number | null;
+  pickRateDelta: number | null;
+  previousPickRate: number | null;
+  previousWinRate: number | null;
   regionLabel: string;
   role: MatchRole | null;
   roleLabel: string;
   sourceCount: number;
   sourceLabel: string;
   snapshotCount: number;
+  trend: ExternalHeroTrendPoint[];
   winRate: number | null;
+  winRateDelta: number | null;
 }
 
 interface ExternalHeroScatterAxis {
@@ -3081,6 +3093,81 @@ const getExternalAverage = (values: Array<number | null>, options?: { ignoreZero
   return numericValues.reduce((sum, value) => sum + value, 0) / numericValues.length;
 };
 
+const getExternalMetricDelta = (current: number | null, previous: number | null) =>
+  current === null || previous === null ? null : roundExternalMetric(current - previous);
+
+const getExternalHeroSnapshotTime = (snapshot: ExternalHeroRateItem) => {
+  const time = new Date(snapshot.fetchedAt).getTime();
+
+  return Number.isFinite(time) ? time : 0;
+};
+
+const getExternalHeroSnapshotSeriesKey = (snapshot: ExternalHeroRateItem) =>
+  [
+    snapshot.sourceId,
+    snapshot.region,
+    snapshot.inputMethod,
+    snapshot.gamemode,
+    snapshot.tier,
+    snapshot.mapId,
+    snapshot.role,
+  ].join('|');
+
+const getExternalTrendBucketKey = (value: string) => {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  date.setUTCMinutes(0, 0, 0);
+
+  return date.toISOString();
+};
+
+const createExternalHeroTrendPoints = (
+  snapshots: ExternalHeroRateItem[],
+): ExternalHeroTrendPoint[] => {
+  const buckets = snapshots.reduce(
+    (map, snapshot) => {
+      const bucketKey = getExternalTrendBucketKey(snapshot.fetchedAt);
+      const current = map.get(bucketKey) ?? {
+        fetchedAt: bucketKey,
+        pickRates: [] as Array<number | null>,
+        sampleCount: 0,
+        winRates: [] as Array<number | null>,
+      };
+
+      current.pickRates.push(snapshot.pickRate);
+      current.winRates.push(snapshot.winRate);
+      current.sampleCount += 1;
+      map.set(bucketKey, current);
+
+      return map;
+    },
+    new Map<
+      string,
+      {
+        fetchedAt: string;
+        pickRates: Array<number | null>;
+        sampleCount: number;
+        winRates: Array<number | null>;
+      }
+    >(),
+  );
+
+  return Array.from(buckets.values())
+    .map((bucket) => ({
+      fetchedAt: bucket.fetchedAt,
+      pickRate: roundExternalMetric(getExternalAverage(bucket.pickRates)),
+      sampleCount: bucket.sampleCount,
+      winRate: roundExternalMetric(getExternalAverage(bucket.winRates, { ignoreZero: true })),
+    }))
+    .filter((point) => point.pickRate !== null || point.winRate !== null)
+    .sort((left, right) => new Date(left.fetchedAt).getTime() - new Date(right.fetchedAt).getTime())
+    .slice(-18);
+};
+
 const createExternalHeroMetaRows = (
   heroRates: ExternalHeroRateItem[],
   sources: ExternalSource[],
@@ -3097,18 +3184,14 @@ const createExternalHeroMetaRows = (
     (map, snapshot) => {
       const current = map.get(snapshot.heroId) ?? {
         latestAt: null as string | null,
-        pickRates: [] as Array<number | null>,
         regions: new Set<string>(),
         role: getExternalHeroRole(snapshot.heroId, snapshot.role),
         roles: new Set<string>(),
+        snapshots: [] as ExternalHeroRateItem[],
         sourceIds: new Set<string>(),
-        snapshots: 0,
-        winRates: [] as Array<number | null>,
       };
 
-      current.snapshots += 1;
-      current.pickRates.push(snapshot.pickRate);
-      current.winRates.push(snapshot.winRate);
+      current.snapshots.push(snapshot);
       current.regions.add(snapshot.region);
       current.roles.add(snapshot.role);
       current.sourceIds.add(snapshot.sourceId);
@@ -3124,39 +3207,86 @@ const createExternalHeroMetaRows = (
       string,
       {
         latestAt: string | null;
-        pickRates: Array<number | null>;
         regions: Set<string>;
         role: MatchRole | null;
         roles: Set<string>;
+        snapshots: ExternalHeroRateItem[];
         sourceIds: Set<string>;
-        snapshots: number;
-        winRates: Array<number | null>;
       }
     >(),
   );
 
   return Array.from(groups, ([heroId, group]) => {
+    const snapshotsBySeries = group.snapshots.reduce((map, snapshot) => {
+      const seriesKey = getExternalHeroSnapshotSeriesKey(snapshot);
+      const current = map.get(seriesKey) ?? [];
+
+      current.push(snapshot);
+      map.set(seriesKey, current);
+
+      return map;
+    }, new Map<string, ExternalHeroRateItem[]>());
+    const currentSnapshots: ExternalHeroRateItem[] = [];
+    const previousSnapshots: ExternalHeroRateItem[] = [];
+
+    snapshotsBySeries.forEach((seriesSnapshots) => {
+      const sortedSnapshots = [...seriesSnapshots].sort(
+        (left, right) => getExternalHeroSnapshotTime(right) - getExternalHeroSnapshotTime(left),
+      );
+
+      if (sortedSnapshots[0]) {
+        currentSnapshots.push(sortedSnapshots[0]);
+      }
+
+      if (sortedSnapshots[1]) {
+        previousSnapshots.push(sortedSnapshots[1]);
+      }
+    });
+
     const sourceLabels = Array.from(group.sourceIds).map((sourceId) =>
       getExternalSourceLabel(sourceId, sources),
     );
     const regionLabels = Array.from(group.regions).map(getExternalRegionLabel);
     const roleLabelsForHero = Array.from(group.roles).map(getExternalRoleLabel);
+    const pickRate = roundExternalMetric(
+      getExternalAverage(currentSnapshots.map((snapshot) => snapshot.pickRate)),
+    );
+    const previousPickRate = roundExternalMetric(
+      getExternalAverage(previousSnapshots.map((snapshot) => snapshot.pickRate)),
+    );
+    const winRate = roundExternalMetric(
+      getExternalAverage(
+        currentSnapshots.map((snapshot) => snapshot.winRate),
+        { ignoreZero: true },
+      ),
+    );
+    const previousWinRate = roundExternalMetric(
+      getExternalAverage(
+        previousSnapshots.map((snapshot) => snapshot.winRate),
+        { ignoreZero: true },
+      ),
+    );
 
     return {
       heroId,
       latestAt: group.latestAt,
       name: getExternalHeroLabel(heroId),
-      pickRate: roundExternalMetric(getExternalAverage(group.pickRates)),
+      pickRate,
+      pickRateDelta: getExternalMetricDelta(pickRate, previousPickRate),
+      previousPickRate,
+      previousWinRate,
       regionLabel: regionLabels.slice(0, 3).join(', ') || '미지정',
       role: group.role,
       roleLabel: roleLabelsForHero.slice(0, 2).join(', ') || '미지정',
-      snapshotCount: group.snapshots,
+      snapshotCount: group.snapshots.length,
       sourceCount: group.sourceIds.size,
       sourceLabel:
         sourceLabels.length > 2
           ? `${sourceLabels.slice(0, 2).join(', ')} 외 ${sourceLabels.length - 2}`
           : sourceLabels.join(', ') || '소스 없음',
-      winRate: roundExternalMetric(getExternalAverage(group.winRates, { ignoreZero: true })),
+      trend: createExternalHeroTrendPoints(group.snapshots),
+      winRate,
+      winRateDelta: getExternalMetricDelta(winRate, previousWinRate),
     };
   }).sort((left, right) => {
     const pickDelta = (right.pickRate ?? -1) - (left.pickRate ?? -1);
@@ -3381,6 +3511,7 @@ export const ExternalHeroMetaPanel = ({
     sortMode,
   );
   const signalCounts = getExternalHeroSignalCounts(heroRows);
+  const trendInsights = getExternalHeroTrendInsights(heroRows);
   const topPick =
     [...heroRows]
       .filter((hero) => hero.pickRate !== null)
@@ -3478,6 +3609,7 @@ export const ExternalHeroMetaPanel = ({
             value={signalFilter}
             onChange={handleSignalChange}
           />
+          <ExternalHeroTrendBoard insights={trendInsights} onSelectHero={focusHero} />
           {selectedHero ? (
             <ExternalHeroSpotlight
               hero={selectedHero}
@@ -3494,7 +3626,6 @@ export const ExternalHeroMetaPanel = ({
             onSelectHero={toggleHeroSelection}
           />
           <ExternalHeroComparisonTable
-            contextRows={heroRows}
             rows={visibleHeroRows}
             selectedHeroId={selectedHero?.heroId ?? null}
             totalRows={visibleHeroRows.length}
@@ -3632,12 +3763,20 @@ const ExternalHeroSpotlight = ({
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <ExternalHeroSpotlightMetric
+              delta={hero.pickRateDelta}
+              hero={hero}
               label="픽률"
+              metric="pickRate"
+              previousValue={hero.previousPickRate}
               value={formatExternalPercent(hero.pickRate)}
               width={getExternalHeroMetricRangeWidth(hero.pickRate, pickAxis.min, pickAxis.max)}
             />
             <ExternalHeroSpotlightMetric
+              delta={hero.winRateDelta}
+              hero={hero}
               label="승률"
+              metric="winRate"
+              previousValue={hero.previousWinRate}
               value={formatExternalPercent(hero.winRate)}
               width={getExternalHeroMetricRangeWidth(hero.winRate, winAxis.min, winAxis.max)}
             />
@@ -3677,18 +3816,41 @@ const ExternalHeroSpotlight = ({
 };
 
 const ExternalHeroSpotlightMetric = ({
+  delta,
+  hero,
   label,
+  metric,
+  previousValue,
   value,
   width,
 }: {
+  delta: number | null;
+  hero: ExternalHeroMetaRow;
   label: string;
+  metric: 'pickRate' | 'winRate';
+  previousValue: number | null;
   value: string;
   width: number;
 }) => (
   <div className="rounded-md border border-border/60 bg-card px-3 py-3">
     <div className="flex items-center justify-between gap-3">
       <p className="metric-label">{label}</p>
-      <p className="text-lg font-black">{value}</p>
+      <div className="flex items-center gap-2">
+        <Badge
+          variant="outline"
+          className={cn(
+            'bg-transparent text-[11px] tabular-nums',
+            delta === null
+              ? 'text-muted-foreground'
+              : delta >= 0
+                ? 'text-[hsl(var(--success))]'
+                : 'text-amber-500',
+          )}
+        >
+          {formatExternalSignedPoint(delta)}
+        </Badge>
+        <p className="text-lg font-black">{value}</p>
+      </div>
     </div>
     <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted/60">
       <span
@@ -3696,6 +3858,10 @@ const ExternalHeroSpotlightMetric = ({
         style={{ width: `${Math.min(100, Math.max(0, width))}%` }}
       />
     </div>
+    <ExternalHeroMiniTrendChart className="mt-3" hero={hero} metric={metric} />
+    <p className="mt-2 truncate text-[11px] font-semibold text-muted-foreground">
+      직전 {formatExternalPercent(previousValue)}
+    </p>
   </div>
 );
 
@@ -3761,6 +3927,269 @@ const ExternalHeroSignalBoard = ({
         })}
       </div>
     </div>
+  );
+};
+
+const getExternalHeroTrendInsights = (rows: ExternalHeroMetaRow[]) => {
+  const usedHeroIds = new Set<string>();
+  const pickRows = rows.filter((hero) => hero.pickRateDelta !== null && hero.trend.length >= 2);
+  const winRows = rows.filter((hero) => hero.winRateDelta !== null && hero.trend.length >= 2);
+  const takeHero = (items: ExternalHeroMetaRow[]) => {
+    const hero = items.find((item) => !usedHeroIds.has(item.heroId)) ?? items[0] ?? null;
+
+    if (hero) {
+      usedHeroIds.add(hero.heroId);
+    }
+
+    return hero;
+  };
+  const pickUp = takeHero(
+    [...pickRows]
+      .filter((hero) => (hero.pickRateDelta ?? 0) > 0)
+      .sort((left, right) => (right.pickRateDelta ?? 0) - (left.pickRateDelta ?? 0)),
+  );
+  const winUp = takeHero(
+    [...winRows]
+      .filter((hero) => (hero.winRateDelta ?? 0) > 0)
+      .sort((left, right) => (right.winRateDelta ?? 0) - (left.winRateDelta ?? 0)),
+  );
+  const pickAndWinUp = takeHero(
+    [...rows]
+      .filter(
+        (hero) =>
+          (hero.pickRateDelta ?? 0) > 0 && (hero.winRateDelta ?? 0) > 0 && hero.trend.length >= 2,
+      )
+      .sort(
+        (left, right) =>
+          (right.pickRateDelta ?? 0) +
+          (right.winRateDelta ?? 0) -
+          ((left.pickRateDelta ?? 0) + (left.winRateDelta ?? 0)),
+      ),
+  );
+  const winDown = takeHero(
+    [...winRows]
+      .filter((hero) => (hero.winRateDelta ?? 0) < 0)
+      .sort((left, right) => (left.winRateDelta ?? 0) - (right.winRateDelta ?? 0)),
+  );
+
+  return [
+    {
+      description: '직전 수집보다 선택이 늘어난 영웅',
+      hero: pickUp,
+      key: 'pick-up',
+      metric: 'pickRate' as const,
+      title: '픽률 급상승',
+    },
+    {
+      description: '직전 수집보다 승률이 오른 영웅',
+      hero: winUp,
+      key: 'win-up',
+      metric: 'winRate' as const,
+      title: '승률 상승',
+    },
+    {
+      description: '픽률과 승률이 함께 올라온 영웅',
+      hero: pickAndWinUp,
+      key: 'breakout',
+      metric: 'pickRate' as const,
+      title: '동반 상승',
+    },
+    {
+      description: '직전 수집보다 승률이 내려간 영웅',
+      hero: winDown,
+      key: 'win-down',
+      metric: 'winRate' as const,
+      title: '승률 하락',
+    },
+  ];
+};
+
+const ExternalHeroTrendBoard = ({
+  insights,
+  onSelectHero,
+}: {
+  insights: ReturnType<typeof getExternalHeroTrendInsights>;
+  onSelectHero: (heroId: string) => void;
+}) => (
+  <div className="border-b border-border/60 bg-[hsl(var(--surface-2))] px-4 py-4 sm:px-5">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div className="min-w-0">
+        <p className="metric-label">메타 변화</p>
+        <h3 className="mt-1 text-base font-bold">직전 수집 대비 눈에 띄는 흐름</h3>
+      </div>
+      <Badge variant="outline" className="w-fit bg-card">
+        픽률/승률 변화
+      </Badge>
+    </div>
+
+    <div className="mt-3 grid gap-2 md:grid-cols-2 2xl:grid-cols-4">
+      {insights.map((insight) => (
+        <ExternalHeroTrendCard
+          key={insight.key}
+          description={insight.description}
+          hero={insight.hero}
+          metric={insight.metric}
+          title={insight.title}
+          onSelectHero={onSelectHero}
+        />
+      ))}
+    </div>
+  </div>
+);
+
+const ExternalHeroTrendCard = ({
+  description,
+  hero,
+  metric,
+  onSelectHero,
+  title,
+}: {
+  description: string;
+  hero: ExternalHeroMetaRow | null;
+  metric: 'pickRate' | 'winRate';
+  onSelectHero: (heroId: string) => void;
+  title: string;
+}) => {
+  const currentValue = hero?.[metric] ?? null;
+  const previousValue = metric === 'pickRate' ? hero?.previousPickRate : hero?.previousWinRate;
+  const delta = metric === 'pickRate' ? hero?.pickRateDelta : hero?.winRateDelta;
+  const isPositive = (delta ?? 0) >= 0;
+
+  return (
+    <button
+      type="button"
+      className="min-w-0 rounded-md border border-border/70 bg-card px-3 py-3 text-left transition-colors hover:border-primary/35 hover:bg-primary/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 disabled:pointer-events-none disabled:opacity-70"
+      disabled={!hero}
+      onClick={() => {
+        if (hero) {
+          onSelectHero(hero.heroId);
+        }
+      }}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="metric-label">{title}</p>
+          <h4 className="mt-1 truncate text-sm font-black">{hero?.name ?? '데이터 대기'}</h4>
+          <p className="mt-1 line-clamp-2 text-[11px] font-semibold leading-relaxed text-muted-foreground">
+            {description}
+          </p>
+        </div>
+        {hero ? <ExternalHeroPortrait heroId={hero.heroId} className="h-10 w-10" /> : null}
+      </div>
+
+      {hero ? (
+        <>
+          <div className="mt-3 flex items-end justify-between gap-3">
+            <div>
+              <p className="metric-label">{metric === 'pickRate' ? '픽률' : '승률'}</p>
+              <p className="mt-1 text-xl font-black tabular-nums">
+                {formatExternalPercent(currentValue)}
+              </p>
+            </div>
+            <Badge
+              variant="outline"
+              className={cn(
+                'bg-transparent tabular-nums',
+                isPositive ? 'text-[hsl(var(--success))]' : 'text-amber-500',
+              )}
+            >
+              {formatExternalSignedPoint(delta ?? null)}
+            </Badge>
+          </div>
+          <ExternalHeroMiniTrendChart className="mt-3" hero={hero} metric={metric} />
+          <p className="mt-2 truncate text-[11px] font-semibold text-muted-foreground">
+            직전 {formatExternalPercent(previousValue ?? null)}
+          </p>
+        </>
+      ) : (
+        <p className="mt-3 text-xs font-semibold text-muted-foreground">변화 비교 대기</p>
+      )}
+    </button>
+  );
+};
+
+const ExternalHeroMiniTrendChart = ({
+  className,
+  hero,
+  metric,
+}: {
+  className?: string;
+  hero: ExternalHeroMetaRow;
+  metric: 'pickRate' | 'winRate';
+}) => {
+  const points = hero.trend
+    .map((point, index) => ({
+      index,
+      value: point[metric],
+    }))
+    .filter((point): point is { index: number; value: number } => point.value !== null);
+
+  if (points.length < 2) {
+    return (
+      <div
+        className={cn(
+          'flex h-12 items-center justify-center rounded-md border border-dashed border-border/70 bg-[hsl(var(--surface-2))] text-[11px] font-bold text-muted-foreground',
+          className,
+        )}
+      >
+        추이 대기
+      </div>
+    );
+  }
+
+  const rawMin = Math.min(...points.map((point) => point.value));
+  const rawMax = Math.max(...points.map((point) => point.value));
+  const min = rawMin === rawMax ? rawMin - 1 : rawMin;
+  const max = rawMin === rawMax ? rawMax + 1 : rawMax;
+  const width = 160;
+  const height = 48;
+  const xMax = Math.max(1, points.length - 1);
+  const polyline = points
+    .map((point, pointIndex) => {
+      const x = (pointIndex / xMax) * width;
+      const y = height - ((point.value - min) / Math.max(1, max - min)) * height;
+
+      return `${x.toFixed(1)},${Math.max(1, Math.min(height - 1, y)).toFixed(1)}`;
+    })
+    .join(' ');
+  const lastPoint = points[points.length - 1];
+  const lastX = width;
+  const lastY = height - ((lastPoint.value - min) / Math.max(1, max - min)) * height;
+
+  return (
+    <svg
+      aria-hidden="true"
+      className={cn(
+        'h-12 w-full overflow-visible rounded-md bg-[hsl(var(--surface-2))]',
+        className,
+      )}
+      preserveAspectRatio="none"
+      viewBox={`0 0 ${width} ${height}`}
+    >
+      <line
+        x1="0"
+        x2={width}
+        y1={height - 1}
+        y2={height - 1}
+        stroke="currentColor"
+        opacity="0.12"
+      />
+      <polyline
+        fill="none"
+        points={polyline}
+        stroke="hsl(var(--primary))"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="3"
+        vectorEffect="non-scaling-stroke"
+      />
+      <circle
+        cx={lastX}
+        cy={Math.max(2, Math.min(height - 2, lastY))}
+        fill="hsl(var(--primary))"
+        r="3"
+      />
+    </svg>
   );
 };
 
@@ -4436,10 +4865,34 @@ const ExternalHeroScatterTooltip = ({
       <div className="rounded-md border border-border/60 bg-card px-2.5 py-2">
         <p className="metric-label">픽률</p>
         <p className="mt-1 text-sm font-black">{formatExternalPercent(hero.pickRate)}</p>
+        <p
+          className={cn(
+            'mt-0.5 text-[11px] font-bold tabular-nums',
+            hero.pickRateDelta === null
+              ? 'text-muted-foreground'
+              : hero.pickRateDelta >= 0
+                ? 'text-[hsl(var(--success))]'
+                : 'text-amber-500',
+          )}
+        >
+          {formatExternalSignedPoint(hero.pickRateDelta)}
+        </p>
       </div>
       <div className="rounded-md border border-border/60 bg-card px-2.5 py-2">
         <p className="metric-label">승률</p>
         <p className="mt-1 text-sm font-black">{formatExternalPercent(hero.winRate)}</p>
+        <p
+          className={cn(
+            'mt-0.5 text-[11px] font-bold tabular-nums',
+            hero.winRateDelta === null
+              ? 'text-muted-foreground'
+              : hero.winRateDelta >= 0
+                ? 'text-[hsl(var(--success))]'
+                : 'text-amber-500',
+          )}
+        >
+          {formatExternalSignedPoint(hero.winRateDelta)}
+        </p>
       </div>
     </div>
     <p className="mt-2 truncate text-[11px] font-semibold text-muted-foreground">
@@ -4462,62 +4915,78 @@ const ExternalHeroFeatureCard = ({
   metricValue: string;
   onSelect: (heroId: string) => void;
   title: string;
-}) => (
-  <button
-    type="button"
-    className="min-w-0 bg-card p-4 text-left transition-colors hover:bg-[hsl(var(--surface-2))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 sm:p-5"
-    disabled={!hero}
-    onClick={() => {
-      if (hero) {
-        onSelect(hero.heroId);
-      }
-    }}
-  >
-    <div className="flex items-center justify-between gap-3">
-      <div className="min-w-0">
-        <p className="metric-label">{title}</p>
-        <h3 className="mt-1 truncate text-lg font-bold">{hero?.name ?? '--'}</h3>
-      </div>
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-primary">
-        <Icon className="h-4 w-4" />
-      </div>
-    </div>
+}) => {
+  const metricDelta = metricLabel === '픽률' ? hero?.pickRateDelta : hero?.winRateDelta;
 
-    {hero ? (
-      <div className="mt-4 grid grid-cols-[116px_minmax(0,1fr)] gap-4">
-        <ExternalHeroPortrait heroId={hero.heroId} className="h-28 w-28" />
-        <div className="min-w-0 self-center">
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="outline" className="bg-transparent">
-              {hero.roleLabel}
-            </Badge>
-            <Badge variant="outline" className="bg-transparent">
-              {metricLabel} {metricValue}
-            </Badge>
-          </div>
-          <p className="mt-3 truncate text-sm font-semibold text-muted-foreground">
-            승률 {formatExternalPercent(hero.winRate)} · 픽률 {formatExternalPercent(hero.pickRate)}
-          </p>
+  return (
+    <button
+      type="button"
+      className="min-w-0 bg-card p-4 text-left transition-colors hover:bg-[hsl(var(--surface-2))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 sm:p-5"
+      disabled={!hero}
+      onClick={() => {
+        if (hero) {
+          onSelect(hero.heroId);
+        }
+      }}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="metric-label">{title}</p>
+          <h3 className="mt-1 truncate text-lg font-bold">{hero?.name ?? '--'}</h3>
+        </div>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-primary">
+          <Icon className="h-4 w-4" />
         </div>
       </div>
-    ) : (
-      <InlineEmptyState
-        className="mt-4"
-        title="표시할 영웅 데이터 없음"
-        description="픽률 데이터가 수집되면 영웅 프로필이 표시됩니다."
-      />
-    )}
-  </button>
-);
+
+      {hero ? (
+        <div className="mt-4 grid grid-cols-[116px_minmax(0,1fr)] gap-4">
+          <ExternalHeroPortrait heroId={hero.heroId} className="h-28 w-28" />
+          <div className="min-w-0 self-center">
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline" className="bg-transparent">
+                {hero.roleLabel}
+              </Badge>
+              <Badge variant="outline" className="bg-transparent">
+                {metricLabel} {metricValue}
+              </Badge>
+              <Badge
+                variant="outline"
+                className={cn(
+                  'bg-transparent tabular-nums',
+                  metricDelta === null || metricDelta === undefined
+                    ? 'text-muted-foreground'
+                    : metricDelta >= 0
+                      ? 'text-[hsl(var(--success))]'
+                      : 'text-amber-500',
+                )}
+              >
+                변화 {formatExternalSignedPoint(metricDelta ?? null)}
+              </Badge>
+            </div>
+            <p className="mt-3 truncate text-sm font-semibold text-muted-foreground">
+              승률 {formatExternalPercent(hero.winRate)} · 픽률{' '}
+              {formatExternalPercent(hero.pickRate)}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <InlineEmptyState
+          className="mt-4"
+          title="표시할 영웅 데이터 없음"
+          description="픽률 데이터가 수집되면 영웅 프로필이 표시됩니다."
+        />
+      )}
+    </button>
+  );
+};
 
 const ExternalHeroComparisonTable = ({
-  contextRows,
   onSelectHero,
   rows,
   selectedHeroId,
   totalRows,
 }: {
-  contextRows: ExternalHeroMetaRow[];
   onSelectHero: (heroId: string) => void;
   rows: ExternalHeroMetaRow[];
   selectedHeroId: string | null;
@@ -4536,12 +5005,6 @@ const ExternalHeroComparisonTable = ({
   const canShowMore = visibleLimit < rows.length;
   const canCollapse = visibleLimit > initialVisibleRows;
   const maxPickRate = Math.max(1, ...rows.map((row) => row.pickRate ?? 0));
-  const avgWinRate = roundExternalMetric(
-    getExternalAverage(
-      contextRows.map((row) => row.winRate),
-      { ignoreZero: true },
-    ),
-  );
 
   return (
     <div className="bg-card px-4 py-4 sm:px-5">
@@ -4560,68 +5023,73 @@ const ExternalHeroComparisonTable = ({
         <div className="mt-3 overflow-hidden rounded-md border border-border/70">
           <div className="hidden grid-cols-[minmax(220px,1.35fr)_minmax(170px,1fr)_112px] gap-3 border-b border-border/60 bg-[hsl(var(--surface-2))] px-3 py-2 text-xs font-bold text-muted-foreground lg:grid">
             <span>영웅</span>
-            <span>픽률</span>
-            <span className="text-right">승률 / 평균차</span>
+            <span>픽률 / 변화</span>
+            <span className="text-right">승률 / 변화</span>
           </div>
           <div>
-            {visibleTableRows.map((hero) => {
-              const winDelta =
-                hero.winRate !== null && avgWinRate !== null
-                  ? roundExternalMetric(hero.winRate - avgWinRate)
-                  : null;
-
-              return (
-                <button
-                  key={hero.heroId}
-                  type="button"
-                  className={cn(
-                    'grid w-full gap-3 border-b border-border/60 px-3 py-3 text-left transition-colors last:border-b-0 hover:bg-primary/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 lg:grid-cols-[minmax(220px,1.35fr)_minmax(170px,1fr)_112px] lg:items-center',
-                    selectedHeroId === hero.heroId && 'bg-primary/[0.08]',
-                  )}
-                  onClick={() => onSelectHero(hero.heroId)}
-                >
-                  <div className="grid min-w-0 grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3 lg:grid-cols-[44px_minmax(0,1fr)]">
-                    <ExternalHeroPortrait heroId={hero.heroId} className="h-11 w-11" />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-bold">{hero.name}</p>
-                      <p className="mt-0.5 truncate text-xs font-semibold text-muted-foreground">
-                        {hero.roleLabel}
-                      </p>
-                    </div>
-                    <Badge variant="outline" className="bg-transparent lg:hidden">
-                      {formatExternalPercent(hero.winRate)}
-                    </Badge>
-                  </div>
+            {visibleTableRows.map((hero) => (
+              <button
+                key={hero.heroId}
+                type="button"
+                className={cn(
+                  'grid w-full gap-3 border-b border-border/60 px-3 py-3 text-left transition-colors last:border-b-0 hover:bg-primary/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 lg:grid-cols-[minmax(220px,1.35fr)_minmax(170px,1fr)_112px] lg:items-center',
+                  selectedHeroId === hero.heroId && 'bg-primary/[0.08]',
+                )}
+                onClick={() => onSelectHero(hero.heroId)}
+              >
+                <div className="grid min-w-0 grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3 lg:grid-cols-[44px_minmax(0,1fr)]">
+                  <ExternalHeroPortrait heroId={hero.heroId} className="h-11 w-11" />
                   <div className="min-w-0">
-                    <div className="flex items-center justify-between gap-3 text-xs font-bold">
-                      <span className="text-muted-foreground">픽률</span>
-                      <span>{formatExternalPercent(hero.pickRate)}</span>
-                    </div>
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted/60">
-                      <span
-                        className="block h-full rounded-full bg-primary"
-                        style={{ width: `${((hero.pickRate ?? 0) / maxPickRate) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                  <div className="hidden text-right lg:block">
-                    <p className="text-sm font-black">{formatExternalPercent(hero.winRate)}</p>
-                    <p
-                      className={cn(
-                        'mt-0.5 text-[11px] font-bold',
-                        winDelta === null
-                          ? 'text-muted-foreground'
-                          : winDelta >= 0
-                            ? 'text-[hsl(var(--success))]'
-                            : 'text-amber-500',
-                      )}
-                    >
-                      평균 {formatExternalSignedPercent(winDelta)}
+                    <p className="truncate text-sm font-bold">{hero.name}</p>
+                    <p className="mt-0.5 truncate text-xs font-semibold text-muted-foreground">
+                      {hero.roleLabel}
                     </p>
                   </div>
-                </button>
-              );
-            })}
+                  <Badge variant="outline" className="bg-transparent lg:hidden">
+                    {formatExternalPercent(hero.winRate)}
+                  </Badge>
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center justify-between gap-3 text-xs font-bold">
+                    <span className="text-muted-foreground">픽률</span>
+                    <span>{formatExternalPercent(hero.pickRate)}</span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted/60">
+                    <span
+                      className="block h-full rounded-full bg-primary"
+                      style={{ width: `${((hero.pickRate ?? 0) / maxPickRate) * 100}%` }}
+                    />
+                  </div>
+                  <p
+                    className={cn(
+                      'mt-1 text-[11px] font-bold tabular-nums',
+                      hero.pickRateDelta === null
+                        ? 'text-muted-foreground'
+                        : hero.pickRateDelta >= 0
+                          ? 'text-[hsl(var(--success))]'
+                          : 'text-amber-500',
+                    )}
+                  >
+                    변화 {formatExternalSignedPoint(hero.pickRateDelta)}
+                  </p>
+                </div>
+                <div className="hidden text-right lg:block">
+                  <p className="text-sm font-black">{formatExternalPercent(hero.winRate)}</p>
+                  <p
+                    className={cn(
+                      'mt-0.5 text-[11px] font-bold tabular-nums',
+                      hero.winRateDelta === null
+                        ? 'text-muted-foreground'
+                        : hero.winRateDelta >= 0
+                          ? 'text-[hsl(var(--success))]'
+                          : 'text-amber-500',
+                    )}
+                  >
+                    변화 {formatExternalSignedPoint(hero.winRateDelta)}
+                  </p>
+                </div>
+              </button>
+            ))}
           </div>
           {canShowMore || canCollapse ? (
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 bg-[hsl(var(--surface-2))] px-3 py-3">
