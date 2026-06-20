@@ -13,6 +13,7 @@ import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
 import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
+import { MatchModeBadge, MatchModeLabel } from '@/components/match/MatchModeBadge';
 import { MatchRoleBadge, MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -712,7 +713,7 @@ const RecordsPage = () => {
                   <SelectItem value="all">전체 모드</SelectItem>
                   {modeOptions.map((mode) => (
                     <SelectItem key={mode.value} value={mode.value}>
-                      {mode.label}
+                      <MatchModeLabel modeId={mode.value} />
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1074,7 +1075,11 @@ const BulkActionBar = ({
               <SelectItem value="keep">맵 유지</SelectItem>
               {mapOptions.map((map) => (
                 <SelectItem key={map.value} value={map.value}>
-                  {map.label} · {getModeLabel(map.modeId)}
+                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                    <span className="truncate">{map.label}</span>
+                    <span className="text-muted-foreground">·</span>
+                    <MatchModeLabel className="text-muted-foreground" modeId={map.modeId} />
+                  </span>
                 </SelectItem>
               ))}
             </SelectContent>
@@ -1179,9 +1184,10 @@ const RecordTableRow = ({
     </td>
     <td className="min-w-0 px-3 py-3 align-middle">
       <p className="truncate font-bold">{getMapLabel(match.mapId)}</p>
-      <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-        {getModeLabel(match.modeId)}
-      </p>
+      <MatchModeLabel
+        className="mt-1 text-xs font-semibold text-muted-foreground"
+        modeId={match.modeId}
+      />
     </td>
     <td className="px-3 py-3 align-middle">
       <MatchRoleBadge role={match.matchRole} />
@@ -1240,8 +1246,13 @@ const RecordCard = ({ account, match, onDelete, onEdit, onSelect, selected }: Re
       </label>
 
       <div className="min-w-0">
-        <p className="truncate text-sm font-bold">
-          {getMapLabel(match.mapId)} · {getModeLabel(match.modeId)}
+        <p className="flex min-w-0 items-center gap-1.5 text-sm font-bold">
+          <span className="truncate">{getMapLabel(match.mapId)}</span>
+          <span className="shrink-0 text-muted-foreground">·</span>
+          <MatchModeLabel
+            className="shrink-0 text-xs font-semibold text-muted-foreground"
+            modeId={match.modeId}
+          />
         </p>
         <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs font-semibold text-muted-foreground">
           <span className="truncate">
@@ -1269,6 +1280,7 @@ const RecordCard = ({ account, match, onDelete, onEdit, onSelect, selected }: Re
           {getResultLabel(match.result)}
         </span>{' '}
         · {getOptionLabel(queueOptions, match.queueType)} ·{' '}
+        <MatchModeBadge className="h-5 bg-transparent px-1.5" modeId={match.modeId} /> ·{' '}
         <MatchRoleLabel role={match.matchRole} />
       </p>
       <div className="flex shrink-0 justify-end gap-1">

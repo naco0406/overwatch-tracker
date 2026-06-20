@@ -2,8 +2,8 @@ import { Minus, Plus, Save, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 
 import { SkeletonBlock } from '@/components/common/DataState';
+import { MatchModeBadge, MatchModeIcon, MatchModeLabel } from '@/components/match/MatchModeBadge';
 import { MatchRoleLabel } from '@/components/match/MatchRoleBadge';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -491,10 +491,9 @@ const QuickMatchEntry = ({
                 <ModeButton
                   key={mode.value}
                   active={modeFilter === mode.value}
+                  modeId={mode.value}
                   onClick={() => setModeFilter(mode.value)}
-                >
-                  {mode.label}
-                </ModeButton>
+                />
               ))}
             </div>
           </div>
@@ -510,28 +509,27 @@ const QuickMatchEntry = ({
                       key={map.value}
                       type="button"
                       className={cn(
-                        'overflow-hidden rounded-md border bg-card text-left transition-[background-color,border-color,color] hover:border-primary/35 hover:bg-secondary',
+                        'flex h-full min-w-0 flex-col overflow-hidden rounded-md border bg-card text-left transition-[background-color,border-color,color] hover:border-primary/35 hover:bg-secondary',
                         selected && 'border-primary bg-primary/[0.06] text-primary',
                       )}
                       onClick={() => selectMap(map.value)}
                     >
-                      <span className="block h-12 overflow-hidden bg-secondary min-[390px]:h-14 sm:h-16 lg:h-[72px]">
+                      <span className="relative block min-h-0 flex-1 overflow-hidden bg-secondary">
                         <img
                           alt={map.label}
                           className="h-full w-full object-cover"
                           src={getMapScreenshotPath(map.value)}
                           loading="lazy"
                         />
+                        <MatchModeLabel
+                          className="absolute bottom-1.5 left-1.5 h-4 max-w-[calc(100%-12px)] rounded-sm bg-black/65 px-1.5 text-[9px] font-bold leading-none text-white shadow-sm backdrop-blur-sm min-[390px]:text-[10px]"
+                          iconClassName="h-3 w-3 rounded-[2px]"
+                          modeId={map.modeId}
+                        />
                       </span>
-                      <span className="block min-w-0 px-2 py-1.5">
-                        <span className="block truncate text-xs font-bold">{map.label}</span>
-                        <span
-                          className={cn(
-                            'mt-0.5 block truncate text-[10px] font-semibold min-[390px]:text-[11px]',
-                            selected ? 'text-primary/70' : 'text-muted-foreground',
-                          )}
-                        >
-                          {getModeLabel(map.modeId)}
+                      <span className="flex h-7 min-w-0 shrink-0 items-center px-2">
+                        <span className="block truncate text-xs font-bold leading-4">
+                          {map.label}
                         </span>
                       </span>
                     </button>
@@ -555,9 +553,10 @@ const QuickMatchEntry = ({
               </p>
             </div>
             {selectedMap ? (
-              <Badge variant="outline" className="w-fit shrink-0 bg-transparent">
-                {getModeLabel(selectedMap.modeId)}
-              </Badge>
+              <MatchModeBadge
+                className="w-fit shrink-0 bg-transparent"
+                modeId={selectedMap.modeId}
+              />
             ) : null}
           </div>
 
@@ -616,22 +615,24 @@ const QuickMatchEntry = ({
 
 interface ModeButtonProps {
   active: boolean;
-  children: string;
+  children?: string;
+  modeId?: ModeId;
   onClick: () => void;
 }
 
-const ModeButton = ({ active, children, onClick }: ModeButtonProps) => (
+const ModeButton = ({ active, children, modeId, onClick }: ModeButtonProps) => (
   <button
     type="button"
     className={cn(
-      'h-9 shrink-0 rounded-md border px-3 text-xs font-bold transition-[background-color,border-color,color]',
+      'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-bold transition-[background-color,border-color,color]',
       active
         ? 'border-primary bg-primary text-primary-foreground'
         : 'border-border bg-card text-muted-foreground hover:bg-secondary hover:text-foreground',
     )}
     onClick={onClick}
   >
-    {children}
+    {modeId ? <MatchModeIcon className="h-3.5 w-3.5" modeId={modeId} /> : null}
+    <span>{children ?? (modeId ? getModeLabel(modeId) : '')}</span>
   </button>
 );
 

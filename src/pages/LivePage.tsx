@@ -5,9 +5,10 @@ import type { RefObject } from 'react';
 
 import { SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
+import { MatchModeLabel } from '@/components/match/MatchModeBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { getMapLabel, getModeLabel } from '@/data/matchOptions';
+import { getMapLabel } from '@/data/matchOptions';
 import { getMapScreenshotPath } from '@/data/masterAssets';
 import {
   liveFrameQualityLabel,
@@ -514,9 +515,7 @@ const PrimaryRecommendation = ({
             {Math.round(recommendation.recommendationScore)}
           </Badge>
         </div>
-        <p className="text-xs font-bold text-white/70">
-          {getRecommendationContext(recommendation)}
-        </p>
+        <RecommendationContext className="text-white/70" recommendation={recommendation} />
         <h3 className="mt-1 truncate text-xl font-black">
           {getRecommendationTitle(recommendation)}
         </h3>
@@ -596,17 +595,30 @@ const LiveRecommendationSkeleton = () => (
 const getRecommendationTitle = (recommendation: LiveMapChoiceRecommendation) =>
   recommendation.choiceType === 'random' ? '무작위 전장' : getMapLabel(recommendation.mapId);
 
-const getRecommendationContext = (recommendation: LiveMapChoiceRecommendation) =>
-  recommendation.choiceType === 'random'
-    ? `${recommendation.poolSize}개 전장 풀`
-    : getModeLabel(recommendation.modeId);
-
 const getRecommendationDetail = (recommendation: LiveMapChoiceRecommendation) =>
   recommendation.choiceType === 'random'
     ? recommendation.reason
     : recommendation.decisive > 0
       ? `${recommendation.wins}승 ${recommendation.losses}패 · ${recommendation.decisive}경기`
       : recommendation.reason;
+
+const RecommendationContext = ({
+  className,
+  recommendation,
+}: {
+  className?: string;
+  recommendation: LiveMapChoiceRecommendation;
+}) =>
+  recommendation.choiceType === 'random' ? (
+    <span className={cn('text-xs font-bold text-muted-foreground', className)}>
+      {recommendation.poolSize}개 전장 풀
+    </span>
+  ) : (
+    <MatchModeLabel
+      className={cn('text-xs font-bold text-muted-foreground', className)}
+      modeId={recommendation.modeId}
+    />
+  );
 
 const ChoiceTile = ({
   recommendation,
@@ -625,9 +637,7 @@ const ChoiceTile = ({
           #{rank}
         </Badge>
         <p className="truncate text-sm font-black">{getRecommendationTitle(recommendation)}</p>
-        <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-          {getRecommendationContext(recommendation)}
-        </p>
+        <RecommendationContext className="mt-1" recommendation={recommendation} />
       </div>
       {recommendation.choiceType === 'map' ? (
         <img

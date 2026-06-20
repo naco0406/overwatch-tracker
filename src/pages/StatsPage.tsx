@@ -51,6 +51,7 @@ import {
 import { EmptyState } from '@/components/common/EmptyState';
 import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
+import { MatchModeLabel } from '@/components/match/MatchModeBadge';
 import { MatchRoleIcon, MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -2211,8 +2212,8 @@ const StatsPage = () => {
                       </div>
                       <p className="mt-2 text-sm font-semibold text-muted-foreground">
                         {bestMap.wins}승 {bestMap.losses}패 {bestMap.draws}무 · {bestMap.total}
-                        경기 · {getModeLabel(bestMap.modeId)} · 승률{' '}
-                        {formatWinRate(bestMap.winRate)}
+                        경기 · <MatchModeLabel className="inline-flex" modeId={bestMap.modeId} /> ·
+                        승률 {formatWinRate(bestMap.winRate)}
                       </p>
                     </div>
                   </div>
@@ -7520,7 +7521,7 @@ const StatsFilterPanel = ({
                   active={modeFilter === mode.value}
                   onClick={() => onModeFilterChange(mode.value)}
                 >
-                  {mode.label}
+                  <MatchModeLabel modeId={mode.value} />
                 </FilterButton>
               ))}
             </FilterGroup>
@@ -8476,8 +8477,8 @@ const MapAtlasTile = ({ onSelect, selected, stat }: MapAtlasTileProps) => (
         src={getMapScreenshotPath(stat.value)}
       />
       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/10" />
-      <div className="absolute left-2 top-2 rounded-md bg-black/55 px-2 py-1 text-[10px] font-bold text-white backdrop-blur-sm">
-        {getModeLabel(stat.modeId)}
+      <div className="absolute left-2 top-2 rounded-md bg-black/60 px-2 py-1 text-[10px] font-bold text-white backdrop-blur-sm">
+        <MatchModeLabel modeId={stat.modeId} />
       </div>
       <div className="absolute inset-x-2 bottom-2 flex items-end justify-between gap-2 text-white">
         <div className="min-w-0">
@@ -8511,7 +8512,7 @@ const MapAtlasDetail = ({ stat }: { stat: MapStatItem }) => (
       />
       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
       <div className="absolute bottom-4 left-4 right-4 text-white">
-        <p className="text-xs font-bold opacity-80">{getModeLabel(stat.modeId)}</p>
+        <MatchModeLabel className="text-xs font-bold opacity-85" modeId={stat.modeId} />
         <h3 className="mt-1 truncate text-2xl font-bold">{stat.label}</h3>
       </div>
     </div>
@@ -9236,7 +9237,7 @@ const ModeRecentFormRow = ({ stat }: { stat: ModeRecentFormItem }) => (
   <div className="rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-3">
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
-        <p className="truncate text-sm font-bold">{stat.label}</p>
+        <MatchModeLabel className="text-sm font-bold" modeId={stat.value} />
         <p className="mt-1 text-xs font-semibold text-muted-foreground">
           {stat.wins}승 {stat.losses}패 {stat.draws}무 · 최근 승률 {formatWinRate(stat.winRate)}
         </p>
@@ -9280,7 +9281,7 @@ interface ModeInsightRowProps {
   };
   stat: SummaryLike & {
     label: string;
-    value: string;
+    value: ModeId;
   };
 }
 
@@ -9291,7 +9292,11 @@ const ModeInsightRow = ({ modeMapStats, stat }: ModeInsightRowProps) => {
     <div className="border-b border-border/60 py-4 last:border-b-0">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="break-words text-base font-bold leading-snug">{stat.label}</p>
+          <MatchModeLabel
+            className="text-base font-bold leading-snug"
+            modeId={stat.value}
+            textClassName="break-words whitespace-normal"
+          />
           <p className="mt-1 text-xs font-semibold text-muted-foreground">
             {stat.wins}승 {stat.losses}패 {stat.draws}무 · {stat.total}경기
           </p>

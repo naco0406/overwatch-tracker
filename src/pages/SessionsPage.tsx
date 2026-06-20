@@ -5,6 +5,7 @@ import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
 import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
+import { MatchModeLabel } from '@/components/match/MatchModeBadge';
 import { MatchRoleBadge, MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -814,9 +815,10 @@ const SessionMatchTableRow = ({
           </div>
           <div className="min-w-0">
             <p className="truncate font-bold">{getMapLabel(match.mapId)}</p>
-            <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-              {getModeLabel(match.modeId)}
-            </p>
+            <MatchModeLabel
+              className="mt-1 text-xs font-semibold text-muted-foreground"
+              modeId={match.modeId}
+            />
           </div>
         </div>
       </td>
@@ -884,9 +886,9 @@ const SessionMatchMobileRow = ({
               {index + 1}. {getMapLabel(match.mapId)}
             </p>
             <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-              <span className="truncate">
-                {formatTime(match.playedAt)} · {getModeLabel(match.modeId)}
-              </span>
+              <span className="shrink-0">{formatTime(match.playedAt)}</span>
+              <span className="shrink-0">·</span>
+              <MatchModeLabel className="shrink-0" modeId={match.modeId} />
               <span className="shrink-0">·</span>
               <MatchRoleLabel className="shrink-0" role={match.matchRole} />
             </p>

@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 
 import { useForm, useFormState, useWatch, type UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
 
+import { MatchModeBadge, MatchModeLabel } from '@/components/match/MatchModeBadge';
 import { MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -533,14 +534,14 @@ const MapPickerPanel = memo(({ form, mapQuery, onMapQueryChange }: MapPickerPane
               key={option.value}
               type="button"
               className={cn(
-                'h-9 shrink-0 rounded-md border px-3 text-xs font-bold transition-colors',
+                'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-3 text-xs font-bold transition-colors',
                 watchedModeId === option.value
                   ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border bg-card text-muted-foreground hover:bg-secondary',
+                  : 'border-border bg-card text-muted-foreground hover:bg-secondary hover:text-foreground',
               )}
               onClick={() => form.setValue('modeId', option.value, { shouldValidate: true })}
             >
-              {option.label}
+              <MatchModeLabel modeId={option.value} />
             </button>
           ))}
         </div>
@@ -557,7 +558,7 @@ const MapPickerPanel = memo(({ form, mapQuery, onMapQueryChange }: MapPickerPane
                   key={map.value}
                   type="button"
                   className={cn(
-                    'overflow-hidden rounded-md border bg-card text-left transition-[background-color,border-color,color] hover:border-primary/35 hover:bg-secondary',
+                    'flex h-full min-w-0 flex-col overflow-hidden rounded-md border bg-card text-left transition-[background-color,border-color,color] hover:border-primary/35 hover:bg-secondary',
                     selected && 'border-primary bg-primary/[0.06] text-primary',
                   )}
                   onClick={() => {
@@ -565,24 +566,21 @@ const MapPickerPanel = memo(({ form, mapQuery, onMapQueryChange }: MapPickerPane
                     form.setValue('mapId', map.value, { shouldValidate: true });
                   }}
                 >
-                  <span className="block h-16 overflow-hidden bg-secondary">
+                  <span className="relative block min-h-0 flex-1 overflow-hidden bg-secondary">
                     <img
                       alt={map.label}
                       className="h-full w-full object-cover"
                       loading="lazy"
                       src={getMapScreenshotPath(map.value)}
                     />
+                    <MatchModeLabel
+                      className="absolute bottom-1.5 left-1.5 h-4 max-w-[calc(100%-12px)] rounded-sm bg-black/65 px-1.5 text-[10px] font-bold leading-none text-white shadow-sm backdrop-blur-sm"
+                      iconClassName="h-3 w-3 rounded-[2px]"
+                      modeId={map.modeId}
+                    />
                   </span>
-                  <span className="block min-w-0 px-2 py-1.5">
-                    <span className="block truncate text-xs font-bold">{map.label}</span>
-                    <span
-                      className={cn(
-                        'mt-0.5 block truncate text-[11px] font-semibold',
-                        selected ? 'text-primary/70' : 'text-muted-foreground',
-                      )}
-                    >
-                      {getModeLabel(map.modeId)}
-                    </span>
+                  <span className="flex h-7 min-w-0 shrink-0 items-center px-2">
+                    <span className="block truncate text-xs font-bold leading-4">{map.label}</span>
                   </span>
                 </button>
               );
@@ -627,9 +625,7 @@ const ScoreResultPanel = memo(({ form, onAdjustScore, onUpdateScore }: ScoreResu
             {selectedMap ? selectedMap.label : '선택'}
           </p>
           {selectedMap ? (
-            <Badge variant="outline" className="shrink-0 bg-transparent">
-              {getModeLabel(selectedMap.modeId)}
-            </Badge>
+            <MatchModeBadge className="shrink-0 bg-transparent" modeId={selectedMap.modeId} />
           ) : null}
         </div>
       </div>

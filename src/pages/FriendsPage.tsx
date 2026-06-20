@@ -14,12 +14,13 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { NavLink, useNavigate, useParams } from 'react-router-dom';
 
 import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageHeader } from '@/components/common/PageHeader';
+import { MatchModeLabel } from '@/components/match/MatchModeBadge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1350,7 +1351,7 @@ const ModePerformancePanel = ({ modes }: { modes: FriendStatsMode[] }) => {
             <PerformanceRow
               index={index}
               key={mode.modeId}
-              name={getModeLabel(mode.modeId)}
+              name={<MatchModeLabel modeId={mode.modeId} />}
               record={getRecordSummary(mode.wins, mode.losses, mode.draws)}
               totalMatches={mode.totalMatches}
               winRate={mode.winRate}
@@ -1370,9 +1371,7 @@ const ModeSpotlight = ({ mode }: { mode: FriendStatsMode }) => (
   <div className="grid min-h-[156px] gap-4 rounded-lg border border-border/70 bg-card p-4 sm:grid-cols-[minmax(0,1fr)_180px]">
     <div className="min-w-0">
       <p className="metric-label">최고 승률 모드</p>
-      <h3 className="mt-2 truncate text-3xl font-black tracking-normal">
-        {getModeLabel(mode.modeId)}
-      </h3>
+      <MatchModeLabel className="mt-2 text-3xl font-black tracking-normal" modeId={mode.modeId} />
       <p className="mt-2 truncate text-sm font-semibold text-muted-foreground">
         {formatCount(mode.totalMatches)}전 · {getRecordSummary(mode.wins, mode.losses, mode.draws)}
       </p>
@@ -1386,8 +1385,8 @@ const ModeSpotlight = ({ mode }: { mode: FriendStatsMode }) => (
 
 interface PerformanceRowProps {
   index: number;
-  name: string;
-  record: string;
+  name: ReactNode;
+  record: ReactNode;
   totalMatches: number;
   winRate: number;
 }
@@ -1398,7 +1397,7 @@ const PerformanceRow = ({ index, name, record, totalMatches, winRate }: Performa
       {index + 1}
     </span>
     <div className="min-w-0">
-      <p className="truncate text-sm font-black">{name}</p>
+      <div className="truncate text-sm font-black">{name}</div>
       <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
         {formatCount(totalMatches)}전 · {record}
       </p>
@@ -1450,7 +1449,12 @@ const MapStrengthList = ({ maps }: { maps: FriendStatsMap[] }) => {
               index={index}
               key={map.mapId}
               name={getMapLabel(map.mapId)}
-              record={`${getModeLabel(map.modeId)} · ${getRecordSummary(map.wins, map.losses, map.draws)}`}
+              record={
+                <>
+                  <MatchModeLabel className="inline-flex" modeId={map.modeId} /> ·{' '}
+                  {getRecordSummary(map.wins, map.losses, map.draws)}
+                </>
+              }
               totalMatches={map.totalMatches}
               winRate={map.winRate}
             />
@@ -1473,7 +1477,8 @@ const MapSpotlight = ({ map }: { map: FriendStatsMap }) => (
         {getMapLabel(map.mapId)}
       </h3>
       <p className="mt-2 truncate text-sm font-semibold text-muted-foreground">
-        {getModeLabel(map.modeId)} · {getRecordSummary(map.wins, map.losses, map.draws)}
+        <MatchModeLabel className="inline-flex" modeId={map.modeId} /> ·{' '}
+        {getRecordSummary(map.wins, map.losses, map.draws)}
       </p>
     </div>
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-1">

@@ -28,6 +28,7 @@ import { StickyNotesDock } from '@/components/home/StickyNotesDock';
 import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
 import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
 import { QuickMatchEntry } from '@/components/input/QuickMatchEntry';
+import { MatchModeLabel } from '@/components/match/MatchModeBadge';
 import { MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -44,7 +45,7 @@ import { useExternalDataOverview } from '@/hooks/useExternalData';
 import { useCreateMatch, useDeleteMatch, useMatches, useUpdateMatch } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useUserSettings } from '@/hooks/useUserSettings';
-import { getMapLabel, getModeLabel, getResultLabel } from '@/data/matchOptions';
+import { getMapLabel, getResultLabel } from '@/data/matchOptions';
 import { getMapScreenshotPath } from '@/data/masterAssets';
 import { activeSessionStorageKey } from '@/lib/clientSessionState';
 import {
@@ -1070,8 +1071,10 @@ const RecentMatchRow = ({ accountLabel, match, onDelete, onEdit }: RecentMatchRo
       {formatTime(match.playedAt)}
     </div>
     <div className="min-w-0">
-      <p className="truncate text-sm font-semibold">
-        {getMapLabel(match.mapId)} · {getModeLabel(match.modeId)}
+      <p className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
+        <span className="truncate">{getMapLabel(match.mapId)}</span>
+        <span className="shrink-0 text-muted-foreground">·</span>
+        <MatchModeLabel className="shrink-0 text-xs text-muted-foreground" modeId={match.modeId} />
       </p>
       <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
         <span className="sm:hidden">
@@ -1137,6 +1140,8 @@ const SessionTimelineItem = ({ index, match }: { index: number; match: Match }) 
         <span className="truncate">
           {match.teamScore}:{match.enemyScore} · {getResultLabel(match.result)}
         </span>
+        <span className="shrink-0">·</span>
+        <MatchModeLabel className="shrink-0 gap-1" modeId={match.modeId} />
         <span className="shrink-0">·</span>
         <MatchRoleLabel className="shrink-0 gap-1" role={match.matchRole} />
       </p>
