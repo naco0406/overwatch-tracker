@@ -1,6 +1,7 @@
 import {
   CalendarCheck2,
   Clipboard,
+  ArrowRight,
   ImagePlus,
   Loader2,
   Pencil,
@@ -53,7 +54,12 @@ import {
   getFavoriteEsportsTeamSide,
   getNextFavoriteEsportsTeamEvent,
 } from '@/lib/externalEsports';
-import { calculateWinRate, compareMatchesByTimelineDesc, getCurrentStreak } from '@/lib/matchStats';
+import {
+  calculateWinRate,
+  compareMatchesByTimelineAsc,
+  compareMatchesByTimelineDesc,
+  getCurrentStreak,
+} from '@/lib/matchStats';
 import { createSessionId, groupMatchesBySession, shouldReuseSession } from '@/lib/session';
 import { cn } from '@/lib/utils';
 import {
@@ -67,9 +73,9 @@ import type { ExternalEsportsEvent } from '@/types/externalData';
 import type { FavoriteEsportsTeam } from '@/types/userSettings';
 
 const recentPreviewCount = 4;
-const sessionTimelineCount = 8;
+const sessionTimelineSkeletonCount = 8;
 const recentPreviewRows = Array.from({ length: recentPreviewCount });
-const sessionTimelineSkeletonItems = Array.from({ length: sessionTimelineCount });
+const sessionTimelineSkeletonItems = Array.from({ length: sessionTimelineSkeletonCount });
 const sessionIdStartedAtPattern = /^session_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})_/;
 
 interface ScreenshotPreview {
@@ -77,6 +83,12 @@ interface ScreenshotPreview {
   imageUrl: string;
   name: string;
   size: number;
+}
+
+interface SessionTimelineEntry {
+  isLatest: boolean;
+  match: Match;
+  number: number;
 }
 
 const formatTime = (value?: string) => {
@@ -319,9 +331,18 @@ const HomePage = () => {
     () => [...sessionMatches].sort(compareMatchesByTimelineDesc),
     [sessionMatches],
   );
-  const sessionFlowMatches = useMemo(
-    () => sortedSessionMatches.slice(0, sessionTimelineCount).reverse(),
-    [sortedSessionMatches],
+  const sessionFlowItems = useMemo(
+    () =>
+      [...sessionMatches].sort(compareMatchesByTimelineAsc).map((match, index, array) => ({
+        isLatest: index === array.length - 1,
+        match,
+        number: index + 1,
+      })),
+    [sessionMatches],
+  );
+  const sessionNumberByMatchId = useMemo(
+    () => new Map(sessionFlowItems.map((item) => [item.match.id, item.number] as const)),
+    [sessionFlowItems],
   );
   const summaryMetrics = useMemo(
     () => getSummaryMetrics(sessionMatches, Boolean(manualSessionId)),
@@ -784,7 +805,7 @@ const HomePage = () => {
             <div>
               <div className="border-b border-border/70 px-3.5 py-3 sm:px-5">
                 {sessionMatches.length > 0 ? (
-                  <SessionTimeline matches={sessionFlowMatches} />
+                  <SessionTimeline items={sessionFlowItems} />
                 ) : (
                   <div className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-dashed border-border/80 bg-[hsl(var(--surface-2))] px-3">
                     <div className="min-w-0">
@@ -798,16 +819,35 @@ const HomePage = () => {
               </div>
 
               {sessionMatches.length > 0 ? (
-                <div className="divide-y divide-border/70">
-                  {sortedSessionMatches.slice(0, recentPreviewCount).map((match) => (
-                    <RecentMatchRow
-                      key={match.id}
-                      accountLabel={getPlayerAccountLabel(accountById.get(match.accountId ?? ''))}
-                      match={match}
-                      onDelete={() => setDeleteTarget(match)}
-                      onEdit={() => openEditEntry(match)}
-                    />
-                  ))}
+                <div>
+                  <div className="flex items-center justify-between gap-3 border-b border-border/70 bg-[hsl(var(--surface-2))] px-3.5 py-2.5 sm:px-5">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-black uppercase text-muted-foreground">
+                        최근 경기
+                      </p>
+                      <p className="mt-0.5 truncate text-xs font-semibold text-muted-foreground">
+                        최근 {Math.min(recentPreviewCount, sortedSessionMatches.length)}개 표시
+                      </p>
+                    </div>
+                    <Button asChild size="sm" variant="outline" className="h-8 bg-transparent">
+                      <Link to="/sessions">
+                        전체 보기
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    </Button>
+                  </div>
+                  <div className="divide-y divide-border/70">
+                    {sortedSessionMatches.slice(0, recentPreviewCount).map((match) => (
+                      <RecentMatchRow
+                        key={match.id}
+                        accountLabel={getPlayerAccountLabel(accountById.get(match.accountId ?? ''))}
+                        match={match}
+                        sessionNumber={sessionNumberByMatchId.get(match.id) ?? null}
+                        onDelete={() => setDeleteTarget(match)}
+                        onEdit={() => openEditEntry(match)}
+                      />
+                    ))}
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -1052,20 +1092,32 @@ interface RecentMatchRowProps {
   match: Match;
   onDelete: () => void;
   onEdit: () => void;
+  sessionNumber: number | null;
 }
 
 const recentMatchRowClassName =
   'grid min-h-[68px] grid-cols-[56px_minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 sm:grid-cols-[56px_72px_minmax(0,1fr)_88px_80px] sm:px-5';
 
-const RecentMatchRow = ({ accountLabel, match, onDelete, onEdit }: RecentMatchRowProps) => (
+const RecentMatchRow = ({
+  accountLabel,
+  match,
+  onDelete,
+  onEdit,
+  sessionNumber,
+}: RecentMatchRowProps) => (
   <div className={recentMatchRowClassName}>
-    <div className="h-10 w-14 overflow-hidden rounded-md bg-secondary">
+    <div className="relative h-10 w-14 overflow-hidden rounded-md bg-secondary">
       <img
         alt=""
         className="h-full w-full object-cover"
         loading="lazy"
         src={getMapScreenshotPath(match.mapId)}
       />
+      {sessionNumber ? (
+        <span className="absolute left-1 top-1 rounded bg-black/65 px-1 text-[10px] font-black text-white shadow-sm">
+          #{sessionNumber}
+        </span>
+      ) : null}
     </div>
     <div className="hidden text-sm font-bold tabular-nums sm:block">
       {formatTime(match.playedAt)}
@@ -1117,33 +1169,74 @@ const RecentMatchRow = ({ accountLabel, match, onDelete, onEdit }: RecentMatchRo
   </div>
 );
 
-const SessionTimeline = ({ matches }: { matches: Match[] }) => (
-  <div className="mobile-scroll flex gap-2 overflow-x-auto pb-1">
-    {matches.map((match, index) => (
-      <SessionTimelineItem key={match.id} index={index + 1} match={match} />
-    ))}
-  </div>
-);
+const SessionTimeline = ({ items }: { items: SessionTimelineEntry[] }) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-const SessionTimelineItem = ({ index, match }: { index: number; match: Match }) => (
+  useEffect(() => {
+    const scrollElement = scrollRef.current;
+
+    if (!scrollElement) {
+      return;
+    }
+
+    scrollElement.scrollLeft = scrollElement.scrollWidth;
+  }, [items.length]);
+
+  return (
+    <div className="min-w-0">
+      <div className="mb-2 flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <p className="metric-label">세션 흐름</p>
+          <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+            {items.length.toLocaleString('ko-KR')}경기 전체 · 좌우로 이동
+          </p>
+        </div>
+        <Badge variant="outline" className="shrink-0 bg-transparent">
+          #{items.at(-1)?.number ?? 0}까지
+        </Badge>
+      </div>
+      <div
+        ref={scrollRef}
+        aria-label="이번 세션 전체 경기 흐름"
+        className="session-scroll -mx-3.5 flex snap-x gap-2 overflow-x-auto px-3.5 pb-2 sm:-mx-5 sm:px-5"
+        tabIndex={0}
+      >
+        {items.map((item) => (
+          <SessionTimelineItem key={item.match.id} item={item} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const SessionTimelineItem = ({ item }: { item: SessionTimelineEntry }) => (
   <div
-    className={`grid h-12 min-w-[128px] shrink-0 grid-cols-[24px_minmax(0,1fr)] items-center gap-2 rounded-md border px-2.5 ${getResultTone(
-      match.result,
-    )}`}
+    className={cn(
+      'grid h-[58px] min-w-[156px] snap-start grid-cols-[30px_minmax(0,1fr)] items-center gap-2 rounded-md border px-2.5 transition-colors',
+      getResultTone(item.match.result),
+      item.isLatest && 'ring-2 ring-primary/20',
+    )}
   >
-    <span className="flex h-6 w-6 items-center justify-center rounded bg-background/70 text-[11px] font-black tabular-nums">
-      {index}
+    <span className="flex h-7 w-7 items-center justify-center rounded bg-background/75 text-[11px] font-black tabular-nums">
+      {item.number}
     </span>
     <div className="min-w-0">
-      <p className="truncate text-xs font-bold">{getMapLabel(match.mapId)}</p>
-      <p className="mt-0.5 flex min-w-0 items-center gap-1 text-[10px] font-semibold opacity-75">
+      <div className="flex min-w-0 items-center gap-1.5">
+        <p className="truncate text-xs font-bold">{getMapLabel(item.match.mapId)}</p>
+        {item.isLatest ? (
+          <span className="shrink-0 rounded bg-primary/10 px-1 text-[9px] font-black text-primary">
+            최신
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-1 flex min-w-0 items-center gap-1 text-[10px] font-semibold opacity-75">
         <span className="truncate">
-          {match.teamScore}:{match.enemyScore} · {getResultLabel(match.result)}
+          {item.match.teamScore}:{item.match.enemyScore} · {getResultLabel(item.match.result)}
         </span>
         <span className="shrink-0">·</span>
-        <MatchModeLabel className="shrink-0 gap-1" modeId={match.modeId} />
+        <MatchModeLabel className="shrink-0 gap-1" modeId={item.match.modeId} />
         <span className="shrink-0">·</span>
-        <MatchRoleLabel className="shrink-0 gap-1" role={match.matchRole} />
+        <MatchRoleLabel className="shrink-0 gap-1" role={item.match.matchRole} />
       </p>
     </div>
   </div>

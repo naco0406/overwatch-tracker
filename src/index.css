@@ -308,6 +308,28 @@
     display: none;
   }
 
+  .session-scroll {
+    scrollbar-color: hsl(var(--muted-foreground) / 0.32) transparent;
+    scrollbar-width: thin;
+  }
+
+  .session-scroll::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  .session-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .session-scroll::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: hsl(var(--muted-foreground) / 0.28);
+  }
+
+  .session-scroll:hover::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.46);
+  }
+
   .ai-insight-shell {
     position: relative;
     color: rgb(248 250 252);
