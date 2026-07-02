@@ -26,11 +26,12 @@ import {
   Trophy,
   TriangleAlert,
   UsersRound,
+  WandSparkles,
   X,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import {
   Bar,
@@ -76,9 +77,9 @@ import {
 } from '@/data/matchOptions';
 import { getHeroPortraitPath, getMapScreenshotPath } from '@/data/masterAssets';
 import { useCompetitiveSeasons } from '@/hooks/useCompetitiveSeasons';
+import { useGeminiStatsInsight } from '@/hooks/useGeminiStatsInsight';
 import { useMatches } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
-import { useQwenInsightNarrator } from '@/hooks/useQwenInsightNarrator';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import {
   getFavoriteEsportsTeamEvents,
@@ -6445,10 +6446,9 @@ const insightToneIconClassNames = {
 } satisfies Record<StatsInsightTone, string>;
 
 const StatsInsightSummaryPanel = ({ insightPack }: { insightPack: StatsInsightPack }) => {
-  const { generate, isSupported, state } = useQwenInsightNarrator(insightPack.signature);
-  const shouldAutoGenerate =
-    isSupported && insightPack.summary.total > 0 && state.status === 'idle';
-  const isBusy = state.status === 'loading' || state.status === 'generating' || shouldAutoGenerate;
+  const { generate, state } = useGeminiStatsInsight(insightPack.signature);
+  const isBusy = state.status === 'loading';
+  const canGenerate = insightPack.summary.total > 0 && !isBusy;
   const generatedText = state.text.trim();
   const displayText = generatedText || insightPack.fallbackText;
   const topCandidate = insightPack.candidates[0] ?? null;
@@ -6462,35 +6462,41 @@ const StatsInsightSummaryPanel = ({ insightPack }: { insightPack: StatsInsightPa
     (candidate) => candidate.tone === 'neutral',
   ).length;
 
-  useEffect(() => {
-    if (!shouldAutoGenerate) {
-      return;
-    }
-
-    generate(insightPack.prompt);
-  }, [generate, insightPack.prompt, shouldAutoGenerate]);
+  const handleGenerate = () => {
+    void generate(insightPack.prompt);
+  };
 
   return (
     <section className="ai-insight-shell overflow-hidden rounded-lg border border-sky-300/20 shadow-[0_34px_120px_-76px_rgb(2_6_23/0.9)]">
       <div className="ai-scanline" />
       <div className="relative z-10 overflow-hidden border-b border-white/10">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-sky-400/25 via-emerald-300/55 to-amber-300/45" />
-        <div className="px-4 py-6 sm:px-5">
+        <div className="flex flex-col gap-4 px-4 py-6 sm:px-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
             <Badge
               variant="outline"
               className="mb-3 w-fit gap-1.5 border-sky-300/25 bg-sky-300/10 text-sky-100 shadow-[0_0_30px_rgb(56_189_248/0.15)]"
             >
               <Sparkles className="h-3.5 w-3.5" />
-              AI 분석
+              통계 요약
             </Badge>
             <h2 className="ai-gradient-text text-2xl font-black tracking-normal sm:text-3xl">
               경기 흐름 요약
             </h2>
             <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-slate-300/85">
-              눈에 띄는 강점과 점검 포인트를 간결하게 정리합니다.
+              기본 요약을 먼저 보여주고, 필요할 때만 Gemini API로 AI 분석을 생성합니다.
             </p>
           </div>
+          <Button
+            className="w-full shrink-0 border-sky-300/25 bg-sky-300/15 text-sky-50 hover:bg-sky-300/22 sm:w-auto"
+            disabled={!canGenerate}
+            type="button"
+            variant="outline"
+            onClick={handleGenerate}
+          >
+            <WandSparkles className={cn('h-4 w-4', isBusy && 'animate-spin')} />
+            {isBusy ? 'AI 분석 생성 중' : generatedText ? 'AI 분석 다시 생성' : 'AI 분석 생성'}
+          </Button>
         </div>
       </div>
 
@@ -6571,29 +6577,27 @@ const StatsInsightNarrativePanel = ({
   generatedText: string;
   insightPack: StatsInsightPack;
   isBusy: boolean;
-  state: ReturnType<typeof useQwenInsightNarrator>['state'];
+  state: ReturnType<typeof useGeminiStatsInsight>['state'];
 }) => {
   const shouldShowSkeleton = isBusy;
-  const title = isBusy ? '요약을 준비하는 중' : generatedText ? 'AI 요약' : '기본 요약';
+  const title = isBusy ? 'AI 분석을 요청하는 중' : generatedText ? 'AI 요약' : '기본 요약';
   const meta =
     insightPack.summary.total === 0
       ? '기록 없음'
-      : state.status === 'unsupported'
-        ? 'PC에서 사용 가능'
-        : state.status === 'error'
-          ? '기본 요약'
-          : generatedText
-            ? '요약 완료'
-            : isBusy
-              ? getStatsInsightLoadingLabel(state)
-              : '기본 요약';
+      : state.status === 'error'
+        ? '기본 요약'
+        : generatedText
+          ? '요약 완료'
+          : isBusy
+            ? getStatsInsightLoadingLabel(state)
+            : '버튼 실행';
 
   return (
     <div className="ai-glow-border rounded-lg">
       <div className="ai-glass overflow-hidden rounded-lg">
         <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/[0.03] px-4 py-3">
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold text-slate-400">AI 요약</p>
+            <p className="text-[11px] font-semibold text-slate-400">요약</p>
             <p className="mt-1 truncate text-sm font-bold text-white">{title}</p>
           </div>
           <div className="flex items-center gap-2">
@@ -6618,6 +6622,11 @@ const StatsInsightNarrativePanel = ({
         {shouldShowSkeleton ? <StatsInsightProgress state={state} /> : null}
 
         <div className="min-h-[300px] px-4 py-5 sm:px-5" aria-live="polite">
+          {state.status === 'error' ? (
+            <div className="mb-4 rounded-md border border-amber-300/25 bg-amber-300/10 px-3 py-2 text-xs font-semibold leading-5 text-amber-100">
+              Gemini API 요청에 실패해 기본 요약을 표시합니다.
+            </div>
+          ) : null}
           {shouldShowSkeleton ? (
             <StatsInsightGeneratingState />
           ) : (
@@ -6633,39 +6642,22 @@ const StatsInsightNarrativePanel = ({
   );
 };
 
-const getStatsInsightLoadingLabel = (state: ReturnType<typeof useQwenInsightNarrator>['state']) =>
-  state.status === 'generating' ? '요약을 정리하고 있습니다.' : '분석을 준비하고 있습니다.';
-
-const getStatsInsightProgress = (state: ReturnType<typeof useQwenInsightNarrator>['state']) => {
-  if (state.status === 'generating') {
-    return Math.max(90, state.progress ?? 90);
-  }
-
-  if (state.status === 'loading') {
-    return state.progress ?? 8;
-  }
-
-  return 6;
-};
+const getStatsInsightLoadingLabel = (state: ReturnType<typeof useGeminiStatsInsight>['state']) =>
+  state.message || 'Gemini API로 요약을 생성하고 있습니다.';
 
 const StatsInsightProgress = ({
   state,
 }: {
-  state: ReturnType<typeof useQwenInsightNarrator>['state'];
+  state: ReturnType<typeof useGeminiStatsInsight>['state'];
 }) => {
-  const progress = Math.round(Math.min(96, Math.max(6, getStatsInsightProgress(state))));
-
   return (
     <div className="border-b border-white/10 bg-black/10 px-4 py-3 sm:px-5">
       <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-300/85">
         <span className="truncate">{getStatsInsightLoadingLabel(state)}</span>
-        <span className="shrink-0 tabular-nums">{progress}%</span>
+        <span className="shrink-0">Gemini</span>
       </div>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
-        <div
-          className="h-full rounded-full bg-gradient-to-r from-sky-400 via-emerald-300 to-amber-300 shadow-[0_0_22px_rgb(56_189_248/0.35)] transition-[width] duration-300"
-          style={{ width: `${progress}%` }}
-        />
+        <div className="h-full w-2/3 animate-pulse rounded-full bg-gradient-to-r from-sky-400 via-emerald-300 to-amber-300 shadow-[0_0_22px_rgb(56_189_248/0.35)]" />
       </div>
     </div>
   );

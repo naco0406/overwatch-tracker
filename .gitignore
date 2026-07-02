@@ -15,6 +15,8 @@ samples/vision/*
 .env
 .env.*
 !.env.example
+.dev.vars*
+.wrangler/
 *.local
 
 # Editor directories and files

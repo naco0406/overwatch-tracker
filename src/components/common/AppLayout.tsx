@@ -21,6 +21,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { TemporaryTokyoTravelBanner } from '@/components/common/TemporaryTokyoTravelBanner';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useOwnProfile } from '@/hooks/useCommunity';
@@ -349,6 +350,7 @@ const AppLayout = () => {
             </div>
           </nav>
         ) : null}
+        <TemporaryTokyoTravelBanner />
         <main className="safe-page-bottom mx-auto flex min-h-screen w-full max-w-none flex-col px-3.5 pt-4 sm:px-6 sm:pt-5 xl:px-8 xl:py-8">
           <Outlet />
         </main>

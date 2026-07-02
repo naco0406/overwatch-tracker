@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 
 import { AppLayout } from '@/components/common/AppLayout';
 import { RequireAuth } from '@/components/common/RequireAuth';
+import { TOKYO_TRAVEL_ROUTE, temporaryFeatureFlags } from '@/features/temporaryFeatures';
 import { HomePage } from '@/pages/HomePage';
 import { LoginPage } from '@/pages/LoginPage';
 import { LivePage } from '@/pages/LivePage';
@@ -36,6 +37,10 @@ const ExternalEsportsMatchPage = lazy(() =>
   })),
 );
 
+const TokyoTravelPage = lazy(() =>
+  import('@/pages/TokyoTravelPage').then((module) => ({ default: module.TokyoTravelPage })),
+);
+
 const LazyPage = ({ children }: { children: ReactNode }) => (
   <Suspense
     fallback={<div className="text-sm font-semibold text-muted-foreground">불러오는 중</div>}
@@ -52,6 +57,16 @@ const LegacyCommunityFriendRedirect = () => {
 
 const AppRoutes = () => (
   <Routes>
+    {temporaryFeatureFlags.tokyoTravelRoute ? (
+      <Route
+        path={TOKYO_TRAVEL_ROUTE}
+        element={
+          <LazyPage>
+            <TokyoTravelPage />
+          </LazyPage>
+        }
+      />
+    ) : null}
     <Route path="/login" element={<LoginPage />} />
     <Route element={<RequireAuth />}>
       <Route element={<AppLayout />}>

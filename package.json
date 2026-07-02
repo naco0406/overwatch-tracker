@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:pages": "npm run build && npx wrangler pages dev dist",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "vision:sample": "node scripts/vision-sample-pipeline.mjs",
