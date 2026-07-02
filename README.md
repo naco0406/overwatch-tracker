@@ -87,7 +87,7 @@ NODE_VERSION=22.16.0
 
 - 현재 구현: 홈 대시보드, 현위치 주소/정확도 표시, Google Weather 기반 날씨/준비물 판단, 일정 탭, 식사/추천 UI, Places API 주변 검색, 지도 링크, 장소, 숙소/공항 정보, 번역/이미지 해석 UI
 - 실제 API 연결: `/api/gemini/*` Cloudflare Pages Functions에서 `GEMINI_API_KEY`로 처리
-- Google Maps: `/api/maps/nearby-search`는 `GOOGLE_MAPS_SERVER_KEY`로 Places API Nearby Search를 호출하고, `/api/maps/reverse-geocode`는 같은 서버 키로 현재 좌표를 주소로 변환합니다. `/api/maps/weather`는 Google Weather API를 먼저 호출하고, Google Weather가 해당 지역을 지원하지 않으면 Open-Meteo 예보로 자동 전환합니다. 길찾기/상세 이동은 Google Maps URL로 연결합니다.
+- Google Maps: `/api/maps/nearby-search`는 `GOOGLE_MAPS_SERVER_KEY`로 Places API Nearby Search를 호출하고, `/api/maps/reverse-geocode`는 같은 서버 키로 현재 좌표를 주소로 변환합니다. Geocoding API가 실패하면 Places API 근처 장소명으로 보완하고, 그래도 실패하면 좌표 기준 위치로 정상 응답합니다. `/api/maps/weather`는 Google Weather API를 먼저 호출하고, Google Weather가 해당 지역을 지원하지 않으면 Open-Meteo 예보로 자동 전환합니다. 길찾기/상세 이동은 Google Maps URL로 연결합니다.
 
 ### API 키 설정
 
@@ -102,9 +102,9 @@ Google Maps는 브라우저용 키와 서버용 키를 분리합니다.
   등록합니다.
 - `GOOGLE_MAPS_SERVER_KEY`: Places API, Routes API처럼 서버에서 대리 호출할 기능용입니다.
   브라우저 번들에 포함하지 말고 Cloudflare Pages Functions 환경 변수로만 등록합니다.
-  현재 `/api/maps/nearby-search`에서 Places API Nearby Search, `/api/maps/reverse-geocode`에서 Geocoding API,
+  현재 `/api/maps/nearby-search`에서 Places API Nearby Search, `/api/maps/reverse-geocode`에서 Geocoding API와 Places API fallback,
   `/api/maps/weather`에서 Google Weather API를 사용하므로 Google Cloud Console에서 `Places API (New)`,
-  `Geocoding API`, `Weather API`를 활성화하고 이 서버 키의 API 제한에도 세 API를 모두 포함합니다. 단, Google Weather API는 일본의 현재/일별 예보를 지원하지 않으므로
+  `Geocoding API`, `Weather API`를 활성화하고 이 서버 키의 API 제한에도 세 API를 모두 포함합니다. `Geocoding API`가 빠져도 좌표/근처 장소 fallback은 동작하지만 정확한 주소 표시는 제한됩니다. 단, Google Weather API는 일본의 현재/일별 예보를 지원하지 않으므로
   도쿄 날씨는 서버 함수에서 Open-Meteo로 자동 보완합니다.
 
 로컬 Functions 개발 시에는 Cloudflare Pages Functions 런타임으로 실행해야 `functions/api/*`와

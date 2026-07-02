@@ -161,7 +161,7 @@ interface ReverseGeocodeResponse {
   googleMapsUrl: string;
   placeId: string | null;
   shortLabel: string;
-  source: 'google_geocoding';
+  source: 'coordinates' | 'google_geocoding' | 'google_places';
 }
 
 const sectionItems: Array<{
@@ -336,7 +336,7 @@ const TokyoTravelPage = () => {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f8fafc_0%,#eef6f9_46%,#f8fafc_100%)] px-3.5 py-3 text-slate-950 sm:px-6 sm:py-6">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 pb-24 sm:gap-5 xl:pb-0">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 pb-24 sm:gap-4 xl:pb-0">
         <HeroSection
           daysUntilTrip={daysUntilTrip}
           location={location}
@@ -392,7 +392,7 @@ const HeroSection = ({
   const nextPlaceUrl = getEventPlaceUrl(tripContext.nextEvent);
 
   return (
-    <section className="relative overflow-hidden rounded-lg bg-slate-950 text-white shadow-[0_24px_90px_-60px_rgb(15_23_42/0.95)]">
+    <section className="relative -mx-3.5 overflow-hidden bg-slate-950 text-white shadow-[0_24px_90px_-60px_rgb(15_23_42/0.95)] sm:mx-0 sm:rounded-lg">
       <img
         alt="도쿄 여행 도시 풍경"
         className="absolute inset-0 h-full w-full object-cover"
@@ -400,7 +400,7 @@ const HeroSection = ({
       />
       <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-slate-950/52 to-slate-950/86 sm:bg-gradient-to-r sm:from-slate-950/92 sm:via-slate-950/62 sm:to-slate-950/16" />
       <div className="relative z-10 grid gap-3 p-4 sm:gap-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_420px] lg:p-7">
-        <div className="flex min-w-0 flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-3 sm:gap-4">
           <div className="min-w-0 space-y-3">
             <div className="flex min-w-0 items-start justify-between gap-3">
               <div className="min-w-0">
@@ -434,7 +434,7 @@ const HeroSection = ({
           </div>
         </div>
 
-        <div className="grid gap-3">
+        <div className="hidden gap-3 sm:grid">
           <div className="rounded-lg border border-white/15 bg-white/13 p-4 backdrop-blur-xl">
             <div className="flex items-center justify-between gap-2">
               <p className="text-[11px] font-bold text-white/62">다음 행동</p>
@@ -481,7 +481,7 @@ const HeroSection = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="hidden grid-cols-3 gap-2 sm:grid">
             <HeroShortcut
               href={createGoogleMapsSearchUrl('Akasaka Residence Tokyo 4-7-1 Akasaka Minato Tokyo')}
               icon={Hotel}
@@ -689,15 +689,13 @@ const HomeSection = ({
   }, [selectedNearbyCategory]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4">
       <TodayCommandPanel
         location={location}
         tripContext={tripContext}
         onNearbySearchRequest={onSelectedNearbyCategoryChange}
         onSelect={onSelect}
       />
-
-      <WeatherPanel location={location} />
 
       <LocationInsightPanel
         location={location}
@@ -711,6 +709,8 @@ const HomeSection = ({
           onSelectedCategoryChange={onSelectedNearbyCategoryChange}
         />
       </div>
+
+      <WeatherPanel location={location} />
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)] lg:gap-4">
         <div className="space-y-4">
@@ -761,10 +761,10 @@ const HomeSection = ({
           </div>
 
           <Card>
-            <CardHeader>
+            <CardHeader className="p-4 sm:p-6">
               <CardTitle className="text-lg tracking-normal">여행 도구</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-2">
+            <CardContent className="grid grid-cols-3 gap-2 p-4 pt-0 sm:grid-cols-2 sm:p-6 sm:pt-0">
               <QuickActionButton
                 icon={CalendarDays}
                 label="일정"
@@ -829,11 +829,11 @@ const TodayCommandPanel = ({
   return (
     <Card className="overflow-hidden border-sky-200 shadow-sm">
       <CardContent className="p-0">
-        <div className="bg-white p-4 sm:p-5">
+        <div className="bg-white p-3.5 sm:p-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="metric-label">오늘 바로 할 일</p>
-              <h2 className="mt-1 break-words text-2xl font-black tracking-normal">
+              <h2 className="mt-1 break-words text-xl font-black tracking-normal sm:text-2xl">
                 {nextEvent ? nextEvent.title : '오늘 일정 정리 완료'}
               </h2>
               <p className="mt-2 text-sm font-semibold leading-6 text-muted-foreground">
@@ -847,7 +847,7 @@ const TodayCommandPanel = ({
             </Badge>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-2">
+          <div className="mt-4 grid gap-2 min-[380px]:grid-cols-2">
             {nextRouteUrl ? (
               <Button asChild className="h-11 justify-between">
                 <a href={nextRouteUrl} rel="noreferrer" target="_blank">
@@ -904,7 +904,7 @@ const TodayCommandPanel = ({
           <TodayMetric label="미정" value={`${undecidedMealCount}`} />
         </div>
 
-        <div className="grid grid-cols-3 gap-2 border-t border-border/70 bg-[hsl(var(--surface-2))] p-3">
+        <div className="hidden grid-cols-3 gap-2 border-t border-border/70 bg-[hsl(var(--surface-2))] p-3 sm:grid">
           <Button
             className="h-10"
             type="button"
@@ -934,9 +934,9 @@ const TodayCommandPanel = ({
 };
 
 const TodayMetric = ({ label, value }: { label: string; value: string }) => (
-  <div className="min-w-0 px-2 py-3 text-center">
+  <div className="min-w-0 px-1.5 py-2.5 text-center sm:px-2 sm:py-3">
     <p className="text-[11px] font-black text-muted-foreground">{label}</p>
-    <p className="mt-1 text-lg font-black tabular-nums text-slate-950">{value}</p>
+    <p className="mt-1 text-base font-black tabular-nums text-slate-950 sm:text-lg">{value}</p>
   </div>
 );
 
@@ -1014,12 +1014,17 @@ const QuickActionButton = ({
   label: string;
   onClick: () => void;
 }) => (
-  <Button className="h-14 justify-between px-3" type="button" variant="outline" onClick={onClick}>
-    <span className="flex items-center gap-2 font-black">
+  <Button
+    className="h-[70px] min-w-0 flex-col justify-center gap-1.5 px-1.5 text-xs sm:h-14 sm:flex-row sm:justify-between sm:px-3 sm:text-sm"
+    type="button"
+    variant="outline"
+    onClick={onClick}
+  >
+    <span className="flex min-w-0 flex-col items-center gap-1 font-black sm:flex-row sm:gap-2">
       <Icon className="h-4 w-4" />
-      {label}
+      <span className="truncate">{label}</span>
     </span>
-    <ChevronRight className="h-4 w-4" />
+    <ChevronRight className="hidden h-4 w-4 sm:block" />
   </Button>
 );
 
@@ -1219,7 +1224,7 @@ const WeatherPanel = ({ location }: { location: TravelLocationControl }) => {
 
   return (
     <Card className="overflow-hidden border-sky-200">
-      <CardHeader className="border-b border-sky-200 bg-sky-50">
+      <CardHeader className="border-b border-sky-200 bg-sky-50 p-4 sm:p-6">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="metric-label">실시간 여행 판단</p>
@@ -1479,12 +1484,13 @@ const LocationInsightPanel = ({
 
         if (!isCancelled) {
           setLocationInfo(data);
+          setLocationInfoError(null);
         }
-      } catch (error) {
+      } catch {
         if (!isCancelled) {
           setLocationInfo(null);
           setLocationInfoError(
-            error instanceof Error && error.message ? error.message : '주소를 확인하지 못했어요.',
+            '주소명은 잠시 확인하지 못했어요. 좌표 기준 기능은 그대로 사용할 수 있습니다.',
           );
         }
       } finally {
@@ -1504,7 +1510,7 @@ const LocationInsightPanel = ({
   if (!coordinates) {
     return (
       <Card className="overflow-hidden border-violet-200">
-        <CardHeader className="border-b border-violet-200 bg-violet-50">
+        <CardHeader className="border-b border-violet-200 bg-violet-50 p-4 sm:p-6">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="metric-label">현위치 컨텍스트</p>
@@ -1567,7 +1573,7 @@ const LocationInsightPanel = ({
 
   return (
     <Card className="overflow-hidden border-violet-200">
-      <CardHeader className="border-b border-violet-200 bg-violet-50">
+      <CardHeader className="border-b border-violet-200 bg-violet-50 p-4 sm:p-6">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="metric-label">현위치 컨텍스트</p>
@@ -1584,7 +1590,7 @@ const LocationInsightPanel = ({
         </div>
       </CardHeader>
       <CardContent className="space-y-3 p-4">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <LocationMetric
             icon={Crosshair}
             label="정확도"
@@ -1599,12 +1605,13 @@ const LocationInsightPanel = ({
             icon={Compass}
             label="좌표"
             value={formatCoordinatesForDisplay(coordinates)}
+            wide
           />
         </div>
 
         {locationInfoError ? (
           <p className="rounded-md bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-800">
-            주소 변환은 실패했지만 좌표 기준 기능은 사용할 수 있어요. {locationInfoError}
+            {locationInfoError}
           </p>
         ) : null}
 
@@ -1660,12 +1667,19 @@ const LocationMetric = ({
   icon: Icon,
   label,
   value,
+  wide = false,
 }: {
   icon: LucideIcon;
   label: string;
   value: string;
+  wide?: boolean;
 }) => (
-  <div className="min-w-0 rounded-md bg-violet-50 px-2.5 py-2">
+  <div
+    className={cn(
+      'min-w-0 rounded-md bg-violet-50 px-2.5 py-2',
+      wide && 'col-span-2 sm:col-span-1',
+    )}
+  >
     <p className="flex items-center gap-1.5 text-[11px] font-black text-violet-800">
       <Icon className="h-3.5 w-3.5 shrink-0" />
       {label}
@@ -1761,7 +1775,7 @@ const NearbySearchPanel = ({
 
   return (
     <Card className="overflow-hidden border-emerald-200" id="nearby-search">
-      <CardHeader className="border-b border-emerald-200 bg-emerald-50">
+      <CardHeader className="border-b border-emerald-200 bg-emerald-50 p-4 sm:p-6">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="metric-label">현장 검색</p>
@@ -1776,7 +1790,7 @@ const NearbySearchPanel = ({
         </div>
       </CardHeader>
       <CardContent className="space-y-3 p-4">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="mobile-scroll -mx-1 flex gap-2 overflow-x-auto px-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:px-0">
           {nearbySearchItems.map((item) => (
             <NearbySearchButton
               key={item.label}
@@ -1854,7 +1868,7 @@ const NearbySearchButton = ({
   return (
     <button
       className={cn(
-        'group flex min-h-[76px] items-start justify-between gap-3 rounded-lg border p-3 text-left transition-colors',
+        'group flex min-h-[64px] min-w-[132px] items-start justify-between gap-3 rounded-lg border p-3 text-left transition-colors sm:min-h-[76px] sm:min-w-0',
         isActive
           ? 'border-emerald-400 bg-emerald-50'
           : 'border-border/70 bg-white hover:border-emerald-300 hover:bg-emerald-50',
