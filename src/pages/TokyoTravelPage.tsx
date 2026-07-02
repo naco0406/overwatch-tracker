@@ -51,7 +51,6 @@ import {
 } from '@/data/tokyoTravel';
 import {
   getCurrentTripContext,
-  getDaySummary,
   getEventTimeLabel,
   getFixedMealSlots,
   getRouteEvents,
@@ -408,11 +407,11 @@ const HeroSection = ({
                 <Badge className="border-white/20 bg-white/12 text-white hover:bg-white/12">
                   {phaseLabel}
                 </Badge>
-                <h1 className="mt-3 break-words text-3xl font-black leading-tight tracking-normal sm:text-5xl">
+                <h1 className="mt-3 break-words text-2xl font-black leading-tight tracking-normal min-[430px]:text-3xl sm:text-5xl">
                   {tokyoTripMeta.title}
                 </h1>
               </div>
-              <div className="shrink-0 rounded-lg border border-white/15 bg-white/12 px-2.5 py-2 text-right backdrop-blur-md sm:px-3">
+              <div className="shrink-0 rounded-lg border border-white/15 bg-white/12 px-2 py-1.5 text-right backdrop-blur-md sm:px-3 sm:py-2">
                 <p className="text-[11px] font-bold text-white/62">Tokyo</p>
                 <p className="text-base font-black">
                   {daysUntilTrip ? `D-${daysUntilTrip}` : `Day ${tripContext.currentDay.day}`}
@@ -421,7 +420,7 @@ const HeroSection = ({
             </div>
           </div>
 
-          <div className="grid min-w-0 grid-cols-2 gap-2 sm:gap-3">
+          <div className="hidden min-w-0 grid-cols-2 gap-2 sm:grid sm:gap-3">
             <TravelNowCard
               event={tripContext.currentEvent}
               label="지금"
@@ -674,8 +673,30 @@ const HomeSection = ({
   const dayRoutes = getRouteEvents(tripContext.currentDay);
   const upcomingEvents = tripContext.currentDay.events.slice(0, 5);
 
+  useEffect(() => {
+    if (!selectedNearbyCategory) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      document.getElementById('nearby-search')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [selectedNearbyCategory]);
+
   return (
     <div className="space-y-4">
+      <TodayCommandPanel
+        location={location}
+        tripContext={tripContext}
+        onNearbySearchRequest={onSelectedNearbyCategoryChange}
+        onSelect={onSelect}
+      />
+
       <WeatherPanel location={location} />
 
       <LocationInsightPanel
@@ -698,9 +719,10 @@ const HomeSection = ({
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="metric-label">{tripContext.todayDateLabel}</p>
-                  <CardTitle className="mt-1 text-xl tracking-normal">
+                  <CardTitle className="mt-1 text-xl tracking-normal">오늘의 동선</CardTitle>
+                  <p className="mt-2 text-sm font-semibold leading-6 text-muted-foreground">
                     Day {tripContext.currentDay.day} · {tripContext.currentDay.areas.join(' → ')}
-                  </CardTitle>
+                  </p>
                 </div>
                 <Badge variant="outline" className="w-fit">
                   {tripContext.currentDay.label}
@@ -708,9 +730,7 @@ const HomeSection = ({
               </div>
             </CardHeader>
             <CardContent className="space-y-3 p-4 sm:p-5">
-              <p className="text-sm font-semibold leading-6 text-muted-foreground">
-                {getDaySummary(tripContext.currentDay)}
-              </p>
+              <TodayFlowStrip tripContext={tripContext} />
               <div className="grid gap-2">
                 {upcomingEvents.map((event) => (
                   <CompactEventRow key={event.id} event={event} />
@@ -784,6 +804,182 @@ const HomeSection = ({
     </div>
   );
 };
+
+const TodayCommandPanel = ({
+  location,
+  onNearbySearchRequest,
+  onSelect,
+  tripContext,
+}: {
+  location: TravelLocationControl;
+  onNearbySearchRequest: (category: NearbySearchCategory) => void;
+  onSelect: (section: TokyoTravelSection) => void;
+  tripContext: ReturnType<typeof getCurrentTripContext>;
+}) => {
+  const nextEvent = tripContext.nextEvent;
+  const nextRouteUrl = getNextRouteUrl(nextEvent, location);
+  const nextPlaceUrl = getEventPlaceUrl(nextEvent);
+  const routeCount = getRouteEvents(tripContext.currentDay).length;
+  const mealCount = tripContext.currentDay.events.filter((event) => event.meal).length;
+  const undecidedMealCount = tripContext.currentDay.events.filter(
+    (event) => event.meal?.status === 'undecided',
+  ).length;
+  const fixedCount = tripContext.currentDay.events.filter((event) => event.fixed).length;
+
+  return (
+    <Card className="overflow-hidden border-sky-200 shadow-sm">
+      <CardContent className="p-0">
+        <div className="bg-white p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="metric-label">오늘 바로 할 일</p>
+              <h2 className="mt-1 break-words text-2xl font-black tracking-normal">
+                {nextEvent ? nextEvent.title : '오늘 일정 정리 완료'}
+              </h2>
+              <p className="mt-2 text-sm font-semibold leading-6 text-muted-foreground">
+                {nextEvent
+                  ? `${getEventTimeLabel(nextEvent)} · ${nextEvent.area}`
+                  : '숙소 복귀, 체크리스트, 내일 동선을 확인하세요.'}
+              </p>
+            </div>
+            <Badge variant="outline" className="shrink-0 border-sky-200 bg-sky-50 text-sky-800">
+              Day {tripContext.currentDay.day}
+            </Badge>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            {nextRouteUrl ? (
+              <Button asChild className="h-11 justify-between">
+                <a href={nextRouteUrl} rel="noreferrer" target="_blank">
+                  <span className="flex items-center gap-2">
+                    <Navigation className="h-4 w-4" />
+                    다음 경로
+                  </span>
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              </Button>
+            ) : nextPlaceUrl ? (
+              <Button asChild className="h-11 justify-between">
+                <a href={nextPlaceUrl} rel="noreferrer" target="_blank">
+                  <span className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4" />
+                    다음 장소
+                  </span>
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              </Button>
+            ) : (
+              <Button
+                className="h-11 justify-between"
+                type="button"
+                onClick={() => onSelect('itinerary')}
+              >
+                <span className="flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4" />
+                  내일 보기
+                </span>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            )}
+
+            <Button
+              className="h-11 justify-between"
+              type="button"
+              variant="outline"
+              onClick={() => onNearbySearchRequest('convenience_store')}
+            >
+              <span className="flex items-center gap-2">
+                <ShoppingBag className="h-4 w-4" />
+                근처 편의점
+              </span>
+              <Search className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 divide-x divide-border/70 border-t border-border/70 bg-white">
+          <TodayMetric label="확정" value={`${fixedCount}`} />
+          <TodayMetric label="이동" value={`${routeCount}`} />
+          <TodayMetric label="식사" value={`${mealCount}`} />
+          <TodayMetric label="미정" value={`${undecidedMealCount}`} />
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 border-t border-border/70 bg-[hsl(var(--surface-2))] p-3">
+          <Button
+            className="h-10"
+            type="button"
+            variant="outline"
+            onClick={() => onSelect('itinerary')}
+          >
+            <CalendarDays className="h-4 w-4" />
+            일정
+          </Button>
+          <Button
+            className="h-10"
+            type="button"
+            variant="outline"
+            onClick={() => onSelect('meals')}
+          >
+            <Utensils className="h-4 w-4" />
+            식사
+          </Button>
+          <Button className="h-10" type="button" variant="outline" onClick={() => onSelect('map')}>
+            <MapIcon className="h-4 w-4" />
+            지도
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+const TodayMetric = ({ label, value }: { label: string; value: string }) => (
+  <div className="min-w-0 px-2 py-3 text-center">
+    <p className="text-[11px] font-black text-muted-foreground">{label}</p>
+    <p className="mt-1 text-lg font-black tabular-nums text-slate-950">{value}</p>
+  </div>
+);
+
+const TodayFlowStrip = ({
+  tripContext,
+}: {
+  tripContext: ReturnType<typeof getCurrentTripContext>;
+}) => (
+  <div className="mobile-scroll -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+    {tripContext.currentDay.events.map((event) => {
+      const Icon = eventTypeIcons[event.type];
+      const isCurrent = tripContext.currentEvent?.id === event.id;
+      const isNext = tripContext.nextEvent?.id === event.id;
+
+      return (
+        <div
+          key={event.id}
+          className={cn(
+            'flex min-w-[132px] flex-col gap-2 rounded-lg border bg-white p-3',
+            isCurrent && 'border-primary/40 bg-primary/5',
+            isNext && 'border-sky-300 bg-sky-50',
+          )}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span
+              className={cn(
+                'flex h-7 w-7 items-center justify-center rounded-md border',
+                eventTypeBadgeClassNames[event.type],
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />
+            </span>
+            <span className="text-xs font-black tabular-nums text-slate-950">
+              {getEventTimeLabel(event)}
+            </span>
+          </div>
+          <p className="line-clamp-2 text-xs font-black leading-5 text-slate-950">{event.title}</p>
+          <p className="truncate text-[11px] font-semibold text-muted-foreground">{event.area}</p>
+        </div>
+      );
+    })}
+  </div>
+);
 
 const CompactEventRow = ({ event }: { event: TripEvent }) => {
   const Icon = eventTypeIcons[event.type];
