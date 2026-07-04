@@ -19,6 +19,7 @@ interface GeminiGenerateContentResponse {
 }
 
 const defaultGeminiModel = 'gemini-3.1-flash-lite';
+const fallbackGeminiModels = ['gemini-2.5-flash-lite', 'gemini-2.0-flash-lite'];
 
 export const createJsonResponse = (body: unknown, init?: ResponseInit) =>
   new Response(JSON.stringify(body), {
@@ -39,8 +40,42 @@ export const readJsonBody = async <T>(request: Request): Promise<T> => {
 
 export const assertGeminiKey = (env: GeminiEnv) => {
   if (!env.GEMINI_API_KEY) {
-    throw new Response('GEMINI_API_KEY is not configured.', { status: 503 });
+    throw createJsonResponse({ error: 'GEMINI_API_KEY is not configured.' }, { status: 503 });
   }
+};
+
+const readResponseText = async (response: Response) => {
+  try {
+    return await response.text();
+  } catch {
+    return '';
+  }
+};
+
+const extractJsonText = (text: string) => {
+  const trimmed = text.trim();
+  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+
+  if (fencedMatch) {
+    return fencedMatch[1].trim();
+  }
+
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return trimmed.slice(firstBrace, lastBrace + 1);
+  }
+
+  return trimmed;
+};
+
+const getModelCandidates = (env: GeminiEnv) => {
+  const preferredModel = env.GEMINI_MODEL || defaultGeminiModel;
+
+  return [preferredModel, ...fallbackGeminiModels].filter(
+    (model, index, models) => models.indexOf(model) === index,
+  );
 };
 
 export const generateGeminiJson = async <T>(
@@ -49,49 +84,69 @@ export const generateGeminiJson = async <T>(
 ): Promise<GeminiJsonResult<T>> => {
   assertGeminiKey(env);
 
-  const model = env.GEMINI_MODEL || defaultGeminiModel;
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`,
-    {
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: prompt }],
-            role: 'user',
+  let lastErrorMessage = 'Gemini API request failed.';
+
+  for (const model of getModelCandidates(env)) {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`,
+      {
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ text: prompt }],
+              role: 'user',
+            },
+          ],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.2,
           },
-        ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.2,
-        },
-      }),
-      headers: { 'Content-Type': 'application/json' },
-      method: 'POST',
-    },
+        }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      },
+    );
+
+    if (!response.ok) {
+      const responseText = await readResponseText(response);
+      lastErrorMessage = responseText || response.statusText || lastErrorMessage;
+
+      if (response.status === 400 || response.status === 404) {
+        continue;
+      }
+
+      throw createJsonResponse(
+        { error: 'Gemini API request failed.', upstreamMessage: lastErrorMessage },
+        { status: 502 },
+      );
+    }
+
+    const data = (await response.json()) as GeminiGenerateContentResponse;
+    const text = data.candidates?.[0]?.content?.parts
+      ?.map((part) => part.text ?? '')
+      .join('')
+      .trim();
+
+    if (!text) {
+      lastErrorMessage = 'Gemini API returned an empty response.';
+      continue;
+    }
+
+    try {
+      return {
+        model,
+        value: JSON.parse(extractJsonText(text)) as T,
+      };
+    } catch {
+      lastErrorMessage = 'Gemini API returned invalid JSON.';
+      continue;
+    }
+  }
+
+  throw createJsonResponse(
+    { error: 'Gemini API request failed.', upstreamMessage: lastErrorMessage },
+    { status: 502 },
   );
-
-  if (!response.ok) {
-    throw new Response('Gemini API request failed.', { status: 502 });
-  }
-
-  const data = (await response.json()) as GeminiGenerateContentResponse;
-  const text = data.candidates?.[0]?.content?.parts
-    ?.map((part) => part.text ?? '')
-    .join('')
-    .trim();
-
-  if (!text) {
-    throw new Response('Gemini API returned an empty response.', { status: 502 });
-  }
-
-  try {
-    return {
-      model,
-      value: JSON.parse(text) as T,
-    };
-  } catch {
-    throw new Response('Gemini API returned invalid JSON.', { status: 502 });
-  }
 };
 
 export const handleApiError = (error: unknown) => {

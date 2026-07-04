@@ -86,7 +86,7 @@ NODE_VERSION=22.16.0
 진입점만 쉽게 끌 수 있습니다.
 
 - 현재 구현: 홈 대시보드, 현위치 주소/정확도 표시, Google Weather 기반 날씨/준비물 판단, 일정 탭, 식사/추천 UI, Places API 주변 검색, 지도 링크, 장소, 숙소/공항 정보, 번역/이미지 해석 UI
-- 실제 API 연결: `/api/gemini/*` Cloudflare Pages Functions에서 `GEMINI_API_KEY`로 처리
+- 실제 API 연결: `/api/gemini/*` Cloudflare Pages Functions에서 `GEMINI_API_KEY`로 처리. 식사 추천, 짐 동선 판단, 번역을 서버 함수에서 호출합니다.
 - Google Maps: `/api/maps/nearby-search`는 `GOOGLE_MAPS_SERVER_KEY`로 Places API Nearby Search를 호출하고, `/api/maps/reverse-geocode`는 같은 서버 키로 현재 좌표를 주소로 변환합니다. Geocoding API가 실패하면 Places API 근처 장소명으로 보완하고, 그래도 실패하면 좌표 기준 위치로 정상 응답합니다. `/api/maps/weather`는 Google Weather API를 먼저 호출하고, Google Weather가 해당 지역을 지원하지 않으면 Open-Meteo 예보로 자동 전환합니다. 길찾기/상세 이동은 Google Maps URL로 연결합니다.
 
 ### API 키 설정

@@ -97,6 +97,17 @@ interface TranslateResponse {
   translatedText: string;
 }
 
+interface TripDecisionRecommendationResponse {
+  actionPlan: string[];
+  cautions: string[];
+  model?: string;
+  optionId: string;
+  reasons: string[];
+  recommendation: string;
+  source: 'gemini';
+  summary: string;
+}
+
 interface NearbyPlace {
   address: string;
   distanceMeters: number | null;
@@ -392,7 +403,7 @@ const HeroSection = ({
   const nextPlaceUrl = getEventPlaceUrl(tripContext.nextEvent);
 
   return (
-    <section className="relative -mx-3.5 overflow-hidden bg-slate-950 text-white shadow-[0_24px_90px_-60px_rgb(15_23_42/0.95)] sm:mx-0 sm:rounded-lg">
+    <section className="relative overflow-hidden rounded-lg bg-slate-950 text-white shadow-[0_24px_90px_-60px_rgb(15_23_42/0.95)]">
       <img
         alt="도쿄 여행 도시 풍경"
         className="absolute inset-0 h-full w-full object-cover"
@@ -483,7 +494,7 @@ const HeroSection = ({
 
           <div className="hidden grid-cols-3 gap-2 sm:grid">
             <HeroShortcut
-              href={createGoogleMapsSearchUrl('Akasaka Residence Tokyo 4-7-1 Akasaka Minato Tokyo')}
+              href={createGoogleMapsSearchUrl(tokyoTripMeta.hotelMapsQuery)}
               icon={Hotel}
               label="숙소"
             />
@@ -697,6 +708,13 @@ const HomeSection = ({
         onSelect={onSelect}
       />
 
+      <EssentialActionsPanel
+        onNearbySearchRequest={onSelectedNearbyCategoryChange}
+        onSelect={onSelect}
+      />
+
+      <LuggageDecisionPanel />
+
       <LocationInsightPanel
         location={location}
         onNearbySearchRequest={onSelectedNearbyCategoryChange}
@@ -730,7 +748,6 @@ const HomeSection = ({
               </div>
             </CardHeader>
             <CardContent className="space-y-3 p-4 sm:p-5">
-              <TodayFlowStrip tripContext={tripContext} />
               <div className="grid gap-2">
                 {upcomingEvents.map((event) => (
                   <CompactEventRow key={event.id} event={event} />
@@ -760,7 +777,7 @@ const HomeSection = ({
             />
           </div>
 
-          <Card>
+          <Card className="hidden lg:block">
             <CardHeader className="p-4 sm:p-6">
               <CardTitle className="text-lg tracking-normal">여행 도구</CardTitle>
             </CardHeader>
@@ -804,6 +821,251 @@ const HomeSection = ({
     </div>
   );
 };
+
+const EssentialActionsPanel = ({
+  onNearbySearchRequest,
+  onSelect,
+}: {
+  onNearbySearchRequest: (category: NearbySearchCategory) => void;
+  onSelect: (section: TokyoTravelSection) => void;
+}) => (
+  <Card className="overflow-hidden border-border/70">
+    <CardHeader className="p-3.5 pb-0 sm:p-5 sm:pb-0">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="metric-label">필수 정보</p>
+          <CardTitle className="mt-1 text-base tracking-normal sm:text-lg">
+            현장에서 바로 쓰는 것
+          </CardTitle>
+        </div>
+        <Badge variant="outline" className="shrink-0">
+          Today
+        </Badge>
+      </div>
+    </CardHeader>
+    <CardContent className="grid grid-cols-2 gap-2 p-3.5 sm:grid-cols-4 sm:p-5">
+      <EssentialAction
+        href={createGoogleMapsSearchUrl(tokyoTripMeta.hotelMapsQuery)}
+        icon={Hotel}
+        label="숙소 지도"
+        value="주소 확인"
+      />
+      <EssentialAction
+        icon={ShoppingBag}
+        label="근처 편의점"
+        value="현위치 기준"
+        onClick={() => onNearbySearchRequest('convenience_store')}
+      />
+      <EssentialAction
+        icon={Languages}
+        label="번역/회화"
+        value="일본어 도움"
+        onClick={() => onSelect('ai')}
+      />
+      <EssentialAction
+        href={createGoogleMapsSearchUrl('Narita Airport Terminal 1 Terminal 3')}
+        icon={Plane}
+        label="공항 터미널"
+        value="T1/T3 확인"
+      />
+    </CardContent>
+  </Card>
+);
+
+const EssentialAction = ({
+  href,
+  icon: Icon,
+  label,
+  onClick,
+  value,
+}: {
+  href?: string;
+  icon: LucideIcon;
+  label: string;
+  onClick?: () => void;
+  value: string;
+}) => {
+  const className =
+    'flex h-[72px] w-full min-w-0 items-center gap-2.5 rounded-lg border border-border/70 bg-white px-3 text-left transition-colors hover:border-primary/30 hover:bg-primary/5';
+  const content = (
+    <>
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[hsl(var(--surface-2))] text-primary">
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-black text-slate-950">{label}</span>
+        <span className="mt-0.5 block truncate text-[11px] font-semibold text-muted-foreground">
+          {value}
+        </span>
+      </span>
+    </>
+  );
+
+  if (href) {
+    return (
+      <a className={className} href={href} rel="noreferrer" target="_blank">
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <button className={className} type="button" onClick={onClick}>
+      {content}
+    </button>
+  );
+};
+
+const LuggageDecisionPanel = () => {
+  const [recommendation, setRecommendation] = useState<TripDecisionRecommendationResponse | null>(
+    null,
+  );
+  const [recommendationError, setRecommendationError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleRecommend = async () => {
+    setIsLoading(true);
+    setRecommendation(null);
+    setRecommendationError(null);
+
+    try {
+      const response = await fetch('/api/gemini/recommend-trip-decision', {
+        body: JSON.stringify({
+          context: [
+            'Day 2: 10:00 아카사카 숙소에서 아키하바라로 이동',
+            '아키하바라에서 쇼핑/자유시간 후 짐이 생길 가능성이 높음',
+            '17:00 이른 저녁은 아직 미정',
+            '21:00 롯폰기로 출발, 22:00 곤파치',
+            '곤파치 이후 숙소까지 도보 복귀 가능',
+            `숙소: ${tokyoTripMeta.hotelName}, ${tokyoTripMeta.hotelAddress}`,
+          ],
+          options: [
+            {
+              details:
+                '아키하바라에서 바로 롯폰기 곤파치로 이동한다. 시간은 짧지만 짐을 들고 다닌다.',
+              id: 'direct_to_roppongi',
+              label: '짐 들고 바로 롯폰기',
+            },
+            {
+              details:
+                '아키하바라에서 아카사카 숙소에 들러 짐을 두고 롯폰기 곤파치로 이동한다. 시간이 더 걸리지만 밤 일정이 가벼워진다.',
+              id: 'drop_luggage_at_hotel',
+              label: '숙소에 짐 두고 롯폰기',
+            },
+          ],
+          question:
+            '둘째날 아키하바라에서 다 놀고난 뒤 쇼핑 짐을 숙소에 두고 롯폰기 곤파치로 가는 편이 나은지 추천해줘.',
+          title: '아키하바라 이후 짐 동선 판단',
+        }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error(await readApiErrorMessage(response, 'Gemini decision route failed.'));
+      }
+
+      const data = (await response.json()) as Omit<TripDecisionRecommendationResponse, 'source'>;
+      setRecommendation({ ...data, source: 'gemini' });
+    } catch (error) {
+      setRecommendationError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'AI 추천을 불러오지 못했어요. 잠시 후 다시 시도하세요.',
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Card className="overflow-hidden border-amber-200">
+      <CardHeader className="border-b border-amber-200 bg-amber-50 p-3.5 sm:p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="metric-label">미정 판단</p>
+            <CardTitle className="mt-1 text-base tracking-normal sm:text-lg">
+              아키하바라 짐, 숙소에 두고 갈까?
+            </CardTitle>
+            <p className="mt-2 text-xs font-semibold leading-5 text-amber-900/75">
+              쇼핑 짐을 들고 곤파치로 바로 갈지, 아카사카 숙소에 들렀다 갈지 비교합니다.
+            </p>
+          </div>
+          <Badge variant="outline" className="shrink-0 border-amber-300 bg-white text-amber-800">
+            Day 2
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 p-3.5 sm:p-5">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="rounded-lg border border-border/70 bg-white p-3">
+            <p className="text-xs font-black text-slate-950">바로 이동</p>
+            <p className="mt-1 text-xs font-semibold leading-5 text-muted-foreground">
+              시간이 짧지만 쇼핑 짐을 들고 저녁 일정까지 이동합니다.
+            </p>
+          </div>
+          <div className="rounded-lg border border-border/70 bg-white p-3">
+            <p className="text-xs font-black text-slate-950">숙소 경유</p>
+            <p className="mt-1 text-xs font-semibold leading-5 text-muted-foreground">
+              이동은 늘지만 밤 일정과 도보 복귀가 훨씬 가벼워집니다.
+            </p>
+          </div>
+        </div>
+
+        <Button className="w-full" disabled={isLoading} onClick={handleRecommend}>
+          <WandSparkles className={cn('h-4 w-4', isLoading && 'animate-spin')} />
+          {isLoading ? '동선 비교 중' : 'AI로 짐 동선 추천'}
+        </Button>
+
+        {recommendationError ? (
+          <p className="rounded-md bg-red-50 px-3 py-2 text-xs font-semibold leading-5 text-red-700">
+            {recommendationError}
+          </p>
+        ) : null}
+
+        {recommendation ? <TripDecisionResult recommendation={recommendation} /> : null}
+      </CardContent>
+    </Card>
+  );
+};
+
+const TripDecisionResult = ({
+  recommendation,
+}: {
+  recommendation: TripDecisionRecommendationResponse;
+}) => (
+  <div className="rounded-lg border border-border/70 bg-white p-3">
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-xs font-black text-amber-700">{recommendation.recommendation}</p>
+        <p className="mt-1 text-sm font-bold leading-6 text-slate-950">{recommendation.summary}</p>
+      </div>
+      <Badge className="shrink-0">Gemini</Badge>
+    </div>
+    <div className="mt-3 grid gap-2">
+      {recommendation.reasons.map((reason) => (
+        <p
+          key={reason}
+          className="rounded-md bg-[hsl(var(--surface-2))] px-3 py-2 text-xs font-semibold leading-5 text-muted-foreground"
+        >
+          {reason}
+        </p>
+      ))}
+    </div>
+    {recommendation.actionPlan.length > 0 ? (
+      <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+        <p className="text-xs font-black text-amber-800">실행 순서</p>
+        <ol className="mt-2 grid gap-1.5">
+          {recommendation.actionPlan.map((item, index) => (
+            <li key={item} className="text-xs font-semibold leading-5 text-amber-900">
+              {index + 1}. {item}
+            </li>
+          ))}
+        </ol>
+      </div>
+    ) : null}
+  </div>
+);
 
 const TodayCommandPanel = ({
   location,
@@ -940,47 +1202,6 @@ const TodayMetric = ({ label, value }: { label: string; value: string }) => (
   </div>
 );
 
-const TodayFlowStrip = ({
-  tripContext,
-}: {
-  tripContext: ReturnType<typeof getCurrentTripContext>;
-}) => (
-  <div className="mobile-scroll -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-    {tripContext.currentDay.events.map((event) => {
-      const Icon = eventTypeIcons[event.type];
-      const isCurrent = tripContext.currentEvent?.id === event.id;
-      const isNext = tripContext.nextEvent?.id === event.id;
-
-      return (
-        <div
-          key={event.id}
-          className={cn(
-            'flex min-w-[132px] flex-col gap-2 rounded-lg border bg-white p-3',
-            isCurrent && 'border-primary/40 bg-primary/5',
-            isNext && 'border-sky-300 bg-sky-50',
-          )}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span
-              className={cn(
-                'flex h-7 w-7 items-center justify-center rounded-md border',
-                eventTypeBadgeClassNames[event.type],
-              )}
-            >
-              <Icon className="h-3.5 w-3.5" />
-            </span>
-            <span className="text-xs font-black tabular-nums text-slate-950">
-              {getEventTimeLabel(event)}
-            </span>
-          </div>
-          <p className="line-clamp-2 text-xs font-black leading-5 text-slate-950">{event.title}</p>
-          <p className="truncate text-[11px] font-semibold text-muted-foreground">{event.area}</p>
-        </div>
-      );
-    })}
-  </div>
-);
-
 const CompactEventRow = ({ event }: { event: TripEvent }) => {
   const Icon = eventTypeIcons[event.type];
 
@@ -1015,7 +1236,7 @@ const QuickActionButton = ({
   onClick: () => void;
 }) => (
   <Button
-    className="h-[70px] min-w-0 flex-col justify-center gap-1.5 px-1.5 text-xs sm:h-14 sm:flex-row sm:justify-between sm:px-3 sm:text-sm"
+    className="h-[70px] w-full min-w-0 flex-col justify-center gap-1.5 px-1.5 text-xs sm:h-14 sm:flex-row sm:justify-between sm:px-3 sm:text-sm"
     type="button"
     variant="outline"
     onClick={onClick}
@@ -1450,7 +1671,7 @@ const LocationInsightPanel = ({
   const longitude = coordinates?.longitude ?? null;
   const currentLocationMapUrl = createGoogleMapsCurrentLocationUrl(coordinates);
   const hotelDirectionsUrl = createGoogleMapsDirectionsFromCurrentLocationUrl(
-    'Akasaka Residence Tokyo 4-7-1 Akasaka Minato Tokyo',
+    tokyoTripMeta.hotelMapsQuery,
     'transit',
     coordinates,
   );
@@ -1545,9 +1766,7 @@ const LocationInsightPanel = ({
           <div className="grid grid-cols-2 gap-2">
             <Button asChild className="h-10" variant="outline">
               <a
-                href={createGoogleMapsSearchUrl(
-                  'Akasaka Residence Tokyo 4-7-1 Akasaka Minato Tokyo',
-                )}
+                href={createGoogleMapsSearchUrl(tokyoTripMeta.hotelMapsQuery)}
                 rel="noreferrer"
                 target="_blank"
               >
@@ -1790,7 +2009,7 @@ const NearbySearchPanel = ({
         </div>
       </CardHeader>
       <CardContent className="space-y-3 p-4">
-        <div className="mobile-scroll -mx-1 flex gap-2 overflow-x-auto px-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:px-0">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-2">
           {nearbySearchItems.map((item) => (
             <NearbySearchButton
               key={item.label}
@@ -1868,7 +2087,7 @@ const NearbySearchButton = ({
   return (
     <button
       className={cn(
-        'group flex min-h-[64px] min-w-[132px] items-start justify-between gap-3 rounded-lg border p-3 text-left transition-colors sm:min-h-[76px] sm:min-w-0',
+        'group flex min-h-[62px] w-full min-w-0 flex-col items-center justify-center gap-1 rounded-lg border p-2 text-center transition-colors sm:min-h-[76px] sm:flex-row sm:items-start sm:justify-between sm:gap-3 sm:p-3 sm:text-left',
         isActive
           ? 'border-emerald-400 bg-emerald-50'
           : 'border-border/70 bg-white hover:border-emerald-300 hover:bg-emerald-50',
@@ -1877,15 +2096,15 @@ const NearbySearchButton = ({
       onClick={onClick}
     >
       <span className="min-w-0">
-        <span className="flex items-center gap-2 text-sm font-black text-slate-950">
+        <span className="flex min-w-0 flex-col items-center gap-1 text-xs font-black text-slate-950 sm:flex-row sm:gap-2 sm:text-sm">
           <Icon className="h-4 w-4 text-emerald-700" />
-          {item.label}
+          <span className="truncate">{item.label}</span>
         </span>
-        <span className="mt-1 block text-xs font-semibold leading-5 text-muted-foreground">
+        <span className="mt-1 hidden text-xs font-semibold leading-5 text-muted-foreground sm:block">
           {item.helper}
         </span>
       </span>
-      <Search className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700 transition-transform group-hover:scale-110" />
+      <Search className="mt-0.5 hidden h-4 w-4 shrink-0 text-emerald-700 transition-transform group-hover:scale-110 sm:block" />
     </button>
   );
 };
@@ -2199,13 +2418,17 @@ const MealsSection = () => {
       });
 
       if (!response.ok) {
-        throw new Error('Gemini recommendation route is not available.');
+        throw new Error(await readApiErrorMessage(response, 'Gemini recommendation route failed.'));
       }
 
       const data = (await response.json()) as Omit<MealRecommendationResponse, 'source'>;
       setRecommendation({ ...data, source: 'gemini' });
-    } catch {
-      setRecommendationError('AI 추천을 불러오지 못했어요. 잠시 후 다시 시도하세요.');
+    } catch (error) {
+      setRecommendationError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'AI 추천을 불러오지 못했어요. 잠시 후 다시 시도하세요.',
+      );
     } finally {
       setIsLoading(false);
     }
@@ -2552,7 +2775,7 @@ const InfoSection = ({ location }: { location: TravelLocationControl }) => (
         </CardHeader>
         <CardContent className="grid gap-2 p-4">
           <PocketAction
-            href={createGoogleMapsSearchUrl('Akasaka Residence Tokyo 4-7-1 Akasaka Minato Tokyo')}
+            href={createGoogleMapsSearchUrl(tokyoTripMeta.hotelMapsQuery)}
             icon={Hotel}
             label="숙소 지도"
             value={tokyoTripMeta.hotelName}
@@ -2591,7 +2814,7 @@ const InfoSection = ({ location }: { location: TravelLocationControl }) => (
           />
           <Button asChild className="w-full">
             <a
-              href={createGoogleMapsSearchUrl('Akasaka Residence Tokyo 4-7-1 Akasaka Minato Tokyo')}
+              href={createGoogleMapsSearchUrl(tokyoTripMeta.hotelMapsQuery)}
               rel="noreferrer"
               target="_blank"
             >
@@ -2726,13 +2949,17 @@ const TranslatePanel = () => {
       });
 
       if (!response.ok) {
-        throw new Error('Gemini translate route is not available.');
+        throw new Error(await readApiErrorMessage(response, 'Gemini translate route failed.'));
       }
 
       const data = (await response.json()) as Omit<TranslateResponse, 'source'>;
       setTranslation({ ...data, source: 'gemini' });
-    } catch {
-      setTranslationError('번역을 불러오지 못했어요. 잠시 후 다시 시도하세요.');
+    } catch (error) {
+      setTranslationError(
+        error instanceof Error && error.message
+          ? error.message
+          : '번역을 불러오지 못했어요. 잠시 후 다시 시도하세요.',
+      );
     } finally {
       setIsLoading(false);
     }
