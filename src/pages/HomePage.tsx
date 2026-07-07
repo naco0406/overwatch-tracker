@@ -1233,18 +1233,15 @@ const SessionTimelineItem = ({ item }: { item: SessionTimelineEntry }) => (
         <span className="shrink-0 tabular-nums">
           {item.match.teamScore}:{item.match.enemyScore}
         </span>
-        <span className="shrink-0">{getResultLabel(item.match.result)}</span>
+        <span className="shrink-0 text-muted-foreground/70">·</span>
         <MatchModeLabel
-          className="min-w-0 flex-1 gap-1"
+          className="shrink-0"
           iconClassName="h-3.5 w-3.5"
           modeId={item.match.modeId}
-          textClassName="truncate"
+          textClassName="sr-only"
         />
-        <MatchRoleLabel
-          className="min-w-0 max-w-[52px] shrink-0 gap-1"
-          role={item.match.matchRole}
-          textClassName="truncate"
-        />
+        <span className="shrink-0 text-muted-foreground/70">·</span>
+        <MatchRoleLabel className="shrink-0" role={item.match.matchRole} textClassName="sr-only" />
       </p>
     </div>
   </div>
