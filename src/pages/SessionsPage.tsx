@@ -5,6 +5,7 @@ import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
 import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
+import { MapScreenshot } from '@/components/match/MapScreenshot';
 import { MatchModeLabel } from '@/components/match/MatchModeBadge';
 import { MatchRoleBadge, MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Badge } from '@/components/ui/badge';
@@ -17,7 +18,6 @@ import {
   getModeLabel,
   getResultLabel,
 } from '@/data/matchOptions';
-import { getMapScreenshotPath } from '@/data/masterAssets';
 import { toast } from '@/hooks/use-toast';
 import { useDeleteMatch, useMatches, useUpdateMatch } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
@@ -747,11 +747,11 @@ const SessionMapTimeline = ({ matches }: SessionMapTimelineProps) => (
       {matches.map((match, index) => (
         <div key={match.id} className="w-[98px] shrink-0 sm:w-[112px]">
           <div className="relative aspect-[16/9] overflow-hidden border border-border/60 bg-secondary">
-            <img
+            <MapScreenshot
               alt={getMapLabel(match.mapId)}
               className="h-full w-full object-cover"
               loading="lazy"
-              src={getMapScreenshotPath(match.mapId)}
+              mapId={match.mapId}
             />
             <span
               className={cn('absolute inset-x-0 top-0 h-0.5', getResultRailTone(match.result))}
@@ -806,11 +806,11 @@ const SessionMatchTableRow = ({
       <td className="min-w-0 px-3 py-3 align-middle">
         <div className="grid min-w-0 grid-cols-[58px_minmax(0,1fr)] items-center gap-3">
           <div className="aspect-[16/10] overflow-hidden border border-border/60 bg-secondary">
-            <img
+            <MapScreenshot
               alt={getMapLabel(match.mapId)}
               className="h-full w-full object-cover"
               loading="lazy"
-              src={getMapScreenshotPath(match.mapId)}
+              mapId={match.mapId}
             />
           </div>
           <div className="min-w-0">
@@ -874,11 +874,11 @@ const SessionMatchMobileRow = ({
       <div className="px-3.5 py-3">
         <div className="grid grid-cols-[72px_minmax(0,1fr)_auto] gap-3">
           <div className="aspect-[16/10] overflow-hidden border border-border/60 bg-secondary">
-            <img
+            <MapScreenshot
               alt={getMapLabel(match.mapId)}
               className="h-full w-full object-cover"
               loading="lazy"
-              src={getMapScreenshotPath(match.mapId)}
+              mapId={match.mapId}
             />
           </div>
           <div className="min-w-0">

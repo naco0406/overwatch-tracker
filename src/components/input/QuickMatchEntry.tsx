@@ -2,6 +2,7 @@ import { Minus, Plus, Save, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 
 import { SkeletonBlock } from '@/components/common/DataState';
+import { MapScreenshot } from '@/components/match/MapScreenshot';
 import { MatchModeBadge, MatchModeIcon, MatchModeLabel } from '@/components/match/MatchModeBadge';
 import { MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Button } from '@/components/ui/button';
@@ -21,7 +22,6 @@ import {
   queueOptions,
   resultOptions,
 } from '@/data/matchOptions';
-import { getMapScreenshotPath } from '@/data/masterAssets';
 import { quickMatchEntryPreferenceStorageKey } from '@/lib/clientSessionState';
 import { cn } from '@/lib/utils';
 import type {
@@ -515,11 +515,11 @@ const QuickMatchEntry = ({
                       onClick={() => selectMap(map.value)}
                     >
                       <span className="relative block min-h-0 flex-1 overflow-hidden bg-secondary">
-                        <img
+                        <MapScreenshot
                           alt={map.label}
                           className="h-full w-full object-cover"
-                          src={getMapScreenshotPath(map.value)}
                           loading="lazy"
+                          mapId={map.value}
                         />
                         <MatchModeLabel
                           className="absolute bottom-1.5 left-1.5 h-4 max-w-[calc(100%-12px)] rounded-sm bg-black/65 px-1.5 text-[9px] font-bold leading-none text-white shadow-sm backdrop-blur-sm min-[390px]:text-[10px]"

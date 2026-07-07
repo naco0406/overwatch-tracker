@@ -5,11 +5,11 @@ import type { RefObject } from 'react';
 
 import { SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
+import { MapScreenshot } from '@/components/match/MapScreenshot';
 import { MatchModeLabel } from '@/components/match/MatchModeBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { getMapLabel } from '@/data/matchOptions';
-import { getMapScreenshotPath } from '@/data/masterAssets';
 import {
   liveFrameQualityLabel,
   livePreviewIntervalMs,
@@ -470,8 +470,8 @@ const DetectedCandidateRow = ({
   return (
     <div className="grid min-w-0 grid-cols-[46px_minmax(0,1fr)_42px] items-center gap-2.5 border-b border-border/70 px-2.5 py-2 last:border-b-0">
       <div className="relative h-8 w-[46px] overflow-hidden rounded bg-slate-950">
-        <img
-          src={getMapScreenshotPath(candidate.mapId)}
+        <MapScreenshot
+          mapId={candidate.mapId}
           alt=""
           className="absolute inset-0 h-full w-full object-cover"
         />
@@ -499,8 +499,8 @@ const PrimaryRecommendation = ({
   <div className="overflow-hidden rounded-lg border border-border/70 bg-card">
     <div className="relative min-h-[160px] overflow-hidden bg-slate-950">
       {recommendation.choiceType === 'map' ? (
-        <img
-          src={getMapScreenshotPath(recommendation.mapId)}
+        <MapScreenshot
+          mapId={recommendation.mapId}
           alt=""
           className="absolute inset-0 h-full w-full object-cover"
         />
@@ -640,8 +640,8 @@ const ChoiceTile = ({
         <RecommendationContext className="mt-1" recommendation={recommendation} />
       </div>
       {recommendation.choiceType === 'map' ? (
-        <img
-          src={getMapScreenshotPath(recommendation.mapId)}
+        <MapScreenshot
+          mapId={recommendation.mapId}
           alt=""
           className="h-11 w-14 shrink-0 rounded object-cover"
         />

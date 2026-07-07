@@ -23,6 +23,7 @@ import { useForm, useFormState, useWatch, type UseFormReturn } from 'react-hook-
 import { z } from 'zod';
 
 import { MatchModeBadge, MatchModeLabel } from '@/components/match/MatchModeBadge';
+import { MapScreenshot } from '@/components/match/MapScreenshot';
 import { MatchRoleIcon, MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Button } from '@/components/ui/button';
 import {
@@ -51,7 +52,7 @@ import {
   type HeroOption,
   type HeroRoleFilter,
 } from '@/data/matchOptions';
-import { getHeroPortraitPath, getMapScreenshotPath } from '@/data/masterAssets';
+import { getHeroPortraitPath } from '@/data/masterAssets';
 import { cn } from '@/lib/utils';
 import type { Match, MatchCreateInput, MatchResult, MatchRole } from '@/types/match';
 import type { PlayerAccount } from '@/types/playerAccount';
@@ -587,14 +588,14 @@ const MapPickerPanel = memo(({ form, mapQuery, onMapQueryChange }: MapPickerPane
                   }}
                 >
                   <span className="relative block min-h-0 flex-1 overflow-hidden bg-secondary">
-                    <img
+                    <MapScreenshot
                       alt={map.label}
                       className="h-full w-full object-cover"
                       decoding="async"
                       height={150}
                       loading="lazy"
+                      mapId={map.value}
                       sizes="164px"
-                      src={getMapScreenshotPath(map.value)}
                       width={328}
                     />
                     <MatchModeLabel

@@ -687,12 +687,25 @@ const runVisualMapMatch = async ({
   });
 
   const candidateMaps = modeId ? mapOptions.filter((map) => map.modeId === modeId) : mapOptions;
-  const mapImages = await Promise.all(
-    candidateMaps.map(async (map) => ({
-      image: await loadMapFeatureVector(map.value),
-      mapId: map.value,
-    })),
-  );
+  const mapImages = (
+    await Promise.all(
+      candidateMaps.map(async (map) => {
+        try {
+          return {
+            image: await loadMapFeatureVector(map.value),
+            mapId: map.value,
+          };
+        } catch (error) {
+          logger.warn('map-match:template-missing', {
+            error: error instanceof Error ? error.message : String(error),
+            mapId: map.value,
+          });
+
+          return null;
+        }
+      }),
+    )
+  ).filter((template): template is NonNullable<typeof template> => template !== null);
   const searchRegions = createMapCardSearchRegions();
 
   logger.event('map-match:candidates-loaded', {

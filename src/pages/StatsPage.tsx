@@ -52,6 +52,7 @@ import {
 import { EmptyState } from '@/components/common/EmptyState';
 import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
+import { MapScreenshot } from '@/components/match/MapScreenshot';
 import { MatchModeLabel } from '@/components/match/MatchModeBadge';
 import { MatchRoleIcon, MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Badge } from '@/components/ui/badge';
@@ -75,7 +76,7 @@ import {
   queueOptions,
   roleLabels,
 } from '@/data/matchOptions';
-import { getHeroPortraitPath, getMapScreenshotPath } from '@/data/masterAssets';
+import { getHeroPortraitPath } from '@/data/masterAssets';
 import { useCompetitiveSeasons } from '@/hooks/useCompetitiveSeasons';
 import { useGeminiStatsInsight } from '@/hooks/useGeminiStatsInsight';
 import { useMatches } from '@/hooks/useMatches';
@@ -2195,10 +2196,10 @@ const StatsPage = () => {
                 {bestMap ? (
                   <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
                     <div className="aspect-[16/10] bg-secondary">
-                      <img
+                      <MapScreenshot
                         alt={bestMap.label}
                         className="h-full w-full object-cover"
-                        src={getMapScreenshotPath(bestMap.value)}
+                        mapId={bestMap.value}
                       />
                     </div>
                     <div className="section-pad">
@@ -8462,11 +8463,11 @@ const MapAtlasTile = ({ onSelect, selected, stat }: MapAtlasTileProps) => (
     onClick={onSelect}
   >
     <div className="relative aspect-[16/10] overflow-hidden bg-secondary">
-      <img
+      <MapScreenshot
         alt={stat.label}
         className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
         loading="lazy"
-        src={getMapScreenshotPath(stat.value)}
+        mapId={stat.value}
       />
       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/10" />
       <div className="absolute left-2 top-2 rounded-md bg-black/60 px-2 py-1 text-[10px] font-bold text-white backdrop-blur-sm">
@@ -8496,11 +8497,11 @@ const MapAtlasTile = ({ onSelect, selected, stat }: MapAtlasTileProps) => (
 const MapAtlasDetail = ({ stat }: { stat: MapStatItem }) => (
   <aside className="border-t border-border/70 bg-[hsl(var(--surface-2))] lg:border-l lg:border-t-0">
     <div className="relative aspect-[16/9] overflow-hidden bg-secondary">
-      <img
+      <MapScreenshot
         alt={stat.label}
         className="h-full w-full object-cover"
         loading="lazy"
-        src={getMapScreenshotPath(stat.value)}
+        mapId={stat.value}
       />
       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
       <div className="absolute bottom-4 left-4 right-4 text-white">

@@ -29,6 +29,7 @@ import { StickyNotesDock } from '@/components/home/StickyNotesDock';
 import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
 import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
 import { QuickMatchEntry } from '@/components/input/QuickMatchEntry';
+import { MapScreenshot } from '@/components/match/MapScreenshot';
 import { MatchModeLabel } from '@/components/match/MatchModeBadge';
 import { MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Badge } from '@/components/ui/badge';
@@ -47,7 +48,6 @@ import { useCreateMatch, useDeleteMatch, useMatches, useUpdateMatch } from '@/ho
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { getMapLabel, getResultLabel } from '@/data/matchOptions';
-import { getMapScreenshotPath } from '@/data/masterAssets';
 import { activeSessionStorageKey } from '@/lib/clientSessionState';
 import {
   getExternalEsportsTeamLogoUrl,
@@ -1107,11 +1107,11 @@ const RecentMatchRow = ({
 }: RecentMatchRowProps) => (
   <div className={recentMatchRowClassName}>
     <div className="relative h-10 w-14 overflow-hidden rounded-md bg-secondary">
-      <img
+      <MapScreenshot
         alt=""
         className="h-full w-full object-cover"
         loading="lazy"
-        src={getMapScreenshotPath(match.mapId)}
+        mapId={match.mapId}
       />
       {sessionNumber ? (
         <span className="absolute left-1 top-1 rounded bg-black/65 px-1 text-[10px] font-black text-white shadow-sm">
