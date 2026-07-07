@@ -823,10 +823,10 @@ const HomePage = () => {
                   <div className="flex items-center justify-between gap-3 border-b border-border/70 bg-[hsl(var(--surface-2))] px-3.5 py-2.5 sm:px-5">
                     <div className="min-w-0">
                       <p className="truncate text-xs font-black uppercase text-muted-foreground">
-                        최근 경기
+                        세션 경기
                       </p>
                       <p className="mt-0.5 truncate text-xs font-semibold text-muted-foreground">
-                        최근 {Math.min(recentPreviewCount, sortedSessionMatches.length)}개 표시
+                        총 {sortedSessionMatches.length.toLocaleString('ko-KR')}경기
                       </p>
                     </div>
                     <Button asChild size="sm" variant="outline" className="h-8 bg-transparent">
@@ -836,8 +836,8 @@ const HomePage = () => {
                       </Link>
                     </Button>
                   </div>
-                  <div className="divide-y divide-border/70">
-                    {sortedSessionMatches.slice(0, recentPreviewCount).map((match) => (
+                  <div className="session-scroll max-h-[272px] divide-y divide-border/70 overflow-y-auto">
+                    {sortedSessionMatches.map((match) => (
                       <RecentMatchRow
                         key={match.id}
                         accountLabel={getPlayerAccountLabel(accountById.get(match.accountId ?? ''))}
@@ -1171,6 +1171,15 @@ const RecentMatchRow = ({
 
 const SessionTimeline = ({ items }: { items: SessionTimelineEntry[] }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const resultSummary = useMemo(() => {
+    const wins = items.filter((item) => item.match.result === 'win').length;
+    const losses = items.filter((item) => item.match.result === 'loss').length;
+    const draws = items.filter((item) => item.match.result === 'draw').length;
+
+    return `${wins.toLocaleString('ko-KR')}승 ${losses.toLocaleString('ko-KR')}패${
+      draws > 0 ? ` ${draws.toLocaleString('ko-KR')}무` : ''
+    }`;
+  }, [items]);
 
   useEffect(() => {
     const scrollElement = scrollRef.current;
@@ -1187,12 +1196,17 @@ const SessionTimeline = ({ items }: { items: SessionTimelineEntry[] }) => {
       <div className="mb-2 flex items-end justify-between gap-3">
         <div className="min-w-0">
           <p className="metric-label">세션 흐름</p>
-          <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-            {items.length.toLocaleString('ko-KR')}경기 전체 · 좌우로 이동
-          </p>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+            <p className="truncate text-xs font-semibold text-muted-foreground">
+              {items.length.toLocaleString('ko-KR')}경기 흐름
+            </p>
+            <Badge variant="outline" className="h-5 shrink-0 bg-card px-1.5 text-[10px]">
+              {resultSummary}
+            </Badge>
+          </div>
         </div>
         <Badge variant="outline" className="shrink-0 bg-transparent">
-          #{items.at(-1)?.number ?? 0}까지
+          총 {items.length.toLocaleString('ko-KR')} 경기
         </Badge>
       </div>
       <div

@@ -45,8 +45,8 @@ const primaryNavItems: NavItem[] = [
     label: '기록',
     icon: TableProperties,
     children: [
-      { to: '/records', label: '매치 기록' },
       { to: '/sessions', label: '세션' },
+      { to: '/records', label: '매치 기록' },
     ],
   },
   {
