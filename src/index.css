@@ -308,6 +308,73 @@
     display: none;
   }
 
+  .match-entry-scroll {
+    contain: paint;
+    scrollbar-gutter: stable;
+  }
+
+  .match-map-tile {
+    contain: layout paint style;
+  }
+
+  .hero-select-button {
+    --hero-accent: 59 130 246;
+    contain: layout paint style;
+  }
+
+  .hero-select-grid {
+    grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+  }
+
+  @media (min-width: 640px) {
+    .hero-select-grid {
+      grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
+    }
+  }
+
+  .hero-select-button[data-role='damage'] {
+    --hero-accent: 245 158 11;
+  }
+
+  .hero-select-button[data-role='support'] {
+    --hero-accent: 34 197 94;
+  }
+
+  .hero-select-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--surface-3));
+    clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
+    transition:
+      border-color 150ms ease,
+      box-shadow 150ms ease,
+      opacity 150ms ease;
+  }
+
+  .hero-select-button:hover .hero-select-card,
+  .hero-select-button:focus-visible .hero-select-card {
+    border-color: rgb(var(--hero-accent) / 0.7);
+  }
+
+  .hero-select-button[aria-pressed='true'] .hero-select-card {
+    border-color: rgb(var(--hero-accent));
+    box-shadow:
+      inset 0 0 0 2px rgb(var(--hero-accent)),
+      0 0 0 3px rgb(var(--hero-accent) / 0.14);
+  }
+
+  .hero-select-button[aria-pressed='true'] .hero-select-name {
+    color: rgb(var(--hero-accent));
+  }
+
+  @supports (content-visibility: auto) {
+    .deferred-render {
+      content-visibility: auto;
+      contain-intrinsic-size: 280px;
+    }
+  }
+
   .session-scroll {
     scrollbar-color: hsl(var(--muted-foreground) / 0.32) transparent;
     scrollbar-width: thin;

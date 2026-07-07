@@ -46,7 +46,10 @@ const MatchEntryDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="!flex max-h-[calc(100dvh-1rem)] max-w-5xl flex-col gap-0 p-0 sm:max-h-[calc(100dvh-3rem)]">
+      <DialogContent
+        className="!flex max-h-[calc(100dvh-1rem)] max-w-5xl flex-col gap-0 p-0 sm:max-h-[calc(100dvh-3rem)]"
+        overlayClassName="bg-slate-950/24 backdrop-blur-0"
+      >
         <DialogHeader className="shrink-0 border-b border-border/70 bg-card px-4 py-4 pr-14 sm:px-5 sm:py-5">
           <DialogTitle>{isEditing ? '경기 수정' : '경기 입력'}</DialogTitle>
           <DialogDescription>

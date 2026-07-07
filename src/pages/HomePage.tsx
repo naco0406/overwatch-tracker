@@ -1212,7 +1212,7 @@ const SessionTimeline = ({ items }: { items: SessionTimelineEntry[] }) => {
 const SessionTimelineItem = ({ item }: { item: SessionTimelineEntry }) => (
   <div
     className={cn(
-      'grid h-[58px] min-w-[156px] snap-start grid-cols-[30px_minmax(0,1fr)] items-center gap-2 rounded-md border px-2.5 transition-colors',
+      'grid h-[64px] min-w-[176px] snap-start grid-cols-[30px_minmax(0,1fr)] items-center gap-2 rounded-md border px-2.5 transition-colors',
       getResultTone(item.match.result),
       item.isLatest && 'ring-2 ring-primary/20',
     )}
@@ -1229,14 +1229,22 @@ const SessionTimelineItem = ({ item }: { item: SessionTimelineEntry }) => (
           </span>
         ) : null}
       </div>
-      <p className="mt-1 flex min-w-0 items-center gap-1 text-[10px] font-semibold opacity-75">
-        <span className="truncate">
-          {item.match.teamScore}:{item.match.enemyScore} · {getResultLabel(item.match.result)}
+      <p className="mt-1 flex min-w-0 items-center gap-1.5 overflow-hidden text-[10px] font-semibold opacity-75">
+        <span className="shrink-0 tabular-nums">
+          {item.match.teamScore}:{item.match.enemyScore}
         </span>
-        <span className="shrink-0">·</span>
-        <MatchModeLabel className="shrink-0 gap-1" modeId={item.match.modeId} />
-        <span className="shrink-0">·</span>
-        <MatchRoleLabel className="shrink-0 gap-1" role={item.match.matchRole} />
+        <span className="shrink-0">{getResultLabel(item.match.result)}</span>
+        <MatchModeLabel
+          className="min-w-0 flex-1 gap-1"
+          iconClassName="h-3.5 w-3.5"
+          modeId={item.match.modeId}
+          textClassName="truncate"
+        />
+        <MatchRoleLabel
+          className="min-w-0 max-w-[52px] shrink-0 gap-1"
+          role={item.match.matchRole}
+          textClassName="truncate"
+        />
       </p>
     </div>
   </div>

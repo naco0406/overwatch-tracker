@@ -1,12 +1,29 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ChevronDown, ChevronUp, Minus, Plus, RotateCcw, Save, Search, X } from 'lucide-react';
-import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Minus,
+  Plus,
+  RotateCcw,
+  Save,
+  Search,
+  X,
+} from 'lucide-react';
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useForm, useFormState, useWatch, type UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
 
 import { MatchModeBadge, MatchModeLabel } from '@/components/match/MatchModeBadge';
-import { MatchRoleLabel } from '@/components/match/MatchRoleBadge';
-import { Badge } from '@/components/ui/badge';
+import { MatchRoleIcon, MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -31,9 +48,10 @@ import {
   resultOptions,
   roleLabels,
   roleOptions,
+  type HeroOption,
   type HeroRoleFilter,
 } from '@/data/matchOptions';
-import { getMapScreenshotPath } from '@/data/masterAssets';
+import { getHeroPortraitPath, getMapScreenshotPath } from '@/data/masterAssets';
 import { cn } from '@/lib/utils';
 import type { Match, MatchCreateInput, MatchResult, MatchRole } from '@/types/match';
 import type { PlayerAccount } from '@/types/playerAccount';
@@ -43,6 +61,7 @@ import type { UserSettings } from '@/types/userSettings';
 const modeValues = modeOptions.map((option) => option.value);
 const resultValues = resultOptions.map((option) => option.value);
 const heroRoleById = new Map(heroOptions.map((hero) => [hero.value, hero.role] as const));
+const heroOptionById = new Map(heroOptions.map((hero) => [hero.value, hero] as const));
 const mapById = new Map(mapOptions.map((map) => [map.value, map] as const));
 const searchableMapOptions = mapOptions.map((map) => ({
   ...map,
@@ -52,7 +71,9 @@ const searchableHeroOptions = heroOptions.map((hero) => ({
   ...hero,
   searchText: `${hero.label} ${hero.value}`.toLowerCase(),
 }));
+const heroRoleOrder = ['tank', 'damage', 'support'] as const;
 type CurrentModeId = (typeof modeOptions)[number]['value'];
+type SearchableHeroOption = (typeof searchableHeroOptions)[number];
 
 const isModeValue = (value: string): value is CurrentModeId =>
   modeValues.includes(value as CurrentModeId);
@@ -230,9 +251,7 @@ const MatchEntryForm = ({
   );
   const [heroQuery, setHeroQuery] = useState('');
   const [mapQuery, setMapQuery] = useState('');
-  const [showHeroPicker, setShowHeroPicker] = useState(
-    Boolean(initialMatch?.myHeroes?.length || initialDraft?.myHeroes?.length),
-  );
+  const [showHeroPicker, setShowHeroPicker] = useState(true);
   const [roleFilter, setRoleFilter] = useState<HeroRoleFilter>(initialFormValues.matchRole);
 
   const form = useForm<MatchEntryFormValues>({
@@ -272,7 +291,7 @@ const MatchEntryForm = ({
     setHeroQuery('');
     setMapQuery('');
     setRoleFilter(defaultValues.matchRole);
-    setShowHeroPicker(Boolean(initialMatch?.myHeroes?.length || initialDraft?.myHeroes?.length));
+    setShowHeroPicker(true);
   }, [defaultSettings, form, initialDraft, initialMatch]);
 
   const updateScore = useCallback(
@@ -326,7 +345,8 @@ const MatchEntryForm = ({
         <div
           className={cn(
             'space-y-4',
-            isDialogLayout && 'min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5',
+            isDialogLayout &&
+              'match-entry-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5',
           )}
         >
           {headerContent}
@@ -558,7 +578,7 @@ const MapPickerPanel = memo(({ form, mapQuery, onMapQueryChange }: MapPickerPane
                   key={map.value}
                   type="button"
                   className={cn(
-                    'flex h-full min-w-0 flex-col overflow-hidden rounded-md border bg-card text-left transition-[background-color,border-color,color] hover:border-primary/35 hover:bg-secondary',
+                    'match-map-tile flex h-full min-w-0 flex-col overflow-hidden rounded-md border bg-card text-left transition-[background-color,border-color,color] hover:border-primary/35 hover:bg-secondary',
                     selected && 'border-primary bg-primary/[0.06] text-primary',
                   )}
                   onClick={() => {
@@ -570,11 +590,15 @@ const MapPickerPanel = memo(({ form, mapQuery, onMapQueryChange }: MapPickerPane
                     <img
                       alt={map.label}
                       className="h-full w-full object-cover"
+                      decoding="async"
+                      height={150}
                       loading="lazy"
+                      sizes="164px"
                       src={getMapScreenshotPath(map.value)}
+                      width={328}
                     />
                     <MatchModeLabel
-                      className="absolute bottom-1.5 left-1.5 h-4 max-w-[calc(100%-12px)] rounded-sm bg-black/65 px-1.5 text-[10px] font-bold leading-none text-white shadow-sm backdrop-blur-sm"
+                      className="absolute bottom-1.5 left-1.5 h-4 max-w-[calc(100%-12px)] rounded-sm bg-black/70 px-1.5 text-[10px] font-bold leading-none text-white shadow-sm"
                       iconClassName="h-3 w-3 rounded-[2px]"
                       modeId={map.modeId}
                     />
@@ -859,6 +883,7 @@ const HeroPickerSection = memo(
     showHeroPicker,
   }: HeroPickerSectionProps) => {
     const selectedHeroSet = useMemo(() => new Set(selectedHeroes), [selectedHeroes]);
+    const deferredHeroQuery = useDeferredValue(heroQuery);
     const selectedHeroLabel = useMemo(
       () =>
         selectedHeroes.length > 0
@@ -866,16 +891,27 @@ const HeroPickerSection = memo(
           : '없음',
       [selectedHeroes],
     );
-    const filteredHeroes = useMemo(() => {
-      const query = heroQuery.trim().toLowerCase();
+    const selectedHeroOptions = useMemo(
+      () =>
+        selectedHeroes.map((heroId) => heroOptionById.get(heroId)).filter(Boolean) as HeroOption[],
+      [selectedHeroes],
+    );
+    const heroGroups = useMemo(() => {
+      const query = deferredHeroQuery.trim().toLowerCase();
+      const roleMatchesFilter = (hero: SearchableHeroOption) =>
+        roleFilter === 'all' || hero.role === roleFilter;
+      const queryMatchesFilter = (hero: SearchableHeroOption) =>
+        query.length === 0 || hero.searchText.includes(query);
 
-      return searchableHeroOptions.filter((hero) => {
-        const roleMatches = roleFilter === 'all' || hero.role === roleFilter;
-        const queryMatches = query.length === 0 || hero.searchText.includes(query);
-
-        return roleMatches && queryMatches;
-      });
-    }, [heroQuery, roleFilter]);
+      return heroRoleOrder
+        .map((role) => ({
+          heroes: searchableHeroOptions.filter(
+            (hero) => hero.role === role && roleMatchesFilter(hero) && queryMatchesFilter(hero),
+          ),
+          role,
+        }))
+        .filter((group) => group.heroes.length > 0);
+    }, [deferredHeroQuery, roleFilter]);
 
     return (
       <section className="rounded-lg border border-border/70 bg-card">
@@ -886,7 +922,7 @@ const HeroPickerSection = memo(
           onClick={onTogglePicker}
         >
           <div className="min-w-0">
-            <p className="metric-label">선택 영웅</p>
+            <p className="metric-label">영웅 선택</p>
             <p className="mt-1 truncate text-sm font-bold">{selectedHeroLabel}</p>
           </div>
           {showHeroPicker ? (
@@ -897,28 +933,10 @@ const HeroPickerSection = memo(
         </button>
 
         {selectedHeroes.length > 0 ? (
-          <div className="flex flex-wrap gap-2 border-t border-border/70 px-3 py-3 sm:px-4">
-            {selectedHeroes.map((heroId) => {
-              const heroLabel = getHeroLabel(heroId);
-
-              return (
-                <Badge
-                  key={heroId}
-                  className="gap-1 border-primary/20 bg-primary/[0.08] text-primary hover:bg-primary/10"
-                  variant="outline"
-                >
-                  {heroLabel}
-                  <button
-                    aria-label={`${heroLabel} 제거`}
-                    className="rounded-sm p-0.5 hover:bg-primary/10"
-                    type="button"
-                    onClick={() => onToggleHero(heroId)}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </Badge>
-              );
-            })}
+          <div className="mobile-scroll flex gap-2 overflow-x-auto border-t border-border/70 px-3 py-3 sm:px-4">
+            {selectedHeroOptions.map((hero) => (
+              <SelectedHeroToken key={hero.value} hero={hero} onToggleHero={onToggleHero} />
+            ))}
           </div>
         ) : null}
 
@@ -931,48 +949,60 @@ const HeroPickerSection = memo(
                     key={option.value}
                     type="button"
                     className={cn(
-                      'h-8 rounded-md border px-2.5 text-xs font-bold transition-colors',
+                      'inline-flex h-8 items-center justify-center gap-1.5 rounded-md border px-2.5 text-xs font-bold transition-colors',
                       roleFilter === option.value
                         ? 'border-primary bg-primary text-primary-foreground'
                         : 'border-border bg-card text-muted-foreground hover:bg-secondary',
                     )}
                     onClick={() => onRoleFilterChange(option.value)}
                   >
+                    {option.value !== 'all' ? (
+                      <MatchRoleIcon className="h-3.5 w-3.5" role={option.value} />
+                    ) : null}
                     {option.label}
                   </button>
                 ))}
               </div>
-              <Input
-                className="sm:w-56"
-                placeholder="영웅 검색"
-                value={heroQuery}
-                onChange={(event) => onHeroQueryChange(event.target.value)}
-              />
+              <div className="relative sm:w-56">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  aria-label="영웅 검색"
+                  className="pl-9"
+                  placeholder="영웅 검색"
+                  value={heroQuery}
+                  onChange={(event) => onHeroQueryChange(event.target.value)}
+                />
+              </div>
             </div>
 
-            <div className="grid max-h-52 gap-2 overflow-y-auto rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-2 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredHeroes.map((hero) => {
-                const selected = selectedHeroSet.has(hero.value);
-
-                return (
-                  <button
-                    key={hero.value}
-                    type="button"
-                    className={cn(
-                      'min-h-10 rounded-md border px-3 py-2 text-left text-sm font-bold transition-colors',
-                      selected
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-border bg-card text-foreground hover:bg-secondary',
-                    )}
-                    onClick={() => onToggleHero(hero.value)}
-                  >
-                    {hero.label}
-                    <span className="ml-2 text-xs font-semibold opacity-70">
-                      {roleLabels[hero.role]}
-                    </span>
-                  </button>
-                );
-              })}
+            <div className="space-y-3 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-2">
+              {heroGroups.length > 0 ? (
+                heroGroups.map((group) => (
+                  <section key={group.role} className="deferred-render">
+                    <div className="mb-1.5 flex items-center gap-2 px-1">
+                      <MatchRoleIcon className="h-3.5 w-3.5" role={group.role} />
+                      <p className="text-xs font-black text-foreground">{roleLabels[group.role]}</p>
+                      <span className="text-[11px] font-bold text-muted-foreground">
+                        {group.heroes.length}
+                      </span>
+                    </div>
+                    <div className="hero-select-grid grid gap-1.5">
+                      {group.heroes.map((hero) => (
+                        <HeroPortraitButton
+                          key={hero.value}
+                          hero={hero}
+                          selected={selectedHeroSet.has(hero.value)}
+                          onToggleHero={onToggleHero}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                ))
+              ) : (
+                <div className="flex min-h-28 items-center justify-center rounded-md border border-dashed border-border bg-card px-4 text-sm font-semibold text-muted-foreground">
+                  검색 결과 없음
+                </div>
+              )}
             </div>
           </div>
         ) : null}
@@ -981,6 +1011,80 @@ const HeroPickerSection = memo(
   },
 );
 HeroPickerSection.displayName = 'HeroPickerSection';
+
+interface HeroPortraitButtonProps {
+  hero: SearchableHeroOption;
+  onToggleHero: (heroId: string) => void;
+  selected: boolean;
+}
+
+const HeroPortraitButton = memo(({ hero, onToggleHero, selected }: HeroPortraitButtonProps) => {
+  const handleClick = useCallback(() => onToggleHero(hero.value), [hero.value, onToggleHero]);
+
+  return (
+    <button
+      type="button"
+      aria-label={`${hero.label} ${selected ? '선택 해제' : '선택'}`}
+      aria-pressed={selected}
+      className="hero-select-button group min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+      data-role={hero.role}
+      onClick={handleClick}
+    >
+      <span className="hero-select-card block aspect-square">
+        <img
+          alt=""
+          className="h-full w-full object-cover"
+          decoding="async"
+          height={256}
+          loading="lazy"
+          src={getHeroPortraitPath(hero.value)}
+          width={256}
+        />
+        {selected ? (
+          <span className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-sm bg-white text-slate-950 shadow-sm">
+            <Check className="h-3.5 w-3.5" />
+          </span>
+        ) : null}
+      </span>
+      <span className="hero-select-name mt-0.5 block truncate px-0.5 text-[10px] font-black leading-3 text-foreground">
+        {hero.label}
+      </span>
+    </button>
+  );
+});
+HeroPortraitButton.displayName = 'HeroPortraitButton';
+
+interface SelectedHeroTokenProps {
+  hero: HeroOption;
+  onToggleHero: (heroId: string) => void;
+}
+
+const SelectedHeroToken = memo(({ hero, onToggleHero }: SelectedHeroTokenProps) => {
+  const handleRemove = useCallback(() => onToggleHero(hero.value), [hero.value, onToggleHero]);
+
+  return (
+    <span className="inline-flex h-9 shrink-0 items-center overflow-hidden rounded-md border border-primary/25 bg-primary/[0.07] pr-1 text-primary">
+      <img
+        alt=""
+        className="h-9 w-9 object-cover"
+        decoding="async"
+        height={36}
+        src={getHeroPortraitPath(hero.value)}
+        width={36}
+      />
+      <span className="max-w-28 truncate px-2 text-xs font-black">{hero.label}</span>
+      <button
+        type="button"
+        aria-label={`${hero.label} 제거`}
+        className="grid h-7 w-7 place-items-center rounded-sm text-primary transition-colors hover:bg-primary/10"
+        onClick={handleRemove}
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </span>
+  );
+});
+SelectedHeroToken.displayName = 'SelectedHeroToken';
 
 interface ScoreStepperProps {
   label: string;
