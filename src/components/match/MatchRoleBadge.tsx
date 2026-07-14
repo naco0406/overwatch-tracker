@@ -9,14 +9,10 @@ interface MatchRoleIconProps {
 }
 
 export const MatchRoleIcon = ({ className, role }: MatchRoleIconProps) => (
-  <span
-    aria-hidden="true"
-    className={cn(
-      'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-slate-900/10 bg-slate-950',
-      className,
-    )}
-  >
-    <img alt="" className="h-[72%] w-[72%] object-contain" src={getRoleIconPath(role)} />
+  <span aria-hidden="true" className={cn('ow-game-icon-shell h-4 w-4', className)} data-role={role}>
+    <span className="ow-game-icon-core">
+      <img alt="" className="h-[72%] w-[72%] object-contain" src={getRoleIconPath(role)} />
+    </span>
   </span>
 );
 
@@ -38,12 +34,13 @@ interface MatchRoleBadgeProps {
 
 export const MatchRoleBadge = ({ className, role }: MatchRoleBadgeProps) => (
   <span
+    data-role={role}
     className={cn(
-      'inline-flex h-6 max-w-full items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-2 text-xs font-bold text-foreground',
+      'ow-game-badge inline-flex h-7 max-w-full items-center gap-1.5 rounded-[3px] border border-border bg-secondary/60 px-2 text-xs font-black text-foreground',
       className,
     )}
   >
-    <MatchRoleIcon className="h-3.5 w-3.5" role={role} />
+    <MatchRoleIcon className="h-4 w-4" role={role} />
     <span className="truncate">{getMatchRoleLabel(role)}</span>
   </span>
 );

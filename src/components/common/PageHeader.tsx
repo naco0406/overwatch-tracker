@@ -21,17 +21,26 @@ const PageHeader = ({
 }: PageHeaderProps) => (
   <div
     className={cn(
-      'flex flex-col sm:flex-row sm:justify-between',
+      'ow-page-header flex flex-col sm:flex-row sm:justify-between',
       compact ? 'gap-2 sm:items-center' : 'gap-3 sm:items-end',
       className,
     )}
   >
     <div className="min-w-0">
-      {eyebrow && <p className={cn('metric-label', compact ? 'mb-1' : 'mb-1.5')}>{eyebrow}</p>}
+      {eyebrow && (
+        <p
+          className={cn(
+            'metric-label mb-1.5 truncate text-muted-foreground',
+            compact ? 'sm:mb-1' : 'sm:mb-2',
+          )}
+        >
+          {eyebrow}
+        </p>
+      )}
       <h1
         className={cn(
-          'break-words font-bold leading-tight tracking-normal text-foreground',
-          compact ? 'text-2xl sm:text-[26px]' : 'text-[26px] sm:text-3xl',
+          'break-words font-black leading-none tracking-normal text-foreground',
+          compact ? 'text-2xl sm:text-[28px]' : 'text-[30px] sm:text-[38px]',
         )}
       >
         {title}
@@ -39,7 +48,7 @@ const PageHeader = ({
       {description && (
         <p
           className={cn(
-            'max-w-2xl break-words text-sm leading-relaxed text-muted-foreground',
+            'max-w-3xl break-words text-sm font-semibold leading-relaxed text-muted-foreground',
             compact ? 'mt-1.5' : 'mt-2',
           )}
         >

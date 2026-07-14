@@ -9,7 +9,6 @@ import {
   Clock3,
   Database,
   ExternalLink,
-  Gauge,
   Globe2,
   Layers3,
   ListOrdered,
@@ -51,6 +50,7 @@ import {
 
 import { EmptyState } from '@/components/common/EmptyState';
 import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
+import { DeferredImage } from '@/components/common/DeferredImage';
 import { PageHeader } from '@/components/common/PageHeader';
 import { MapScreenshot } from '@/components/match/MapScreenshot';
 import { MatchModeLabel } from '@/components/match/MatchModeBadge';
@@ -78,10 +78,17 @@ import {
 } from '@/data/matchOptions';
 import { getHeroPortraitPath } from '@/data/masterAssets';
 import { useCompetitiveSeasons } from '@/hooks/useCompetitiveSeasons';
+import { toast } from '@/hooks/use-toast';
+import { useCollectExternalData, useExternalHeroRates } from '@/hooks/useExternalData';
 import { useGeminiStatsInsight } from '@/hooks/useGeminiStatsInsight';
 import { useMatches } from '@/hooks/useMatches';
 import { usePlayerAccounts } from '@/hooks/usePlayerAccounts';
 import { useUserSettings } from '@/hooks/useUserSettings';
+import {
+  isExternalDataApiConfigured,
+  type ExternalCollectRequest,
+  type ExternalHeroRatesRequest,
+} from '@/lib/externalDataApi';
 import {
   getFavoriteEsportsTeamEvents,
   getNextFavoriteEsportsTeamEvent,
@@ -120,41 +127,50 @@ const periodOptions = [
   { label: '직접', value: 'custom' },
 ] as const;
 
+type MapSortMode = 'pickRate' | 'winRate';
+
+const mapSortOptions = [
+  { label: '승률순', value: 'winRate' },
+  { label: '픽률순', value: 'pickRate' },
+] as const satisfies ReadonlyArray<{ label: string; value: MapSortMode }>;
+
+const EXTERNAL_HERO_META_STALE_MS = 24 * 60 * 60 * 1000;
+
 type PeriodFilter = (typeof periodOptions)[number]['value'];
 
 const statsSections = [
   {
-    description: '전장별 승률을 먼저 보고, 모드 안에서의 선택 비중은 보조로 확인합니다.',
+    description: '전장별 승률, 경기 수, 모드 분포',
     eyebrow: '전장 분석',
     title: '전장 통계',
     value: 'maps',
   },
   {
-    description: '모드별 승률을 먼저 보고, 승/패/무 분포와 경기 수를 함께 비교합니다.',
+    description: '모드별 승률과 결과 분포',
     eyebrow: '모드 분석',
     title: '모드 통계',
     value: 'modes',
   },
   {
-    description: '영웅 사용량과 승률을 역할별로 확인합니다.',
+    description: '역할별 영웅 사용량과 승률',
     eyebrow: '영웅 분석',
     title: '영웅 통계',
     value: 'heroes',
   },
   {
-    description: '시간대별 경기 집중도와 승률 변화를 확인합니다.',
+    description: '시간대별 경기 수와 승률',
     eyebrow: '시간 분석',
     title: '시간대 통계',
     value: 'time',
   },
   {
-    description: '세션 안에서 몇 번째 경기인지에 따른 흐름을 분석합니다.',
+    description: '세션 진행 순서에 따른 승률 변화',
     eyebrow: '세션 분석',
     title: '순서 통계',
     value: 'order',
   },
   {
-    description: '현재 필터의 전장, 모드, 영웅, 시간, 순서, 조합 신호를 한 번에 요약합니다.',
+    description: '현재 조건의 핵심 전적 신호',
     eyebrow: '인사이트',
     title: '요약',
     value: 'summary',
@@ -215,10 +231,10 @@ const formatMonthLabel = (date: Date) =>
   }).format(date);
 
 const externalSourceTypeLabels = {
-  official_api: '공식 API',
+  official_api: '블리자드 공식',
   official_web: '공식 웹',
-  third_party_api: '서드파티 API',
-  third_party_web: '서드파티 웹',
+  third_party_api: '커뮤니티 데이터',
+  third_party_web: '커뮤니티 웹',
 } satisfies Record<ExternalSource['sourceType'], string>;
 
 const externalEventStatusLabels = {
@@ -376,8 +392,17 @@ const getExternalSourcePriority = (sourceId: string) =>
     ? externalSourcePriority[sourceId as keyof typeof externalSourcePriority]
     : 99;
 
-const getExternalSourceLabel = (sourceId: string, sources: ExternalSource[]) =>
-  sources.find((source) => source.id === sourceId)?.displayName ?? sourceId;
+const getExternalSourceLabel = (sourceId: string, sources: ExternalSource[]) => {
+  if (sourceId === 'blizzard_hero_rates') {
+    return '블리자드 공식';
+  }
+
+  if (sourceId === 'overfast') {
+    return 'OverFast';
+  }
+
+  return sources.find((source) => source.id === sourceId)?.displayName ?? sourceId;
+};
 
 const getExternalCompactSourceLabel = (sourceId: string) => {
   if (sourceId === 'official_esports') {
@@ -397,7 +422,7 @@ const getExternalCompactSourceLabel = (sourceId: string) => {
 
 const getExternalFreshnessLabel = (value: string | null) => {
   if (!value) {
-    return '수집 대기';
+    return '업데이트 전';
   }
 
   const diffMs = Date.now() - new Date(value).getTime();
@@ -419,6 +444,16 @@ const getExternalFreshnessLabel = (value: string | null) => {
   }
 
   return `${Math.floor(diffHours / 24)}일 전`;
+};
+
+const isExternalHeroMetaStale = (value: string | null) => {
+  if (!value) {
+    return true;
+  }
+
+  const time = new Date(value).getTime();
+
+  return !Number.isFinite(time) || Date.now() - time > EXTERNAL_HERO_META_STALE_MS;
 };
 
 const compareExternalTimestampAsc = (left: string | null, right: string | null) =>
@@ -500,6 +535,234 @@ const getExternalHeroRole = (heroId: string, fallbackRole?: string) => {
 
 const getExternalRoleFilterLabel = (value: ExternalHeroRoleFilter) =>
   value === 'all' ? '전체' : getExternalRoleLabel(value);
+
+const externalHeroInputOptions = [
+  { label: '전체 플랫폼', officialValue: 'PC', value: 'all' },
+  { label: 'PC · 마우스/키보드', officialValue: 'PC', value: 'mouse_keyboard' },
+  { label: '콘솔 · 컨트롤러', officialValue: 'Console', value: 'controller' },
+] satisfies Array<{ label: string; officialValue: string; value: ExternalHeroInputFilter }>;
+
+const externalHeroGameModeOptions = [
+  { label: '전체 모드', officialValue: '0', value: 'all' },
+  { label: '빠른 대전', officialValue: '0', value: 'quickplay' },
+  { label: '경쟁전', officialValue: '1', value: 'competitive' },
+] satisfies Array<{ label: string; officialValue: string; value: ExternalHeroGameModeFilter }>;
+
+const externalHeroRegionOptions = [
+  { label: '전체 지역', officialValue: 'Asia', value: 'all' },
+  { label: '아시아', officialValue: 'Asia', value: 'asia' },
+  { label: '아메리카', officialValue: 'Americas', value: 'americas' },
+  { label: '유럽', officialValue: 'Europe', value: 'europe' },
+] satisfies Array<{ label: string; officialValue: string; value: ExternalHeroRegionFilter }>;
+
+const externalHeroTierOptions = [
+  { label: '모든 티어', officialValue: 'All', value: 'all' },
+  { label: '브론즈', officialValue: 'Bronze', value: 'bronze' },
+  { label: '실버', officialValue: 'Silver', value: 'silver' },
+  { label: '골드', officialValue: 'Gold', value: 'gold' },
+  { label: '플래티넘', officialValue: 'Platinum', value: 'platinum' },
+  { label: '다이아몬드', officialValue: 'Diamond', value: 'diamond' },
+  { label: '마스터', officialValue: 'Master', value: 'master' },
+  {
+    label: '그랜드마스터 및 챔피언',
+    officialValue: 'Grandmaster',
+    value: 'grandmaster_and_champion',
+  },
+] satisfies Array<{ label: string; officialValue: string; value: ExternalHeroTierFilter }>;
+
+const externalHeroOfficialMapOptions = [
+  { label: '모든 전장', officialValue: 'all-maps', value: 'all' },
+  ...mapOptions.map((map) => ({
+    label: map.label,
+    officialValue: map.value,
+    value: map.value,
+  })),
+] satisfies Array<{ label: string; officialValue: string; value: ExternalHeroMapFilter }>;
+
+const normalizeExternalHeroInputMethod = (value: string) => {
+  const normalized = value.trim().toLowerCase();
+
+  if (['controller', 'console', 'gamepad'].includes(normalized)) {
+    return 'controller';
+  }
+
+  if (['mouse_keyboard', 'mouse-keyboard', 'keyboard_mouse', 'pc'].includes(normalized)) {
+    return 'mouse_keyboard';
+  }
+
+  return normalized || 'unknown';
+};
+
+const normalizeExternalHeroTier = (value: string) => {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+
+  if (
+    normalized === 'champion' ||
+    normalized === 'grandmaster' ||
+    normalized === 'grandmaster_champion'
+  ) {
+    return 'grandmaster_and_champion';
+  }
+
+  return normalized || 'all';
+};
+
+const normalizeExternalHeroMapId = (value: string) => {
+  const normalized = value.trim().toLowerCase();
+
+  return normalized === 'all-maps' ? 'all' : normalized || 'all';
+};
+
+const normalizeExternalHeroGameMode = (value: string) => {
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === 'competitive' || normalized === 'quickplay') {
+    return normalized;
+  }
+
+  return normalized || 'all';
+};
+
+const getExternalHeroInputLabel = (value: string) =>
+  externalHeroInputOptions.find(
+    (option) => option.value === normalizeExternalHeroInputMethod(value),
+  )?.label ?? value;
+
+const getExternalHeroGameModeLabel = (value: string) =>
+  externalHeroGameModeOptions.find(
+    (option) => option.value === normalizeExternalHeroGameMode(value),
+  )?.label ?? value;
+
+const getExternalHeroTierLabel = (value: string) =>
+  externalHeroTierOptions.find((option) => option.value === normalizeExternalHeroTier(value))
+    ?.label ?? value;
+
+const getExternalHeroMapLabel = (value: string) =>
+  externalHeroOfficialMapOptions.find(
+    (option) => option.value === normalizeExternalHeroMapId(value),
+  )?.label ?? value;
+
+const getExternalHeroFilterLabel = (filters: ExternalHeroMetaFilters) =>
+  [
+    getExternalHeroInputLabel(filters.inputMethod),
+    getExternalHeroGameModeLabel(filters.gamemode),
+    getExternalHeroMapLabel(filters.mapId),
+    getExternalRegionLabel(filters.region),
+    filters.gamemode === 'competitive' ? getExternalHeroTierLabel(filters.tier) : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+const getExternalHeroOfficialRoleValue = (role: ExternalHeroRoleFilter) => {
+  if (role === 'tank') {
+    return 'Tank';
+  }
+
+  if (role === 'damage') {
+    return 'Damage';
+  }
+
+  if (role === 'support') {
+    return 'Support';
+  }
+
+  return 'All';
+};
+
+const getExternalHeroOfficialRatesUrl = (
+  filters: ExternalHeroMetaFilters,
+  role: ExternalHeroRoleFilter,
+) => {
+  const input =
+    externalHeroInputOptions.find((option) => option.value === filters.inputMethod)
+      ?.officialValue ?? 'PC';
+  const rq =
+    externalHeroGameModeOptions.find((option) => option.value === filters.gamemode)
+      ?.officialValue ?? '0';
+  const map =
+    externalHeroOfficialMapOptions.find((option) => option.value === filters.mapId)
+      ?.officialValue ?? 'all-maps';
+  const region =
+    externalHeroRegionOptions.find((option) => option.value === filters.region)?.officialValue ??
+    'Asia';
+  const tier =
+    filters.gamemode === 'competitive'
+      ? (externalHeroTierOptions.find((option) => option.value === filters.tier)?.officialValue ??
+        'All')
+      : 'All';
+  const params = new URLSearchParams({
+    input,
+    map,
+    region,
+    role: getExternalHeroOfficialRoleValue(role),
+    rq,
+    tier,
+  });
+
+  return `https://overwatch.blizzard.com/ko-kr/rates/?${params.toString()}`;
+};
+
+const getExternalHeroCollectRequest = (
+  filters: ExternalHeroMetaFilters,
+): ExternalCollectRequest => ({
+  heroInput:
+    externalHeroInputOptions.find((option) => option.value === filters.inputMethod)
+      ?.officialValue ?? 'PC',
+  heroMap:
+    externalHeroOfficialMapOptions.find((option) => option.value === filters.mapId)
+      ?.officialValue ?? 'all-maps',
+  heroRegion:
+    externalHeroRegionOptions.find((option) => option.value === filters.region)?.officialValue ??
+    'Asia',
+  heroRole: 'All',
+  heroRq:
+    externalHeroGameModeOptions.find((option) => option.value === filters.gamemode)
+      ?.officialValue ?? '0',
+  heroTier:
+    filters.gamemode === 'competitive'
+      ? (externalHeroTierOptions.find((option) => option.value === filters.tier)?.officialValue ??
+        'All')
+      : 'All',
+  target: 'global-hero-rates',
+});
+
+const hasExternalHeroScopedServerQuery = (filters: ExternalHeroMetaFilters) =>
+  filters.sourceId !== 'all' ||
+  filters.inputMethod !== 'all' ||
+  filters.gamemode !== 'all' ||
+  filters.mapId !== 'all' ||
+  filters.region !== 'all';
+
+const getExternalHeroRatesRequest = (
+  filters: ExternalHeroMetaFilters,
+): ExternalHeroRatesRequest => {
+  const request: ExternalHeroRatesRequest = {
+    limit: 20000,
+    mapId: filters.mapId,
+    tier: filters.gamemode === 'competitive' ? filters.tier : 'all',
+  };
+
+  if (filters.sourceId !== 'all') {
+    request.sourceId = filters.sourceId;
+  }
+
+  if (filters.inputMethod !== 'all') {
+    request.inputMethod = filters.inputMethod;
+  }
+
+  if (filters.gamemode !== 'all') {
+    request.gamemode = filters.gamemode;
+  }
+
+  if (filters.region !== 'all') {
+    request.region = filters.region;
+  }
+
+  return request;
+};
 
 const getExternalEventDateKey = (event: ExternalEsportsEventItem) => {
   if (!event.startsAt) {
@@ -779,6 +1042,16 @@ const sortExternalHeroRows = (rows: ExternalHeroMetaRow[], sortMode: ExternalHer
       return (right.pickRate ?? -1) - (left.pickRate ?? -1);
     }
 
+    if (sortMode === 'ban') {
+      const banDelta = (right.banRate ?? -1) - (left.banRate ?? -1);
+
+      if (banDelta !== 0) {
+        return banDelta;
+      }
+
+      return (right.pickRate ?? -1) - (left.pickRate ?? -1);
+    }
+
     const pickDelta = (right.pickRate ?? -1) - (left.pickRate ?? -1);
 
     if (pickDelta !== 0) {
@@ -801,6 +1074,92 @@ const filterExternalHeroRows = (rows: ExternalHeroMetaRow[], query: string) => {
     ),
   );
 };
+
+const createExternalHeroSourceOptions = (
+  heroRates: ExternalHeroRateItem[],
+  sources: ExternalSource[],
+) => {
+  const counts = heroRates.reduce((map, snapshot) => {
+    map.set(snapshot.sourceId, (map.get(snapshot.sourceId) ?? 0) + 1);
+
+    return map;
+  }, new Map<string, number>());
+  const sourceIds = new Set<string>([
+    'blizzard_hero_rates',
+    'overfast',
+    ...Array.from(counts.keys()),
+    ...sources
+      .filter((source) => source.id.includes('hero') || source.id === 'overfast')
+      .map((source) => source.id),
+  ]);
+
+  return [
+    {
+      count: heroRates.length,
+      label: '전체 데이터',
+      value: 'all',
+    },
+    ...Array.from(sourceIds, (sourceId) => ({
+      count: counts.get(sourceId) ?? 0,
+      label: getExternalSourceLabel(sourceId, sources),
+      value: sourceId,
+    })).sort(
+      (left, right) =>
+        getExternalSourcePriority(left.value) - getExternalSourcePriority(right.value) ||
+        left.label.localeCompare(right.label, 'ko-KR'),
+    ),
+  ] satisfies Array<{ count: number; label: string; value: ExternalHeroSourceFilter }>;
+};
+
+const filterExternalHeroRateSnapshots = (
+  heroRates: ExternalHeroRateItem[],
+  filters: ExternalHeroMetaFilters,
+) =>
+  heroRates.filter((snapshot) => {
+    if (filters.sourceId !== 'all' && snapshot.sourceId !== filters.sourceId) {
+      return false;
+    }
+
+    if (
+      filters.inputMethod !== 'all' &&
+      normalizeExternalHeroInputMethod(snapshot.inputMethod) !== filters.inputMethod
+    ) {
+      return false;
+    }
+
+    if (
+      filters.gamemode !== 'all' &&
+      normalizeExternalHeroGameMode(snapshot.gamemode) !== filters.gamemode
+    ) {
+      return false;
+    }
+
+    if (filters.mapId !== 'all' && normalizeExternalHeroMapId(snapshot.mapId) !== filters.mapId) {
+      return false;
+    }
+
+    if (filters.mapId === 'all' && normalizeExternalHeroMapId(snapshot.mapId) !== 'all') {
+      return false;
+    }
+
+    if (filters.region !== 'all' && snapshot.region !== filters.region) {
+      return false;
+    }
+
+    if (
+      filters.gamemode === 'competitive' &&
+      filters.tier !== 'all' &&
+      normalizeExternalHeroTier(snapshot.tier) !== filters.tier
+    ) {
+      return false;
+    }
+
+    if (filters.gamemode !== 'competitive' && normalizeExternalHeroTier(snapshot.tier) !== 'all') {
+      return false;
+    }
+
+    return true;
+  });
 
 const getExternalHeroScatterRoleClassName = (role: MatchRole | null) => {
   if (role === 'tank') {
@@ -1093,7 +1452,7 @@ const getExternalHeroSignalFocusDomain = ({
 const getExternalHeroMetricRank = (
   rows: ExternalHeroMetaRow[],
   heroId: string,
-  metric: 'pickRate' | 'winRate',
+  metric: 'banRate' | 'pickRate' | 'winRate',
 ) => {
   const sortedRows = [...rows]
     .filter((hero) => hero[metric] !== null)
@@ -1139,10 +1498,10 @@ const getExternalHeroSignalKey = (
 
 const externalHeroSignalLabels = {
   all: '전체',
-  core: '핵심 메타',
-  efficient: '고효율 픽',
-  overheated: '과열 픽',
-  watch: '관찰 구간',
+  core: '주류 강세',
+  efficient: '숨은 강자',
+  overheated: '인기 대비 저조',
+  watch: '비주류',
 } satisfies Record<ExternalHeroSignalFilter, string>;
 
 const getExternalHeroSignalLabel = (hero: ExternalHeroMetaRow, rows: ExternalHeroMetaRow[]) =>
@@ -1416,7 +1775,7 @@ const getTooltipExtraRows = (value: unknown, renderedNames: Set<string>) => {
   }
 
   if (typeof datum.sourceLabel === 'string') {
-    rows.push({ label: '소스', value: datum.sourceLabel });
+    rows.push({ label: '출처', value: datum.sourceLabel });
   }
 
   if (typeof datum.regionLabel === 'string') {
@@ -1453,6 +1812,7 @@ const StatsPage = () => {
   const [queueFilter, setQueueFilter] = useState<QueueType | 'all'>('all');
   const [accountFilter, setAccountFilter] = useState('all');
   const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
+  const [mapSortMode, setMapSortMode] = useState<MapSortMode>('winRate');
   const { data: matches = [], isLoading: isMatchesLoading } = useMatches();
   const { data: seasons = [], isLoading: isSeasonsLoading } = useCompetitiveSeasons();
   const { data: playerAccounts = [], isLoading: isAccountsLoading } = usePlayerAccounts();
@@ -1673,9 +2033,22 @@ const StatsPage = () => {
             value: map.value,
           };
         })
-        .filter((map) => map.total > 0)
-        .sort((a, b) => (b.winRate ?? -1) - (a.winRate ?? -1) || b.total - a.total),
+        .filter((map) => map.total > 0),
     [filteredMatchGroups, filteredMatches.length],
+  );
+
+  const sortedMapStats = useMemo(
+    () =>
+      [...mapStats].sort((a, b) => {
+        if (mapSortMode === 'pickRate') {
+          return (
+            b.pickRate - a.pickRate || (b.winRate ?? -1) - (a.winRate ?? -1) || b.total - a.total
+          );
+        }
+
+        return (b.winRate ?? -1) - (a.winRate ?? -1) || b.total - a.total;
+      }),
+    [mapSortMode, mapStats],
   );
 
   const heroStats = useMemo(
@@ -1807,7 +2180,7 @@ const StatsPage = () => {
   );
   const mapWinRateChartData = useMemo(
     () =>
-      mapStats.slice(0, 14).map((stat) => ({
+      sortedMapStats.slice(0, 14).map((stat) => ({
         경기: stat.total,
         mode: getModeLabel(stat.modeId),
         name: stat.label,
@@ -1815,11 +2188,11 @@ const StatsPage = () => {
         승률: stat.winRate ?? 0,
         전적: `${stat.wins}승 ${stat.losses}패 ${stat.draws}무`,
       })),
-    [mapStats],
+    [sortedMapStats],
   );
   const selectedMapStat = useMemo(
-    () => mapStats.find((stat) => stat.value === selectedMapId) ?? mapStats[0] ?? null,
-    [mapStats, selectedMapId],
+    () => mapStats.find((stat) => stat.value === selectedMapId) ?? sortedMapStats[0] ?? null,
+    [mapStats, selectedMapId, sortedMapStats],
   );
   const heroChartData = useMemo(
     () =>
@@ -2135,10 +2508,38 @@ const StatsPage = () => {
             />
             <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_340px]">
               <div className="space-y-4">
-                <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
-                  <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-                    <p className="metric-label">전장 승률</p>
-                    <h2 className="mt-1 text-lg font-bold">승률과 표본을 같이 비교</h2>
+                <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
+                  <div className="flex flex-col gap-3 border-b border-border/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                    <div className="min-w-0">
+                      <p className="metric-label">전장 승률</p>
+                      <h2 className="mt-1 text-lg font-bold">승률과 표본을 같이 비교</h2>
+                    </div>
+                    <div
+                      aria-label="전장 정렬 기준"
+                      className="inline-flex w-fit shrink-0 rounded-[3px] bg-secondary p-0.5"
+                      role="group"
+                    >
+                      {mapSortOptions.map((option) => {
+                        const active = mapSortMode === option.value;
+
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            aria-pressed={active}
+                            className={cn(
+                              'h-8 min-w-[72px] rounded-[2px] px-3 text-xs font-black transition-[background-color,color,box-shadow]',
+                              active
+                                ? 'bg-card text-foreground shadow-sm'
+                                : 'text-muted-foreground hover:text-foreground',
+                            )}
+                            onClick={() => setMapSortMode(option.value)}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                   <div className="section-pad">
                     {mapStats.length > 0 ? (
@@ -2186,7 +2587,7 @@ const StatsPage = () => {
                 <MapAtlasPanel
                   isLoading={isStatsLoading}
                   selectedMap={selectedMapStat}
-                  stats={mapStats}
+                  stats={sortedMapStats}
                   onSelectMap={setSelectedMapId}
                 />
               </div>
@@ -2194,7 +2595,7 @@ const StatsPage = () => {
               <aside className="space-y-4">
                 <SectionMetricStack metrics={sectionMetrics.maps} />
                 {bestMap ? (
-                  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+                  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
                     <div className="aspect-[16/10] bg-secondary">
                       <MapScreenshot
                         alt={bestMap.label}
@@ -2261,7 +2662,7 @@ const StatsPage = () => {
               <MetricGrid metrics={sectionMetrics.modes} />
 
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
-                <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+                <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
                   <div className="border-b border-border/60 px-4 py-3 sm:px-5">
                     <p className="metric-label">모드별 승률</p>
                     <h2 className="mt-1 text-lg font-bold">어떤 모드에서 승률이 좋은지</h2>
@@ -2314,7 +2715,7 @@ const StatsPage = () => {
                   </div>
                 </div>
 
-                <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+                <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
                   <div className="border-b border-border/60 px-4 py-3 sm:px-5">
                     <p className="metric-label">승률 순위</p>
                     <h2 className="mt-1 text-lg font-bold">모드별 판단 요약</h2>
@@ -2379,7 +2780,7 @@ const StatsPage = () => {
                   <HeroSpotlightPanel bestHero={bestHero} topHero={topHero} />
 
                   <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-                    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+                    <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
                       <div className="border-b border-border/60 px-4 py-3 sm:px-5">
                         <p className="metric-label">영웅 사용량</p>
                         <h2 className="mt-1 text-lg font-bold">많이 꺼낸 영웅과 승률</h2>
@@ -2455,7 +2856,7 @@ const StatsPage = () => {
                 </aside>
               </div>
             ) : (
-              <div className="rounded-lg border border-border/70 bg-card/75 section-pad">
+              <div className="ow-panel-cap rounded-[3px] border border-border bg-card section-pad">
                 <TabEmpty
                   icon={Swords}
                   isLoading={isStatsLoading}
@@ -2502,7 +2903,7 @@ const StatsPage = () => {
                 <div className="space-y-4">
                   <TimeSpotlightPanel bestHour={bestHour} summary={summary} topHour={topHour} />
 
-                  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+                  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
                     <div className="border-b border-border/60 px-4 py-3 sm:px-5">
                       <p className="metric-label">시간대 흐름</p>
                       <h2 className="mt-1 text-lg font-bold">경기 수와 승률 변화</h2>
@@ -2572,7 +2973,7 @@ const StatsPage = () => {
                 </aside>
               </div>
             ) : (
-              <div className="rounded-lg border border-border/70 bg-card/75 section-pad">
+              <div className="ow-panel-cap rounded-[3px] border border-border bg-card section-pad">
                 <TabEmpty
                   icon={Clock3}
                   isLoading={isStatsLoading}
@@ -2623,7 +3024,7 @@ const StatsPage = () => {
                     worstOrder={worstOrder}
                   />
 
-                  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+                  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
                     <div className="border-b border-border/60 px-4 py-3 sm:px-5">
                       <p className="metric-label">세션 순서</p>
                       <h2 className="mt-1 text-lg font-bold">몇 번째 경기에서 흔들리는지</h2>
@@ -2700,7 +3101,7 @@ const StatsPage = () => {
                 </aside>
               </div>
             ) : (
-              <div className="rounded-lg border border-border/70 bg-card/75 section-pad">
+              <div className="ow-panel-cap rounded-[3px] border border-border bg-card section-pad">
                 <TabEmpty
                   icon={ListOrdered}
                   isLoading={isStatsLoading}
@@ -2770,8 +3171,10 @@ const MetricCard = ({ className, detail, icon: Icon, label, value }: MetricCardP
           <p className="metric-label">{label}</p>
           <p className="mt-2 break-words text-xl font-bold leading-tight">{value}</p>
         </div>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-primary">
-          <Icon className="h-4 w-4" />
+        <div className="ow-game-icon-shell h-8 w-8 bg-primary">
+          <div className="ow-game-icon-core bg-card text-primary">
+            <Icon className="h-4 w-4" />
+          </div>
         </div>
       </div>
       <p className="mt-2 break-words text-xs font-semibold leading-relaxed text-muted-foreground">
@@ -2790,7 +3193,7 @@ export const MetricGrid = ({
 }) => (
   <div
     className={cn(
-      'grid grid-cols-2 overflow-hidden rounded-lg border border-border/70 bg-card/55 md:grid-cols-4',
+      'ow-panel-cap grid grid-cols-2 overflow-hidden rounded-[3px] border border-border bg-card md:grid-cols-4',
       className,
     )}
   >
@@ -2805,7 +3208,7 @@ export const MetricGrid = ({
 );
 
 const SectionMetricStack = ({ metrics }: { metrics: MetricCellProps[] }) => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/55">
+  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     {metrics.map((metric) => (
       <MetricCard
         key={metric.label}
@@ -2821,13 +3224,39 @@ export type ExternalEsportsEventItem = ExternalDataOverview['esportsEvents'][num
 
 type ExternalHeroRoleFilter = 'all' | MatchRole;
 type ExternalHeroSignalFilter = 'all' | 'core' | 'efficient' | 'overheated' | 'watch';
-type ExternalHeroSortMode = 'name' | 'pick' | 'win';
+type ExternalHeroSortMode = 'ban' | 'name' | 'pick' | 'win';
+type ExternalHeroInputFilter = 'all' | 'controller' | 'mouse_keyboard';
+type ExternalHeroGameModeFilter = 'all' | 'competitive' | 'quickplay';
+type ExternalHeroMapFilter = 'all' | string;
+type ExternalHeroRegionFilter = 'all' | 'americas' | 'asia' | 'europe' | string;
+type ExternalHeroSourceFilter = 'all' | string;
+type ExternalHeroTierFilter =
+  | 'all'
+  | 'bronze'
+  | 'diamond'
+  | 'gold'
+  | 'grandmaster_and_champion'
+  | 'grandmaster_champion'
+  | 'master'
+  | 'platinum'
+  | 'silver'
+  | string;
 type ExternalScheduleViewMode = 'month' | 'week';
 type ExternalScheduleRegionFilter = 'all' | string;
 type ExternalScheduleSourceFilter = 'all' | string;
 type ExternalScheduleStatusFilter = 'all' | 'completed' | 'live' | 'scheduled';
 
+interface ExternalHeroMetaFilters {
+  gamemode: ExternalHeroGameModeFilter;
+  inputMethod: ExternalHeroInputFilter;
+  mapId: ExternalHeroMapFilter;
+  region: ExternalHeroRegionFilter;
+  sourceId: ExternalHeroSourceFilter;
+  tier: ExternalHeroTierFilter;
+}
+
 interface ExternalHeroTrendPoint {
+  banRate: number | null;
   fetchedAt: string;
   pickRate: number | null;
   sampleCount: number;
@@ -2835,11 +3264,14 @@ interface ExternalHeroTrendPoint {
 }
 
 interface ExternalHeroMetaRow {
+  banRate: number | null;
+  banRateDelta: number | null;
   heroId: string;
   latestAt: string | null;
   name: string;
   pickRate: number | null;
   pickRateDelta: number | null;
+  previousBanRate: number | null;
   previousPickRate: number | null;
   previousWinRate: number | null;
   regionLabel: string;
@@ -2939,8 +3371,8 @@ export const ExternalDataOverviewPanel = ({
         <MetricGrid metrics={metrics} />
         <EmptyState
           icon={Database}
-          title="외부 데이터 API 주소가 없습니다."
-          description="Cloudflare Pages 환경 변수 VITE_EXTERNAL_DATA_API_URL을 설정하면 이 화면에서 Worker 데이터를 확인할 수 있습니다."
+          title="영웅 메타를 준비하지 못했어요."
+          description="잠시 후 다시 시도해주세요. 문제가 계속되면 데이터 안내를 확인하세요."
         />
       </div>
     );
@@ -2966,8 +3398,8 @@ export const ExternalDataOverviewPanel = ({
             </Button>
           }
           icon={TriangleAlert}
-          title="외부 데이터를 불러오지 못했습니다."
-          description={error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.'}
+          title="데이터를 불러오지 못했어요."
+          description="잠시 후 다시 시도해주세요."
         />
       ) : (
         <>
@@ -2975,7 +3407,12 @@ export const ExternalDataOverviewPanel = ({
 
           <div className="grid gap-4 2xl:grid-cols-[minmax(360px,0.92fr)_minmax(0,1.08fr)] 2xl:items-start">
             <ExternalEsportsSchedulePanel esportsEvents={esportsEvents} isLoading={isLoading} />
-            <ExternalHeroMetaPanel heroRates={heroRates} isLoading={isLoading} sources={sources} />
+            <ExternalHeroMetaPanel
+              heroRates={heroRates}
+              isLoading={isLoading}
+              sources={sources}
+              onCollected={onRefresh}
+            />
           </div>
 
           <ExternalDataKindPanel
@@ -3012,7 +3449,7 @@ export const createExternalSourceCards = (
           latestAt,
           primaryLabel: '영웅 메타',
           source,
-          statusLabel: sourceHeroRates.length > 0 ? '수집됨' : '대기',
+          statusLabel: sourceHeroRates.length > 0 ? '업데이트됨' : '준비 중',
         };
       }
 
@@ -3029,7 +3466,7 @@ export const createExternalSourceCards = (
           latestAt,
           primaryLabel: '경쟁전 보강',
           source,
-          statusLabel: sourceHeroRates.length > 0 ? '수집됨' : '대기',
+          statusLabel: sourceHeroRates.length > 0 ? '업데이트됨' : '준비 중',
         };
       }
 
@@ -3041,7 +3478,7 @@ export const createExternalSourceCards = (
           latestAt,
           primaryLabel: 'e스포츠',
           source,
-          statusLabel: sourceEvents.length > 0 ? '수집됨' : '대기',
+          statusLabel: sourceEvents.length > 0 ? '업데이트됨' : '준비 중',
         };
       }
 
@@ -3058,7 +3495,7 @@ export const createExternalSourceCards = (
           latestAt,
           primaryLabel: '아시아 일정',
           source,
-          statusLabel: sourceEvents.length > 0 ? '수집됨' : '대기',
+          statusLabel: sourceEvents.length > 0 ? '업데이트됨' : '준비 중',
         };
       }
 
@@ -3135,12 +3572,14 @@ const createExternalHeroTrendPoints = (
     (map, snapshot) => {
       const bucketKey = getExternalTrendBucketKey(snapshot.fetchedAt);
       const current = map.get(bucketKey) ?? {
+        banRates: [] as Array<number | null>,
         fetchedAt: bucketKey,
         pickRates: [] as Array<number | null>,
         sampleCount: 0,
         winRates: [] as Array<number | null>,
       };
 
+      current.banRates.push(snapshot.banRate);
       current.pickRates.push(snapshot.pickRate);
       current.winRates.push(snapshot.winRate);
       current.sampleCount += 1;
@@ -3152,6 +3591,7 @@ const createExternalHeroTrendPoints = (
       string,
       {
         fetchedAt: string;
+        banRates: Array<number | null>;
         pickRates: Array<number | null>;
         sampleCount: number;
         winRates: Array<number | null>;
@@ -3161,12 +3601,13 @@ const createExternalHeroTrendPoints = (
 
   return Array.from(buckets.values())
     .map((bucket) => ({
+      banRate: roundExternalMetric(getExternalAverage(bucket.banRates)),
       fetchedAt: bucket.fetchedAt,
       pickRate: roundExternalMetric(getExternalAverage(bucket.pickRates)),
       sampleCount: bucket.sampleCount,
       winRate: roundExternalMetric(getExternalAverage(bucket.winRates, { ignoreZero: true })),
     }))
-    .filter((point) => point.pickRate !== null || point.winRate !== null)
+    .filter((point) => point.banRate !== null || point.pickRate !== null || point.winRate !== null)
     .sort((left, right) => new Date(left.fetchedAt).getTime() - new Date(right.fetchedAt).getTime())
     .slice(-18);
 };
@@ -3251,6 +3692,12 @@ const createExternalHeroMetaRows = (
     );
     const regionLabels = Array.from(group.regions).map(getExternalRegionLabel);
     const roleLabelsForHero = Array.from(group.roles).map(getExternalRoleLabel);
+    const banRate = roundExternalMetric(
+      getExternalAverage(currentSnapshots.map((snapshot) => snapshot.banRate)),
+    );
+    const previousBanRate = roundExternalMetric(
+      getExternalAverage(previousSnapshots.map((snapshot) => snapshot.banRate)),
+    );
     const pickRate = roundExternalMetric(
       getExternalAverage(currentSnapshots.map((snapshot) => snapshot.pickRate)),
     );
@@ -3271,11 +3718,14 @@ const createExternalHeroMetaRows = (
     );
 
     return {
+      banRate,
+      banRateDelta: getExternalMetricDelta(banRate, previousBanRate),
       heroId,
       latestAt: group.latestAt,
       name: getExternalHeroLabel(heroId),
       pickRate,
       pickRateDelta: getExternalMetricDelta(pickRate, previousPickRate),
+      previousBanRate,
       previousPickRate,
       previousWinRate,
       regionLabel: regionLabels.slice(0, 3).join(', ') || '미지정',
@@ -3286,7 +3736,7 @@ const createExternalHeroMetaRows = (
       sourceLabel:
         sourceLabels.length > 2
           ? `${sourceLabels.slice(0, 2).join(', ')} 외 ${sourceLabels.length - 2}`
-          : sourceLabels.join(', ') || '소스 없음',
+          : sourceLabels.join(', ') || '출처 없음',
       trend: createExternalHeroTrendPoints(group.snapshots),
       winRate,
       winRateDelta: getExternalMetricDelta(winRate, previousWinRate),
@@ -3319,7 +3769,7 @@ export const ExternalDataControlBar = ({
   ]);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
       <div className="grid gap-px bg-border/60 lg:grid-cols-[minmax(0,1fr)_220px]">
         <div className="bg-card px-4 py-4 sm:px-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -3327,15 +3777,15 @@ export const ExternalDataControlBar = ({
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline" className="gap-1.5 bg-transparent">
                   <Activity className="h-3.5 w-3.5" />
-                  {isFetching ? '동기화 중' : '동기화 완료'}
+                  {isFetching ? '업데이트 중' : '데이터 준비됨'}
                 </Badge>
                 <span className="text-xs font-bold text-muted-foreground">
-                  최근 수집 {getExternalFreshnessLabel(latestAt)}
+                  {getExternalFreshnessLabel(latestAt)} 업데이트
                 </span>
               </div>
-              <h2 className="mt-3 text-lg font-bold">외부 데이터 브라우저</h2>
+              <h2 className="mt-3 text-lg font-bold">오버워치 데이터</h2>
               <p className="mt-1 text-sm font-semibold text-muted-foreground">
-                수집된 영웅 메타와 공식 경기 일정을 탐색합니다.
+                영웅 메타와 공식 경기 일정을 확인합니다.
               </p>
             </div>
             <Button
@@ -3380,24 +3830,16 @@ export const ExternalDataWarningsPanel = ({
 }: {
   warnings: NonNullable<ExternalDataOverview['warnings']>;
 }) => (
-  <div className="rounded-lg border border-amber-300/30 bg-amber-300/[0.08] px-4 py-3 sm:px-5">
+  <div className="rounded-[3px] border border-amber-300/30 bg-amber-300/[0.08] px-4 py-3 sm:px-5">
     <div className="flex items-start gap-3">
       <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-200" />
       <div className="min-w-0">
         <p className="text-sm font-bold text-amber-100">
-          일부 외부 데이터 경로가 아직 준비되지 않았습니다.
+          일부 데이터 {warnings.length.toLocaleString('ko-KR')}건의 반영이 늦어지고 있어요.
         </p>
-        <div className="mt-2 grid gap-1.5">
-          {warnings.map((warning) => (
-            <p
-              key={`${warning.endpoint}-${warning.status ?? 'unknown'}`}
-              className="break-words text-xs font-semibold text-amber-100/80"
-            >
-              {warning.endpoint}
-              {warning.status ? ` · ${warning.status}` : ''} · {warning.message}
-            </p>
-          ))}
-        </div>
+        <p className="mt-1 text-xs font-semibold text-amber-100/80">
+          잠시 후 새로고침하면 최신 결과를 확인할 수 있습니다.
+        </p>
       </div>
     </div>
   </div>
@@ -3438,7 +3880,7 @@ const ExternalCompactSourceCard = ({ card }: { card: ExternalSourceCardModel }) 
               ) : (
                 <Globe2 className="h-3 w-3" />
               )}
-              {source.isOfficial ? '공식' : '서드파티'}
+              {source.isOfficial ? '공식' : '보조 출처'}
             </Badge>
             <Badge variant="outline" className="bg-transparent text-[11px]">
               {card.statusLabel}
@@ -3447,7 +3889,13 @@ const ExternalCompactSourceCard = ({ card }: { card: ExternalSourceCardModel }) 
           <h3 className="mt-2 truncate text-sm font-bold">{source.displayName}</h3>
         </div>
         <Button asChild variant="ghost" size="icon" className="h-8 w-8 shrink-0">
-          <a href={source.baseUrl} target="_blank" rel="noreferrer" aria-label={source.displayName}>
+          <a
+            href={source.baseUrl}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`${source.displayName} 열기`}
+            title={`${source.displayName} 열기`}
+          >
             <ExternalLink className="h-4 w-4" />
           </a>
         </Button>
@@ -3456,7 +3904,7 @@ const ExternalCompactSourceCard = ({ card }: { card: ExternalSourceCardModel }) 
         <p className="truncate">최근 {getExternalFreshnessLabel(card.latestAt)}</p>
         <p className="truncate">제공 {getExternalSourceDataKindLabel(card)}</p>
         <p className="truncate">
-          {getExternalSourceTypeLabel(source.sourceType)} · TTL{' '}
+          {getExternalSourceTypeLabel(source.sourceType)} · 업데이트 간격{' '}
           {formatExternalTtl(source.defaultTtlSeconds)}
         </p>
       </div>
@@ -3481,8 +3929,10 @@ const ExternalPreparedDataCard = ({
         <p className="metric-label">{label}</p>
         <p className="mt-2 truncate text-sm font-bold">{status}</p>
       </div>
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-primary">
-        <Icon className="h-4 w-4" />
+      <div className="ow-game-icon-shell h-8 w-8 bg-primary">
+        <div className="ow-game-icon-core bg-card text-primary">
+          <Icon className="h-4 w-4" />
+        </div>
       </div>
     </div>
     <p className="mt-2 line-clamp-2 text-xs font-semibold leading-relaxed text-muted-foreground">
@@ -3494,20 +3944,40 @@ const ExternalPreparedDataCard = ({
 export const ExternalHeroMetaPanel = ({
   heroRates,
   isLoading,
+  onCollected,
   sources,
 }: {
   heroRates: ExternalHeroRateItem[];
   isLoading: boolean;
+  onCollected?: () => void;
   sources: ExternalSource[];
 }) => {
   const [roleFilter, setRoleFilter] = useState<ExternalHeroRoleFilter>('all');
   const [heroQuery, setHeroQuery] = useState('');
+  const [metaFilters, setMetaFilters] = useState<ExternalHeroMetaFilters>(
+    defaultExternalHeroMetaFilters,
+  );
   const [signalFilter, setSignalFilter] = useState<ExternalHeroSignalFilter>('all');
   const [sortMode, setSortMode] = useState<ExternalHeroSortMode>('pick');
   const [selectedHeroId, setSelectedHeroId] = useState<string | null>(null);
-  const allHeroRows = createExternalHeroMetaRows(heroRates, sources, 'all');
+  const collectCurrentFiltersMutation = useCollectExternalData();
+  const scopedServerQueryEnabled = hasExternalHeroScopedServerQuery(metaFilters);
+  const scopedHeroRatesRequest = getExternalHeroRatesRequest(metaFilters);
+  const scopedHeroRatesQuery = useExternalHeroRates(
+    scopedHeroRatesRequest,
+    scopedServerQueryEnabled,
+  );
+  const sourceOptions = createExternalHeroSourceOptions(heroRates, sources);
+  const sourceHeroRates =
+    scopedServerQueryEnabled && scopedHeroRatesQuery.isSuccess
+      ? scopedHeroRatesQuery.data
+      : heroRates;
+  const scopedHeroRates = filterExternalHeroRateSnapshots(sourceHeroRates, metaFilters);
+  const allHeroRows = createExternalHeroMetaRows(scopedHeroRates, sources, 'all');
   const heroRows =
-    roleFilter === 'all' ? allHeroRows : createExternalHeroMetaRows(heroRates, sources, roleFilter);
+    roleFilter === 'all'
+      ? allHeroRows
+      : createExternalHeroMetaRows(scopedHeroRates, sources, roleFilter);
   const searchedHeroRows = filterExternalHeroRows(heroRows, heroQuery);
   const visibleHeroRows = sortExternalHeroRows(
     filterExternalHeroRowsBySignal(searchedHeroRows, signalFilter, heroRows),
@@ -3521,16 +3991,71 @@ export const ExternalHeroMetaPanel = ({
       .sort((left, right) => (right.pickRate ?? -1) - (left.pickRate ?? -1))[0] ??
     heroRows[0] ??
     null;
+  const topBan =
+    [...heroRows]
+      .filter((hero) => hero.banRate !== null)
+      .sort((left, right) => (right.banRate ?? -1) - (left.banRate ?? -1))[0] ??
+    heroRows[0] ??
+    null;
   const topWin =
     [...heroRows]
       .filter((hero) => hero.winRate !== null)
       .sort((left, right) => (right.winRate ?? -1) - (left.winRate ?? -1))[0] ??
     heroRows[0] ??
     null;
+  const featuredHeaderHeroes = [topPick, topBan, topWin]
+    .filter((hero): hero is ExternalHeroMetaRow => hero !== null)
+    .filter(
+      (hero, index, heroes) =>
+        heroes.findIndex((candidate) => candidate.heroId === hero.heroId) === index,
+    );
+  const activeMetaLabel = [
+    roleFilter === 'all' ? '전체 역할' : getExternalRoleFilterLabel(roleFilter),
+    getExternalHeroFilterLabel(metaFilters),
+  ]
+    .filter(Boolean)
+    .join(' · ');
   const selectedHero = selectedHeroId
     ? (visibleHeroRows.find((hero) => hero.heroId === selectedHeroId) ?? null)
     : null;
-  const latestAt = getLatestExternalTimestamp(heroRates.map((snapshot) => snapshot.fetchedAt));
+  const scopedLatestAt = getLatestExternalTimestamp(
+    scopedHeroRates.map((snapshot) => snapshot.fetchedAt),
+  );
+  const scopedSnapshotCount = scopedHeroRates.length;
+  const cacheIsStale = isExternalHeroMetaStale(scopedLatestAt);
+  const cacheStatusLabel = scopedHeroRatesQuery.isFetching
+    ? '불러오는 중'
+    : scopedSnapshotCount === 0
+      ? '업데이트 필요'
+      : cacheIsStale
+        ? '새로고침 권장'
+        : '최신 데이터';
+  const officialRatesUrl = getExternalHeroOfficialRatesUrl(metaFilters, roleFilter);
+  const canCollectCurrentFilters =
+    isExternalDataApiConfigured() &&
+    (metaFilters.sourceId === 'all' || metaFilters.sourceId === 'blizzard_hero_rates');
+  const collectCurrentFiltersDisabled =
+    !canCollectCurrentFilters || collectCurrentFiltersMutation.isPending;
+  const updateMetaFilter = <TKey extends keyof ExternalHeroMetaFilters>(
+    key: TKey,
+    value: ExternalHeroMetaFilters[TKey],
+  ) => {
+    setMetaFilters((current) => ({
+      ...current,
+      [key]: value,
+      tier:
+        key === 'gamemode'
+          ? value === 'competitive'
+            ? current.tier === 'all'
+              ? defaultExternalHeroMetaFilters.tier
+              : current.tier
+            : 'all'
+          : current.tier,
+    }));
+    setHeroQuery('');
+    setSignalFilter('all');
+    setSelectedHeroId(null);
+  };
   const handleRoleChange = (value: ExternalHeroRoleFilter) => {
     setRoleFilter(value);
     setSelectedHeroId(null);
@@ -3551,27 +4076,109 @@ export const ExternalHeroMetaPanel = ({
   const toggleHeroSelection = (heroId: string) => {
     setSelectedHeroId((currentHeroId) => (currentHeroId === heroId ? null : heroId));
   };
+  const resetMetaView = () => {
+    setMetaFilters(defaultExternalHeroMetaFilters);
+    setRoleFilter('all');
+    setHeroQuery('');
+    setSignalFilter('all');
+    setSortMode('pick');
+    setSelectedHeroId(null);
+  };
+  const handleCollectCurrentFilters = async () => {
+    try {
+      const response = await collectCurrentFiltersMutation.mutateAsync(
+        getExternalHeroCollectRequest(metaFilters),
+      );
+      const failed =
+        response.summary?.failed ??
+        response.results.filter((result) => result.status && result.status !== 'success').length;
+      const inserted =
+        response.summary?.inserted ??
+        response.results.reduce((sum, result) => sum + (result.insertedCount ?? 0), 0);
+
+      toast({
+        title: failed > 0 ? '일부 통계를 업데이트하지 못했어요' : '영웅 메타를 업데이트했어요',
+        description:
+          inserted > 0 ? '블리자드 공식 통계를 반영했습니다.' : '새로 반영할 데이터가 없습니다.',
+        variant: failed > 0 ? 'destructive' : 'default',
+      });
+      if (scopedServerQueryEnabled) {
+        await scopedHeroRatesQuery.refetch();
+      }
+      onCollected?.();
+    } catch (error) {
+      toast({
+        title: '영웅 메타를 업데이트하지 못했어요',
+        description: error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   return (
-    <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
-      <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+    <section className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card shadow-sm">
+      <div className="relative min-h-[184px] overflow-hidden bg-[hsl(var(--ow-navy))] text-white">
+        {featuredHeaderHeroes.length > 0 ? (
+          <div className="absolute inset-y-0 right-4 hidden items-end gap-1.5 md:flex xl:right-8">
+            {featuredHeaderHeroes.map((hero, index) => (
+              <div
+                key={hero.heroId}
+                className={cn(
+                  'ow-slant-frame w-[104px] overflow-hidden border border-white/15 bg-white/5 shadow-[0_18px_36px_-28px_rgb(0_0_0/0.9)] 2xl:w-[118px]',
+                  index === 1 && 'mb-3',
+                )}
+              >
+                <ExternalHeroPortrait
+                  heroId={hero.heroId}
+                  className="h-[132px] w-full rounded-none border-0 bg-white/5 2xl:h-[146px]"
+                  imageClassName="object-cover object-top"
+                />
+                <div className="border-t border-white/10 bg-white px-2 py-1.5 text-[hsl(var(--ow-navy))]">
+                  <p className="truncate text-[10px] font-black">{hero.name}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <span className="absolute inset-0 bg-[linear-gradient(90deg,rgb(32_43_65)_0%,rgb(32_43_65)_54%,rgb(32_43_65/0.18)_100%)]" />
+        <div className="relative z-10 flex min-h-[184px] max-w-3xl flex-col justify-between px-4 py-5 sm:px-5 md:max-w-[62%] lg:px-6">
           <div className="min-w-0">
-            <p className="metric-label">영웅 메타</p>
-            <h2 className="mt-1 text-lg font-bold">역할별 픽률과 승률</h2>
-            <p className="mt-1 text-sm font-semibold text-muted-foreground">
-              많이 쓰이는 영웅과 승률이 좋은 영웅을 비교합니다.
+            <p className="flex items-center gap-2 text-[10px] font-black text-white/50">
+              <span className="h-2 w-2 bg-accent" />
+              OVERWATCH HERO META
+            </p>
+            <h1 className="mt-3 text-[30px] font-black leading-none sm:text-[38px]">영웅 메타</h1>
+            <p className="mt-3 truncate text-xs font-bold text-white/60 sm:text-sm">
+              {activeMetaLabel}
             </p>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-            <ExternalHeroRoleTabs value={roleFilter} onChange={handleRoleChange} />
-            <Badge variant="outline" className="w-fit gap-1.5 bg-transparent">
-              <Gauge className="h-3.5 w-3.5" />
-              {getExternalFreshnessLabel(latestAt)}
-            </Badge>
+          <div className="mt-5 flex w-fit items-center gap-2 border-l-2 border-l-primary bg-white/10 px-3 py-2 text-xs font-bold text-white/70">
+            {scopedHeroRatesQuery.isFetching ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+            )}
+            {scopedLatestAt
+              ? `${getExternalFreshnessLabel(scopedLatestAt)} 업데이트`
+              : '첫 업데이트가 필요합니다'}
           </div>
         </div>
       </div>
+
+      <ExternalHeroMetaFilterPanel
+        cacheStatusLabel={cacheStatusLabel}
+        collectDisabled={collectCurrentFiltersDisabled}
+        filters={metaFilters}
+        isCacheFetching={scopedHeroRatesQuery.isFetching}
+        isCollecting={collectCurrentFiltersMutation.isPending}
+        officialRatesUrl={officialRatesUrl}
+        onCollect={() => void handleCollectCurrentFilters()}
+        onReset={resetMetaView}
+        onRoleChange={handleRoleChange}
+        roleFilter={roleFilter}
+        sourceOptions={sourceOptions}
+        onChange={updateMetaFilter}
+      />
 
       {isLoading ? (
         <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-2">
@@ -3580,13 +4187,21 @@ export const ExternalHeroMetaPanel = ({
         </div>
       ) : heroRows.length > 0 ? (
         <div>
-          <div className="grid gap-px border-b border-border/60 bg-border/60 lg:grid-cols-2">
+          <div className="grid gap-px border-b border-border/60 bg-border/60 lg:grid-cols-3">
             <ExternalHeroFeatureCard
               hero={topPick}
               icon={Target}
               metricLabel="픽률"
               metricValue={formatExternalPercent(topPick?.pickRate ?? null)}
-              title="픽률 상위 영웅"
+              title="가장 많이 선택"
+              onSelect={focusHero}
+            />
+            <ExternalHeroFeatureCard
+              hero={topBan}
+              icon={ShieldCheck}
+              metricLabel="벤률"
+              metricValue={formatExternalPercent(topBan?.banRate ?? null)}
+              title="가장 많이 밴"
               onSelect={focusHero}
             />
             <ExternalHeroFeatureCard
@@ -3594,7 +4209,7 @@ export const ExternalHeroMetaPanel = ({
               icon={Trophy}
               metricLabel="승률"
               metricValue={formatExternalPercent(topWin?.winRate ?? null)}
-              title="승률 상위 영웅"
+              title="가장 높은 승률"
               onSelect={focusHero}
             />
           </div>
@@ -3612,7 +4227,6 @@ export const ExternalHeroMetaPanel = ({
             value={signalFilter}
             onChange={handleSignalChange}
           />
-          <ExternalHeroTrendBoard insights={trendInsights} onSelectHero={focusHero} />
           {selectedHero ? (
             <ExternalHeroSpotlight
               hero={selectedHero}
@@ -3634,12 +4248,30 @@ export const ExternalHeroMetaPanel = ({
             totalRows={visibleHeroRows.length}
             onSelectHero={toggleHeroSelection}
           />
+          <ExternalHeroTrendBoard insights={trendInsights} onSelectHero={focusHero} />
         </div>
       ) : (
         <div className="p-4 sm:p-5">
           <InlineEmptyState
-            title={`${getExternalRoleFilterLabel(roleFilter)} 영웅 메타가 없습니다.`}
-            description="다른 역할을 선택하거나 수집이 완료된 뒤 다시 확인해주세요."
+            action={
+              canCollectCurrentFilters ? (
+                <Button
+                  variant="outline"
+                  className="bg-card"
+                  disabled={collectCurrentFiltersDisabled}
+                  onClick={() => void handleCollectCurrentFilters()}
+                >
+                  {collectCurrentFiltersMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                  이 조건 업데이트
+                </Button>
+              ) : undefined
+            }
+            title="이 조건의 영웅 통계가 아직 없어요."
+            description="필터를 바꾸거나 데이터를 업데이트해주세요."
           />
         </div>
       )}
@@ -3654,9 +4286,201 @@ const externalHeroRoleOptions = [
 
 const externalHeroSortOptions = [
   { label: '픽률', value: 'pick' },
+  { label: '벤률', value: 'ban' },
   { label: '승률', value: 'win' },
   { label: '이름', value: 'name' },
 ] satisfies Array<{ label: string; value: ExternalHeroSortMode }>;
+
+const defaultExternalHeroMetaFilters = {
+  gamemode: 'competitive',
+  inputMethod: 'mouse_keyboard',
+  mapId: 'all',
+  region: 'all',
+  sourceId: 'blizzard_hero_rates',
+  tier: 'grandmaster_and_champion',
+} satisfies ExternalHeroMetaFilters;
+
+const ExternalHeroMetaFilterPanel = ({
+  cacheStatusLabel,
+  collectDisabled,
+  filters,
+  isCacheFetching,
+  isCollecting,
+  officialRatesUrl,
+  onCollect,
+  onChange,
+  onReset,
+  onRoleChange,
+  roleFilter,
+  sourceOptions,
+}: {
+  cacheStatusLabel: string;
+  collectDisabled: boolean;
+  filters: ExternalHeroMetaFilters;
+  isCacheFetching: boolean;
+  isCollecting: boolean;
+  officialRatesUrl: string;
+  onCollect: () => void;
+  onChange: <TKey extends keyof ExternalHeroMetaFilters>(
+    key: TKey,
+    value: ExternalHeroMetaFilters[TKey],
+  ) => void;
+  onReset: () => void;
+  onRoleChange: (value: ExternalHeroRoleFilter) => void;
+  roleFilter: ExternalHeroRoleFilter;
+  sourceOptions: Array<{ count: number; label: string; value: ExternalHeroSourceFilter }>;
+}) => {
+  const competitiveSelected = filters.gamemode === 'competitive';
+  const canUpdateOfficialData =
+    filters.sourceId === 'all' || filters.sourceId === 'blizzard_hero_rates';
+  const selectedConditionLabel = [
+    roleFilter === 'all' ? '전체 역할' : getExternalRoleFilterLabel(roleFilter),
+    getExternalHeroFilterLabel(filters),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  return (
+    <div className="border-b border-border/60 bg-[hsl(var(--surface-2))] px-4 py-4 sm:px-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="mobile-scroll overflow-x-auto">
+          <ExternalHeroRoleTabs value={roleFilter} onChange={onRoleChange} />
+        </div>
+        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+          <Badge variant="outline" className="h-9 gap-1.5 bg-card text-xs">
+            {isCacheFetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            {cacheStatusLabel}
+          </Badge>
+          {canUpdateOfficialData ? (
+            <Button size="sm" disabled={collectDisabled} onClick={onCollect}>
+              {isCollecting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              통계 업데이트
+            </Button>
+          ) : null}
+          <Button asChild variant="ghost" size="sm" className="bg-transparent">
+            <a href={officialRatesUrl} target="_blank" rel="noreferrer">
+              <ExternalLink className="h-4 w-4" />
+              블리자드에서 보기
+            </a>
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-3 2xl:grid-cols-6">
+        <ExternalHeroFilterSelect
+          label="출처"
+          value={filters.sourceId}
+          onChange={(value) => onChange('sourceId', value)}
+          options={sourceOptions.map((option) => ({
+            label: option.label,
+            value: option.value,
+          }))}
+        />
+        <ExternalHeroFilterSelect
+          label="플랫폼"
+          value={filters.inputMethod}
+          onChange={(value) => onChange('inputMethod', value)}
+          options={externalHeroInputOptions.map((option) => ({
+            label: option.label,
+            value: option.value,
+          }))}
+        />
+        <ExternalHeroFilterSelect
+          label="모드"
+          value={filters.gamemode}
+          onChange={(value) => onChange('gamemode', value)}
+          options={externalHeroGameModeOptions.map((option) => ({
+            label: option.label,
+            value: option.value,
+          }))}
+        />
+        <ExternalHeroFilterSelect
+          label="티어"
+          value={competitiveSelected ? filters.tier : 'all'}
+          disabled={!competitiveSelected}
+          onChange={(value) => onChange('tier', value)}
+          options={externalHeroTierOptions.map((option) => ({
+            label: option.label,
+            value: option.value,
+          }))}
+        />
+        <ExternalHeroFilterSelect
+          label="전장"
+          value={filters.mapId}
+          onChange={(value) => onChange('mapId', value)}
+          options={externalHeroOfficialMapOptions.map((option) => ({
+            label: option.label,
+            value: option.value,
+          }))}
+        />
+        <ExternalHeroFilterSelect
+          label="지역"
+          value={filters.region}
+          onChange={(value) => onChange('region', value)}
+          options={externalHeroRegionOptions.map((option) => ({
+            label: option.label,
+            value: option.value,
+          }))}
+        />
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-3 border-t border-border/60 pt-3">
+        <p className="min-w-0 truncate text-xs font-bold text-muted-foreground">
+          {selectedConditionLabel || '전체 조건'}
+        </p>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0"
+          aria-label="기본 조건으로 되돌리기"
+          title="기본 조건으로 되돌리기"
+          onClick={onReset}
+        >
+          <RotateCcw className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+const ExternalHeroFilterSelect = <TValue extends string>({
+  disabled = false,
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  disabled?: boolean;
+  label: string;
+  onChange: (value: TValue) => void;
+  options: Array<{ detail?: string; label: string; value: TValue }>;
+  value: TValue;
+}) => (
+  <label className="grid min-w-0 gap-1.5">
+    <span className="metric-label">{label}</span>
+    <Select
+      disabled={disabled}
+      value={value}
+      onValueChange={(nextValue) => onChange(nextValue as TValue)}
+    >
+      <SelectTrigger className="h-10 min-w-0 bg-card text-sm font-bold">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.detail ? `${option.label} · ${option.detail}` : option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  </label>
+);
 
 const ExternalHeroRoleTabs = ({
   onChange,
@@ -3665,19 +4489,25 @@ const ExternalHeroRoleTabs = ({
   onChange: (value: ExternalHeroRoleFilter) => void;
   value: ExternalHeroRoleFilter;
 }) => (
-  <div className="grid grid-cols-4 overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-1">
+  <div className="inline-flex min-w-max overflow-hidden rounded-[3px] border border-border bg-card p-1">
     {externalHeroRoleOptions.map((option) => (
       <button
         key={option.value}
         type="button"
         aria-pressed={value === option.value}
+        data-role={option.value}
         className={cn(
-          'h-8 min-w-0 rounded-[5px] px-2 text-xs font-bold transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
-          value === option.value ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
+          'ow-role-filter flex h-9 min-w-[76px] items-center justify-center gap-2 rounded-[2px] border border-transparent px-3 text-xs font-black transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
+          value === option.value ? 'text-white hover:brightness-[1.03]' : 'text-muted-foreground',
         )}
         onClick={() => onChange(option.value)}
       >
-        <span className="truncate">{option.label}</span>
+        {option.value === 'all' ? (
+          <UsersRound className="h-4 w-4" />
+        ) : (
+          <MatchRoleIcon className="h-4 w-4" role={option.value} />
+        )}
+        <span>{option.label}</span>
       </button>
     ))}
   </div>
@@ -3695,6 +4525,7 @@ const ExternalHeroSpotlight = ({
   rows: ExternalHeroMetaRow[];
 }) => {
   const pickRank = hero ? getExternalHeroMetricRank(rows, hero.heroId, 'pickRate') : null;
+  const banRank = hero ? getExternalHeroMetricRank(rows, hero.heroId, 'banRate') : null;
   const winRank = hero ? getExternalHeroMetricRank(rows, hero.heroId, 'winRate') : null;
   const pickAxis = createExternalHeroScatterAxis(
     rows.map((row) => row.pickRate),
@@ -3713,6 +4544,15 @@ const ExternalHeroSpotlight = ({
       ignoreZero: true,
       minPadding: 0.8,
       minRange: 6,
+    },
+  );
+  const banAxis = createExternalHeroScatterAxis(
+    rows.map((row) => row.banRate),
+    {
+      fallbackMax: 15,
+      fallbackMin: 0,
+      minPadding: 0.8,
+      minRange: 4,
     },
   );
   const peerRows = hero ? getExternalHeroPeerRows(hero, rows) : [];
@@ -3737,7 +4577,7 @@ const ExternalHeroSpotlight = ({
         <div className="min-w-0 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
-              <p className="metric-label">선택한 영웅</p>
+              <p className="metric-label">영웅 상세</p>
               <h3 className="mt-1 truncate text-2xl font-black">{hero.name}</h3>
               <p className="mt-1 truncate text-sm font-semibold text-muted-foreground">
                 {hero.roleLabel}
@@ -3746,6 +4586,9 @@ const ExternalHeroSpotlight = ({
             <div className="flex flex-wrap gap-2 lg:justify-end">
               <Badge variant="outline" className="bg-card">
                 픽률 #{pickRank ?? '--'}
+              </Badge>
+              <Badge variant="outline" className="bg-card">
+                벤률 #{banRank ?? '--'}
               </Badge>
               <Badge variant="outline" className="bg-card">
                 승률 #{winRank ?? '--'}
@@ -3764,7 +4607,7 @@ const ExternalHeroSpotlight = ({
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
             <ExternalHeroSpotlightMetric
               delta={hero.pickRateDelta}
               hero={hero}
@@ -3773,6 +4616,15 @@ const ExternalHeroSpotlight = ({
               previousValue={hero.previousPickRate}
               value={formatExternalPercent(hero.pickRate)}
               width={getExternalHeroMetricRangeWidth(hero.pickRate, pickAxis.min, pickAxis.max)}
+            />
+            <ExternalHeroSpotlightMetric
+              delta={hero.banRateDelta}
+              hero={hero}
+              label="벤률"
+              metric="banRate"
+              previousValue={hero.previousBanRate}
+              value={formatExternalPercent(hero.banRate)}
+              width={getExternalHeroMetricRangeWidth(hero.banRate, banAxis.min, banAxis.max)}
             />
             <ExternalHeroSpotlightMetric
               delta={hero.winRateDelta}
@@ -3803,7 +4655,8 @@ const ExternalHeroSpotlight = ({
                     <span className="min-w-0">
                       <span className="block truncate text-xs font-black">{peer.name}</span>
                       <span className="mt-0.5 block truncate text-[11px] font-semibold text-muted-foreground">
-                        픽 {formatExternalPercent(peer.pickRate)} · 승{' '}
+                        픽 {formatExternalPercent(peer.pickRate)} · 벤{' '}
+                        {formatExternalPercent(peer.banRate)} · 승{' '}
                         {formatExternalPercent(peer.winRate)}
                       </span>
                     </span>
@@ -3830,7 +4683,7 @@ const ExternalHeroSpotlightMetric = ({
   delta: number | null;
   hero: ExternalHeroMetaRow;
   label: string;
-  metric: 'pickRate' | 'winRate';
+  metric: 'banRate' | 'pickRate' | 'winRate';
   previousValue: number | null;
   value: string;
   width: number;
@@ -3863,7 +4716,7 @@ const ExternalHeroSpotlightMetric = ({
     </div>
     <ExternalHeroMiniTrendChart className="mt-3" hero={hero} metric={metric} />
     <p className="mt-2 truncate text-[11px] font-semibold text-muted-foreground">
-      직전 {formatExternalPercent(previousValue)}
+      이전 {formatExternalPercent(previousValue)}
     </p>
   </div>
 );
@@ -3871,9 +4724,9 @@ const ExternalHeroSpotlightMetric = ({
 const externalHeroSignalOptions = [
   { description: '현재 조건의 모든 영웅', value: 'all' },
   { description: '픽률과 승률이 모두 평균 이상', value: 'core' },
-  { description: '픽률은 낮지만 승률은 평균 이상', value: 'efficient' },
-  { description: '픽률은 높지만 승률은 평균 이하', value: 'overheated' },
-  { description: '추가 표본을 볼 필요가 있는 구간', value: 'watch' },
+  { description: '픽률은 낮고 승률은 평균 이상', value: 'efficient' },
+  { description: '픽률은 높고 승률은 평균 이하', value: 'overheated' },
+  { description: '픽률과 승률이 모두 평균 이하', value: 'watch' },
 ] satisfies Array<{ description: string; value: ExternalHeroSignalFilter }>;
 
 const ExternalHeroSignalBoard = ({
@@ -3888,13 +4741,9 @@ const ExternalHeroSignalBoard = ({
   const totalCount = counts.core + counts.efficient + counts.overheated + counts.watch;
 
   return (
-    <div className="border-b border-border/60 bg-card px-4 py-4 sm:px-5">
-      <div className="min-w-0">
-        <p className="metric-label">메타 구간</p>
-        <h3 className="mt-1 text-base font-bold">구간별 영웅</h3>
-      </div>
-
-      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+    <div className="mobile-scroll border-b border-border/60 bg-[hsl(var(--surface-2))] px-4 py-3 sm:px-5">
+      <div className="flex min-w-max items-center gap-2">
+        <span className="mr-1 text-xs font-black text-muted-foreground">메타 분류</span>
         {externalHeroSignalOptions.map((option) => {
           const isActive = value === option.value;
           const count = option.value === 'all' ? totalCount : counts[option.value];
@@ -3904,27 +4753,24 @@ const ExternalHeroSignalBoard = ({
               key={option.value}
               type="button"
               aria-pressed={isActive}
+              title={option.description}
               className={cn(
-                'min-w-0 rounded-md border px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
+                'inline-flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20',
                 isActive
-                  ? 'border-primary/60 bg-primary/10'
-                  : 'border-border/60 bg-[hsl(var(--surface-2))] hover:border-primary/30',
+                  ? 'border-foreground bg-foreground text-background'
+                  : 'border-border/70 bg-card text-muted-foreground hover:border-primary/30 hover:text-foreground',
               )}
               onClick={() => onChange(option.value)}
             >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="truncate text-sm font-black">
-                    {externalHeroSignalLabels[option.value]}
-                  </p>
-                  <Badge variant="outline" className="shrink-0 bg-card text-[11px]">
-                    {count.toLocaleString('ko-KR')}
-                  </Badge>
-                </div>
-                <p className="mt-1 line-clamp-2 text-xs font-semibold leading-relaxed text-muted-foreground">
-                  {option.description}
-                </p>
-              </div>
+              {externalHeroSignalLabels[option.value]}
+              <span
+                className={cn(
+                  'tabular-nums',
+                  isActive ? 'text-background/65' : 'text-muted-foreground',
+                )}
+              >
+                {count.toLocaleString('ko-KR')}
+              </span>
             </button>
           );
         })}
@@ -3977,14 +4823,14 @@ const getExternalHeroTrendInsights = (rows: ExternalHeroMetaRow[]) => {
 
   return [
     {
-      description: '직전 수집보다 선택이 늘어난 영웅',
+      description: '이전 업데이트보다 선택이 늘어난 영웅',
       hero: pickUp,
       key: 'pick-up',
       metric: 'pickRate' as const,
       title: '픽률 급상승',
     },
     {
-      description: '직전 수집보다 승률이 오른 영웅',
+      description: '이전 업데이트보다 승률이 오른 영웅',
       hero: winUp,
       key: 'win-up',
       metric: 'winRate' as const,
@@ -3998,7 +4844,7 @@ const getExternalHeroTrendInsights = (rows: ExternalHeroMetaRow[]) => {
       title: '동반 상승',
     },
     {
-      description: '직전 수집보다 승률이 내려간 영웅',
+      description: '이전 업데이트보다 승률이 내려간 영웅',
       hero: winDown,
       key: 'win-down',
       metric: 'winRate' as const,
@@ -4013,32 +4859,40 @@ const ExternalHeroTrendBoard = ({
 }: {
   insights: ReturnType<typeof getExternalHeroTrendInsights>;
   onSelectHero: (heroId: string) => void;
-}) => (
-  <div className="border-b border-border/60 bg-[hsl(var(--surface-2))] px-4 py-4 sm:px-5">
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-      <div className="min-w-0">
-        <p className="metric-label">메타 변화</p>
-        <h3 className="mt-1 text-base font-bold">직전 수집 대비 눈에 띄는 흐름</h3>
-      </div>
-      <Badge variant="outline" className="w-fit bg-card">
-        픽률/승률 변화
-      </Badge>
-    </div>
+}) => {
+  const visibleInsights = insights.filter((insight) => insight.hero);
 
-    <div className="mt-3 grid gap-2 md:grid-cols-2 2xl:grid-cols-4">
-      {insights.map((insight) => (
-        <ExternalHeroTrendCard
-          key={insight.key}
-          description={insight.description}
-          hero={insight.hero}
-          metric={insight.metric}
-          title={insight.title}
-          onSelectHero={onSelectHero}
-        />
-      ))}
+  if (visibleInsights.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="bg-[hsl(var(--surface-2))] px-4 py-4 sm:px-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <p className="metric-label">최근 변화</p>
+          <h3 className="mt-1 text-base font-bold">상승세와 하락세</h3>
+        </div>
+        <Badge variant="outline" className="w-fit bg-card">
+          이전 업데이트 대비
+        </Badge>
+      </div>
+
+      <div className="mt-3 grid gap-2 md:grid-cols-2 2xl:grid-cols-4">
+        {visibleInsights.map((insight) => (
+          <ExternalHeroTrendCard
+            key={insight.key}
+            description={insight.description}
+            hero={insight.hero}
+            metric={insight.metric}
+            title={insight.title}
+            onSelectHero={onSelectHero}
+          />
+        ))}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const ExternalHeroTrendCard = ({
   description,
@@ -4101,7 +4955,7 @@ const ExternalHeroTrendCard = ({
           </div>
           <ExternalHeroMiniTrendChart className="mt-3" hero={hero} metric={metric} />
           <p className="mt-2 truncate text-[11px] font-semibold text-muted-foreground">
-            직전 {formatExternalPercent(previousValue ?? null)}
+            이전 {formatExternalPercent(previousValue ?? null)}
           </p>
         </>
       ) : (
@@ -4118,7 +4972,7 @@ const ExternalHeroMiniTrendChart = ({
 }: {
   className?: string;
   hero: ExternalHeroMetaRow;
-  metric: 'pickRate' | 'winRate';
+  metric: 'banRate' | 'pickRate' | 'winRate';
 }) => {
   const points = hero.trend
     .map((point, index) => ({
@@ -4135,7 +4989,7 @@ const ExternalHeroMiniTrendChart = ({
           className,
         )}
       >
-        추이 대기
+        변화 기록 없음
       </div>
     );
   }
@@ -4234,6 +5088,7 @@ const ExternalHeroMetaToolbar = ({
               size="icon"
               className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
               aria-label="검색어 지우기"
+              title="검색어 지우기"
               onClick={() => onQueryChange('')}
             >
               <X className="h-4 w-4" />
@@ -4241,7 +5096,7 @@ const ExternalHeroMetaToolbar = ({
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-          <div className="grid grid-cols-3 overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-1">
+          <div className="grid grid-cols-4 overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-1">
             {externalHeroSortOptions.map((option) => (
               <button
                 key={option.value}
@@ -4457,15 +5312,15 @@ const ExternalHeroMetaScatterPlot = ({
     <div className="border-b border-border/60 bg-card px-4 py-4 sm:px-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <p className="metric-label">메타 분포</p>
-          <h3 className="mt-1 text-base font-bold">픽률 vs 승률</h3>
+          <p className="metric-label">메타 포지션</p>
+          <h3 className="mt-1 text-base font-bold">픽률과 승률 분포</h3>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           <Badge variant="outline" className="h-8 bg-transparent">
             {visibleCountLabel}
           </Badge>
           <Badge variant="outline" className="hidden h-8 bg-transparent sm:inline-flex">
-            기준 고정 · 핵심 {contextSignalCounts.core.toLocaleString('ko-KR')} · 고효율{' '}
+            주류 강세 {contextSignalCounts.core.toLocaleString('ko-KR')} · 숨은 강자{' '}
             {contextSignalCounts.efficient.toLocaleString('ko-KR')}
           </Badge>
           <div className="flex overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))]">
@@ -4475,6 +5330,7 @@ const ExternalHeroMetaScatterPlot = ({
               size="icon"
               className="h-8 w-8 rounded-none"
               aria-label="그래프 확대"
+              title="그래프 확대"
               onClick={() => updateZoom(0.72)}
             >
               <ZoomIn className="h-4 w-4" />
@@ -4485,6 +5341,7 @@ const ExternalHeroMetaScatterPlot = ({
               size="icon"
               className="h-8 w-8 rounded-none border-x border-border/60"
               aria-label="그래프 축소"
+              title="그래프 축소"
               onClick={() => updateZoom(1.35)}
             >
               <ZoomOut className="h-4 w-4" />
@@ -4495,6 +5352,7 @@ const ExternalHeroMetaScatterPlot = ({
               size="icon"
               className="h-8 w-8 rounded-none"
               aria-label="직접 조정한 확대 초기화"
+              title="확대 초기화"
               disabled={!hasManualZoom}
               onClick={() => setActiveZoomDomain(null)}
             >
@@ -4579,23 +5437,6 @@ const ExternalHeroMetaScatterPlot = ({
               onPointerCancel={() => {
                 panStateRef.current = null;
               }}
-              onWheel={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                const bounds = event.currentTarget.getBoundingClientRect();
-                const pickCenterRatio = Math.min(
-                  0.95,
-                  Math.max(0.05, (event.clientX - bounds.left) / bounds.width),
-                );
-                const winCenterRatio = Math.min(
-                  0.95,
-                  Math.max(0.05, 1 - (event.clientY - bounds.top) / bounds.height),
-                );
-                const wheelSteps = Math.min(4, Math.max(-4, event.deltaY / 100));
-                const scale = Math.exp(wheelSteps * 0.18);
-
-                updateZoom(scale, pickCenterRatio, winCenterRatio);
-              }}
             >
               {avgPickPosition !== null && avgWinPosition !== null ? (
                 <>
@@ -4617,13 +5458,13 @@ const ExternalHeroMetaScatterPlot = ({
                         style={{ left: `${avgPickPosition}%`, top: `${100 - avgWinPosition}%` }}
                       />
                       <span className="absolute right-2 top-2 rounded-md border border-border/50 bg-card/85 px-2 py-1 text-[11px] font-black text-foreground">
-                        핵심
+                        주류 강세
                       </span>
                       <span className="absolute left-2 top-2 rounded-md border border-border/50 bg-card/80 px-2 py-1 text-[11px] font-bold text-muted-foreground">
-                        고효율
+                        숨은 강자
                       </span>
                       <span className="absolute bottom-2 right-2 rounded-md border border-border/50 bg-card/80 px-2 py-1 text-[11px] font-bold text-muted-foreground">
-                        과열
+                        인기 대비 저조
                       </span>
                     </>
                   ) : (
@@ -4852,7 +5693,7 @@ const ExternalHeroScatterTooltip = ({
   y: number;
 }) => (
   <div
-    className="pointer-events-none absolute z-50 w-72 max-w-[calc(100%-1rem)] rounded-md border border-border/70 bg-background/95 p-3 shadow-xl backdrop-blur"
+    className="pointer-events-none absolute z-50 w-72 max-w-[calc(100%-1rem)] rounded-[3px] border border-border bg-background p-3 shadow-xl"
     style={{ left: x, top: y }}
   >
     <div className="grid grid-cols-[44px_minmax(0,1fr)] items-center gap-3">
@@ -4864,7 +5705,7 @@ const ExternalHeroScatterTooltip = ({
         </p>
       </div>
     </div>
-    <div className="mt-3 grid grid-cols-2 gap-2">
+    <div className="mt-3 grid grid-cols-3 gap-2">
       <div className="rounded-md border border-border/60 bg-card px-2.5 py-2">
         <p className="metric-label">픽률</p>
         <p className="mt-1 text-sm font-black">{formatExternalPercent(hero.pickRate)}</p>
@@ -4879,6 +5720,22 @@ const ExternalHeroScatterTooltip = ({
           )}
         >
           {formatExternalSignedPoint(hero.pickRateDelta)}
+        </p>
+      </div>
+      <div className="rounded-md border border-border/60 bg-card px-2.5 py-2">
+        <p className="metric-label">벤률</p>
+        <p className="mt-1 text-sm font-black">{formatExternalPercent(hero.banRate)}</p>
+        <p
+          className={cn(
+            'mt-0.5 text-[11px] font-bold tabular-nums',
+            hero.banRateDelta === null
+              ? 'text-muted-foreground'
+              : hero.banRateDelta >= 0
+                ? 'text-amber-500'
+                : 'text-[hsl(var(--success))]',
+          )}
+        >
+          {formatExternalSignedPoint(hero.banRateDelta)}
         </p>
       </div>
       <div className="rounded-md border border-border/60 bg-card px-2.5 py-2">
@@ -4919,12 +5776,17 @@ const ExternalHeroFeatureCard = ({
   onSelect: (heroId: string) => void;
   title: string;
 }) => {
-  const metricDelta = metricLabel === '픽률' ? hero?.pickRateDelta : hero?.winRateDelta;
+  const metricDelta =
+    metricLabel === '픽률'
+      ? hero?.pickRateDelta
+      : metricLabel === '벤률'
+        ? hero?.banRateDelta
+        : hero?.winRateDelta;
 
   return (
     <button
       type="button"
-      className="min-w-0 bg-card p-4 text-left transition-colors hover:bg-[hsl(var(--surface-2))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 sm:p-5"
+      className="group min-h-[136px] min-w-0 bg-card p-4 text-left transition-[background-color,box-shadow,transform] duration-150 hover:-translate-y-px hover:bg-[hsl(var(--surface-2))] hover:shadow-[inset_0_-3px_0_hsl(var(--primary)/0.5)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
       disabled={!hero}
       onClick={() => {
         if (hero) {
@@ -4932,31 +5794,35 @@ const ExternalHeroFeatureCard = ({
         }
       }}
     >
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="metric-label">{title}</p>
-          <h3 className="mt-1 truncate text-lg font-bold">{hero?.name ?? '--'}</h3>
-        </div>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-primary">
-          <Icon className="h-4 w-4" />
-        </div>
-      </div>
-
       {hero ? (
-        <div className="mt-4 grid grid-cols-[116px_minmax(0,1fr)] gap-4">
-          <ExternalHeroPortrait heroId={hero.heroId} className="h-28 w-28" />
-          <div className="min-w-0 self-center">
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="outline" className="bg-transparent">
-                {hero.roleLabel}
-              </Badge>
-              <Badge variant="outline" className="bg-transparent">
-                {metricLabel} {metricValue}
-              </Badge>
+        <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-4">
+          <ExternalHeroPortrait
+            heroId={hero.heroId}
+            className="h-[96px] w-[88px] rounded-[2px] border-border transition-colors group-hover:border-primary/45"
+          />
+          <div className="min-w-0">
+            <div className="flex items-center justify-between gap-3">
+              <p className="metric-label truncate">{title}</p>
+              <Icon className="h-4 w-4 shrink-0 text-accent" />
+            </div>
+            <div className="mt-2 flex items-end justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="truncate text-lg font-black">{hero.name}</h3>
+                <p className="mt-0.5 truncate text-xs font-bold text-muted-foreground">
+                  {hero.roleLabel}
+                </p>
+              </div>
+              <p className="shrink-0 text-2xl font-black tabular-nums">{metricValue}</p>
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <span className="truncate text-[11px] font-semibold text-muted-foreground">
+                픽 {formatExternalPercent(hero.pickRate)} · 벤 {formatExternalPercent(hero.banRate)}{' '}
+                · 승 {formatExternalPercent(hero.winRate)}
+              </span>
               <Badge
                 variant="outline"
                 className={cn(
-                  'bg-transparent tabular-nums',
+                  'h-6 shrink-0 bg-transparent px-1.5 text-[10px] tabular-nums',
                   metricDelta === null || metricDelta === undefined
                     ? 'text-muted-foreground'
                     : metricDelta >= 0
@@ -4964,21 +5830,15 @@ const ExternalHeroFeatureCard = ({
                       : 'text-amber-500',
                 )}
               >
-                변화 {formatExternalSignedPoint(metricDelta ?? null)}
+                {formatExternalSignedPoint(metricDelta ?? null)}
               </Badge>
             </div>
-            <p className="mt-3 truncate text-sm font-semibold text-muted-foreground">
-              승률 {formatExternalPercent(hero.winRate)} · 픽률{' '}
-              {formatExternalPercent(hero.pickRate)}
-            </p>
           </div>
         </div>
       ) : (
-        <InlineEmptyState
-          className="mt-4"
-          title="표시할 영웅 데이터 없음"
-          description="픽률 데이터가 수집되면 영웅 프로필이 표시됩니다."
-        />
+        <div className="flex min-h-[72px] items-center justify-center text-sm font-bold text-muted-foreground">
+          데이터 없음
+        </div>
       )}
     </button>
   );
@@ -4995,8 +5855,8 @@ const ExternalHeroComparisonTable = ({
   selectedHeroId: string | null;
   totalRows: number;
 }) => {
-  const initialVisibleRows = 10;
-  const visibleRowStep = 10;
+  const initialVisibleRows = 12;
+  const visibleRowStep = 12;
   const rowSignature = rows.map((row) => row.heroId).join('|');
   const [visibleState, setVisibleState] = useState({
     limit: initialVisibleRows,
@@ -5007,14 +5867,15 @@ const ExternalHeroComparisonTable = ({
   const visibleTableRows = rows.slice(0, visibleLimit);
   const canShowMore = visibleLimit < rows.length;
   const canCollapse = visibleLimit > initialVisibleRows;
+  const maxBanRate = Math.max(1, ...rows.map((row) => row.banRate ?? 0));
   const maxPickRate = Math.max(1, ...rows.map((row) => row.pickRate ?? 0));
 
   return (
     <div className="bg-card px-4 py-4 sm:px-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <p className="metric-label">영웅별 비교</p>
-          <h3 className="mt-1 text-base font-bold">픽률 막대와 승률</h3>
+          <p className="metric-label">영웅 순위</p>
+          <h3 className="mt-1 text-base font-bold">현재 메타 한눈에 보기</h3>
         </div>
         <Badge variant="outline" className="w-fit bg-transparent">
           표시 {visibleTableRows.length.toLocaleString('ko-KR')} /{' '}
@@ -5024,23 +5885,28 @@ const ExternalHeroComparisonTable = ({
 
       {rows.length > 0 ? (
         <div className="mt-3 overflow-hidden rounded-md border border-border/70">
-          <div className="hidden grid-cols-[minmax(220px,1.35fr)_minmax(170px,1fr)_112px] gap-3 border-b border-border/60 bg-[hsl(var(--surface-2))] px-3 py-2 text-xs font-bold text-muted-foreground lg:grid">
-            <span>영웅</span>
-            <span>픽률 / 변화</span>
-            <span className="text-right">승률 / 변화</span>
+          <div className="hidden grid-cols-[minmax(240px,1.35fr)_minmax(150px,1fr)_minmax(150px,1fr)_112px] gap-3 border-b border-border/60 bg-[hsl(var(--surface-2))] px-3 py-2 text-xs font-bold text-muted-foreground lg:grid">
+            <span>순위 · 영웅</span>
+            <span>픽률 · 이전 대비</span>
+            <span>벤률 · 이전 대비</span>
+            <span className="text-right">승률 · 이전 대비</span>
           </div>
           <div>
-            {visibleTableRows.map((hero) => (
+            {visibleTableRows.map((hero, index) => (
               <button
                 key={hero.heroId}
                 type="button"
+                aria-pressed={selectedHeroId === hero.heroId}
                 className={cn(
-                  'grid w-full gap-3 border-b border-border/60 px-3 py-3 text-left transition-colors last:border-b-0 hover:bg-primary/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 lg:grid-cols-[minmax(220px,1.35fr)_minmax(170px,1fr)_112px] lg:items-center',
+                  'grid w-full grid-cols-2 gap-3 border-b border-border/60 px-3 py-3 text-left transition-colors last:border-b-0 hover:bg-primary/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 lg:grid-cols-[minmax(240px,1.35fr)_minmax(150px,1fr)_minmax(150px,1fr)_112px] lg:items-center',
                   selectedHeroId === hero.heroId && 'bg-primary/[0.08]',
                 )}
                 onClick={() => onSelectHero(hero.heroId)}
               >
-                <div className="grid min-w-0 grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3 lg:grid-cols-[44px_minmax(0,1fr)]">
+                <div className="col-span-2 grid min-w-0 grid-cols-[28px_44px_minmax(0,1fr)_auto] items-center gap-3 lg:col-span-1 lg:grid-cols-[28px_44px_minmax(0,1fr)]">
+                  <span className="text-center text-sm font-black tabular-nums text-muted-foreground">
+                    {index + 1}
+                  </span>
                   <ExternalHeroPortrait heroId={hero.heroId} className="h-11 w-11" />
                   <div className="min-w-0">
                     <p className="truncate text-sm font-bold">{hero.name}</p>
@@ -5073,7 +5939,31 @@ const ExternalHeroComparisonTable = ({
                           : 'text-amber-500',
                     )}
                   >
-                    변화 {formatExternalSignedPoint(hero.pickRateDelta)}
+                    {formatExternalSignedPoint(hero.pickRateDelta)}
+                  </p>
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center justify-between gap-3 text-xs font-bold">
+                    <span className="text-muted-foreground">벤률</span>
+                    <span>{formatExternalPercent(hero.banRate)}</span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted/60">
+                    <span
+                      className="block h-full rounded-full bg-amber-400"
+                      style={{ width: `${((hero.banRate ?? 0) / maxBanRate) * 100}%` }}
+                    />
+                  </div>
+                  <p
+                    className={cn(
+                      'mt-1 text-[11px] font-bold tabular-nums',
+                      hero.banRateDelta === null
+                        ? 'text-muted-foreground'
+                        : hero.banRateDelta >= 0
+                          ? 'text-amber-500'
+                          : 'text-[hsl(var(--success))]',
+                    )}
+                  >
+                    {formatExternalSignedPoint(hero.banRateDelta)}
                   </p>
                 </div>
                 <div className="hidden text-right lg:block">
@@ -5088,7 +5978,7 @@ const ExternalHeroComparisonTable = ({
                           : 'text-amber-500',
                     )}
                   >
-                    변화 {formatExternalSignedPoint(hero.winRateDelta)}
+                    {formatExternalSignedPoint(hero.winRateDelta)}
                   </p>
                 </div>
               </button>
@@ -5162,23 +6052,23 @@ const ExternalHeroPortrait = ({
   const label = getExternalHeroLabel(heroId);
 
   return (
-    <div
-      className={cn(
-        'relative flex shrink-0 items-center justify-center overflow-hidden rounded-md border border-border/70 bg-[hsl(var(--surface-2))]',
-        className,
-      )}
-    >
-      <Swords className={cn('absolute h-5 w-5 text-muted-foreground', iconClassName)} />
-      {src ? (
-        <img
-          alt={label}
-          className={cn('relative z-10 h-full w-full object-cover object-top', imageClassName)}
-          src={src}
-          onError={(event) => {
-            event.currentTarget.style.display = 'none';
-          }}
-        />
-      ) : null}
+    <div className={cn('ow-portrait-shell relative shrink-0', className)}>
+      <span className="ow-portrait-core">
+        <Swords className={cn('absolute h-5 w-5 text-muted-foreground', iconClassName)} />
+        {src ? (
+          <DeferredImage
+            alt={label}
+            className={cn('relative z-10 h-full w-full object-cover object-top', imageClassName)}
+            src={src}
+            decoding="async"
+            placeholderClassName="bg-transparent"
+            rootMargin="240px"
+            onError={(event) => {
+              event.currentTarget.style.display = 'none';
+            }}
+          />
+        ) : null}
+      </span>
     </div>
   );
 };
@@ -5366,7 +6256,7 @@ export const ExternalEsportsSchedulePanel = ({
   };
 
   return (
-    <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <section className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
       <div className="border-b border-border/60 px-4 py-3 sm:px-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
@@ -5443,7 +6333,7 @@ export const ExternalEsportsSchedulePanel = ({
         <div className="p-4 sm:p-5">
           <InlineEmptyState
             title="e스포츠 일정 데이터가 없습니다."
-            description="수집이 완료되면 경기 일정과 경기 상태가 표시됩니다."
+            description="일정이 준비되면 경기 시간과 상태가 표시됩니다."
           />
         </div>
       )}
@@ -5508,6 +6398,7 @@ const ExternalScheduleExplorerBar = ({
                 size="icon"
                 className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
                 aria-label="검색어 지우기"
+                title="검색어 지우기"
                 onClick={() => onQueryChange('')}
               >
                 <X className="h-4 w-4" />
@@ -6041,10 +6932,24 @@ const ExternalScheduleCalendar = ({
             ))}
           </div>
           <div className="flex rounded-md border border-border/70 bg-card">
-            <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => onMove(-1)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9"
+              aria-label="이전 기간"
+              title="이전 기간"
+              onClick={() => onMove(-1)}
+            >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => onMove(1)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9"
+              aria-label="다음 기간"
+              title="다음 기간"
+              onClick={() => onMove(1)}
+            >
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
@@ -6267,7 +7172,7 @@ export const ExternalDataKindPanel = ({
     {
       detail: sources.some((source) => source.id === 'overfast')
         ? '공개 프로필 데이터가 연결되면 작게 표시합니다.'
-        : '프로필 소스 연결 후 표시합니다.',
+        : '프로필 데이터가 연결되면 표시됩니다.',
       icon: UsersRound,
       label: '플레이어 프로필',
       status: '준비 중',
@@ -6281,10 +7186,10 @@ export const ExternalDataKindPanel = ({
   ];
 
   return (
-    <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <section className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
       <div className="border-b border-border/60 px-4 py-3 sm:px-5">
         <p className="metric-label">보조 정보</p>
-        <h2 className="mt-1 text-lg font-bold">소스와 준비 중인 데이터</h2>
+        <h2 className="mt-1 text-lg font-bold">출처와 준비 중인 데이터</h2>
       </div>
       <div className="grid gap-px bg-border/60 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         {isLoading
@@ -6468,7 +7373,7 @@ const StatsInsightSummaryPanel = ({ insightPack }: { insightPack: StatsInsightPa
   };
 
   return (
-    <section className="ai-insight-shell overflow-hidden rounded-lg border border-sky-300/20 shadow-[0_34px_120px_-76px_rgb(2_6_23/0.9)]">
+    <section className="ai-insight-shell overflow-hidden rounded-[3px] border border-sky-300/20 shadow-[0_34px_120px_-76px_rgb(2_6_23/0.9)]">
       <div className="ai-scanline" />
       <div className="relative z-10 overflow-hidden border-b border-white/10">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-sky-400/25 via-emerald-300/55 to-amber-300/45" />
@@ -6485,7 +7390,7 @@ const StatsInsightSummaryPanel = ({ insightPack }: { insightPack: StatsInsightPa
               경기 흐름 요약
             </h2>
             <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-slate-300/85">
-              기본 요약을 먼저 보여주고, 필요할 때만 Gemini API로 AI 분석을 생성합니다.
+              기록에서 찾은 흐름을 먼저 보여주고, 필요할 때 AI 해석을 더합니다.
             </p>
           </div>
           <Button
@@ -6553,7 +7458,7 @@ const StatsInsightSummaryPanel = ({ insightPack }: { insightPack: StatsInsightPa
             ))}
           </div>
         ) : (
-          <div className="ai-glass rounded-lg p-5">
+          <div className="ai-glass rounded-[3px] p-5">
             <div className="min-w-0">
               <p className="text-sm font-bold text-white">표본 대기</p>
               <p className="mt-1 text-sm font-semibold text-slate-300/80">
@@ -6594,8 +7499,8 @@ const StatsInsightNarrativePanel = ({
             : '버튼 실행';
 
   return (
-    <div className="ai-glow-border rounded-lg">
-      <div className="ai-glass overflow-hidden rounded-lg">
+    <div className="ai-glow-border rounded-[3px]">
+      <div className="ai-glass overflow-hidden rounded-[3px]">
         <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/[0.03] px-4 py-3">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold text-slate-400">요약</p>
@@ -6625,7 +7530,7 @@ const StatsInsightNarrativePanel = ({
         <div className="min-h-[300px] px-4 py-5 sm:px-5" aria-live="polite">
           {state.status === 'error' ? (
             <div className="mb-4 rounded-md border border-amber-300/25 bg-amber-300/10 px-3 py-2 text-xs font-semibold leading-5 text-amber-100">
-              Gemini API 요청에 실패해 기본 요약을 표시합니다.
+              AI 요약을 만들지 못해 기본 요약을 표시합니다.
             </div>
           ) : null}
           {shouldShowSkeleton ? (
@@ -6644,7 +7549,7 @@ const StatsInsightNarrativePanel = ({
 };
 
 const getStatsInsightLoadingLabel = (state: ReturnType<typeof useGeminiStatsInsight>['state']) =>
-  state.message || 'Gemini API로 요약을 생성하고 있습니다.';
+  state.message || 'AI가 경기 흐름을 정리하고 있습니다.';
 
 const StatsInsightProgress = ({
   state,
@@ -6655,7 +7560,7 @@ const StatsInsightProgress = ({
     <div className="border-b border-white/10 bg-black/10 px-4 py-3 sm:px-5">
       <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-300/85">
         <span className="truncate">{getStatsInsightLoadingLabel(state)}</span>
-        <span className="shrink-0">Gemini</span>
+        <span className="shrink-0">AI 요약</span>
       </div>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
         <div className="h-full w-2/3 animate-pulse rounded-full bg-gradient-to-r from-sky-400 via-emerald-300 to-amber-300 shadow-[0_0_22px_rgb(56_189_248/0.35)]" />
@@ -7055,7 +7960,7 @@ const StatsInsightSignalPanel = ({
   return (
     <aside className="border-t border-white/10 bg-black/20 p-4 sm:p-5 xl:border-l xl:border-t-0">
       <div className="space-y-4">
-        <div className="ai-glass overflow-hidden rounded-lg">
+        <div className="ai-glass overflow-hidden rounded-[3px]">
           <div className="flex items-start justify-between gap-3 border-b border-white/10 px-4 py-3">
             <div className="min-w-0">
               <p className="text-[11px] font-semibold text-slate-400">최상위 신호</p>
@@ -7122,7 +8027,7 @@ const StatsInsightSignalPanel = ({
           </div>
         </div>
 
-        <div className="ai-glass rounded-lg p-4">
+        <div className="ai-glass rounded-[3px] p-4">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[11px] font-semibold text-slate-400">신호 분포</p>
@@ -7181,7 +8086,7 @@ const StatsInsightCandidateCard = ({
 }) => (
   <div
     className={cn(
-      'group relative overflow-hidden rounded-lg border shadow-[0_16px_55px_-42px_rgb(2_6_23/0.9)] transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-sky-300/35 hover:shadow-[0_22px_80px_-48px_rgb(56_189_248/0.55)]',
+      'group relative overflow-hidden rounded-[3px] border shadow-[0_16px_55px_-42px_rgb(2_6_23/0.9)] transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-sky-300/35 hover:shadow-[0_22px_80px_-48px_rgb(56_189_248/0.55)]',
       insightToneClassNames[candidate.tone],
     )}
   >
@@ -7281,7 +8186,7 @@ const PositionSummaryStrip = ({ activeRole, onRoleChange, stats }: PositionSumma
   ];
 
   return (
-    <div className="grid overflow-hidden rounded-lg border border-border/70 bg-card/55 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="ow-panel-cap grid overflow-hidden rounded-[3px] border border-border bg-card sm:grid-cols-2 xl:grid-cols-4">
       {items.map((item) => (
         <button
           key={item.value}
@@ -7385,15 +8290,15 @@ const StatsFilterPanel = ({
   return (
     <div
       className={cn(
-        'overflow-hidden rounded-lg border border-border/70 bg-card shadow-[0_20px_70px_-58px_hsl(var(--foreground)/0.45)]',
+        'ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card shadow-[0_20px_70px_-58px_hsl(var(--foreground)/0.45)]',
         className,
       )}
     >
-      <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] px-3.5 py-3 sm:px-5">
+      <div className="section-header px-3.5 py-3 sm:px-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <p className="metric-label">{label}</p>
-            <h2 className="mt-1 truncate text-base font-bold">{title}</h2>
+            <h2 className="mt-1 truncate text-base font-black">{title}</h2>
           </div>
           <Badge
             variant={activeFilterCount > 0 ? 'secondary' : 'outline'}
@@ -7677,7 +8582,7 @@ const StatsDateRangePicker = ({
         </PopoverTrigger>
         <PopoverContent
           align="center"
-          className="w-[min(calc(100vw-1.5rem),640px)] overflow-hidden rounded-lg p-0"
+          className="w-[min(calc(100vw-1.5rem),640px)] overflow-hidden rounded-[3px] p-0"
           sideOffset={8}
         >
           <div className="flex items-center justify-between gap-3 border-b border-border/70 bg-[hsl(var(--surface-2))] px-3 py-2.5">
@@ -7691,6 +8596,8 @@ const StatsDateRangePicker = ({
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8"
+                aria-label="이전 달"
+                title="이전 달"
                 onClick={() => setVisibleMonth((month) => addMonths(month, -1))}
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -7700,6 +8607,8 @@ const StatsDateRangePicker = ({
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8"
+                aria-label="다음 달"
+                title="다음 달"
                 onClick={() => setVisibleMonth((month) => addMonths(month, 1))}
               >
                 <ChevronRight className="h-4 w-4" />
@@ -7827,7 +8736,7 @@ const ChartTooltip = ({
   const extraRows = getTooltipExtraRows(contextPayload, renderedNames);
 
   return (
-    <div className="max-w-[280px] rounded-lg border border-border/80 bg-card/95 px-3 py-2.5 text-foreground shadow-[0_18px_48px_-28px_hsl(var(--foreground)/0.55)] backdrop-blur-xl">
+    <div className="max-w-[280px] rounded-[3px] border border-border bg-card px-3 py-2.5 text-foreground shadow-[0_18px_48px_-28px_hsl(var(--foreground)/0.55)]">
       <div className="border-b border-border/60 pb-2">
         <p className="metric-label">{contextLabel}</p>
         <p className="mt-1 break-words text-sm font-bold leading-snug">
@@ -7924,7 +8833,7 @@ const StatsSectionSkeleton = ({ section }: { section: StatsSection }) => {
 };
 
 const StatsFilterPanelSkeleton = ({ includeMode }: { includeMode: boolean }) => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card">
+  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] px-3.5 py-3 sm:px-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -8041,7 +8950,7 @@ const OrderStatsSkeleton = () => (
 const SummaryStatsSkeleton = () => (
   <div className="space-y-4">
     <StatsMetricGridSkeleton />
-    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
       <div className="border-b border-border/60 bg-[hsl(var(--surface-2))] px-4 py-4 sm:px-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -8070,7 +8979,7 @@ const SummaryStatsSkeleton = () => (
 );
 
 const StatsMetricGridSkeleton = () => (
-  <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border/70 bg-card/55 md:grid-cols-4">
+  <div className="ow-panel-cap grid grid-cols-2 overflow-hidden rounded-[3px] border border-border bg-card md:grid-cols-4">
     {Array.from({ length: 4 }, (_, index) => (
       <StatsMetricSkeletonCell
         key={index}
@@ -8081,7 +8990,7 @@ const StatsMetricGridSkeleton = () => (
 );
 
 const StatsMetricStackSkeleton = () => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/55">
+  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     {Array.from({ length: 4 }, (_, index) => (
       <StatsMetricSkeletonCell key={index} className="border-b border-border/60 last:border-b-0" />
     ))}
@@ -8108,7 +9017,7 @@ const StatsChartPanelSkeleton = ({
   heightClassName: string;
   variant?: 'horizontal' | 'vertical';
 }) => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <div className="border-b border-border/60 px-4 py-3 sm:px-5">
       <SkeletonBlock className="h-3 w-20" />
       <SkeletonBlock className="mt-2 h-5 w-44 max-w-full" />
@@ -8151,7 +9060,7 @@ const StatsChartPanelSkeleton = ({
 );
 
 const StatsAtlasSkeleton = () => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <div className="flex items-start justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
       <div>
         <SkeletonBlock className="h-3 w-20" />
@@ -8194,7 +9103,7 @@ const StatsAtlasSkeleton = () => (
 );
 
 const StatsHeroSpotlightSkeleton = () => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <div className="grid lg:grid-cols-[minmax(0,1fr)_320px]">
       <SkeletonBlock className="min-h-[250px] rounded-none sm:min-h-[310px]" />
       <div className="border-t border-border/70 bg-[hsl(var(--surface-2))] lg:border-l lg:border-t-0">
@@ -8224,7 +9133,7 @@ const StatsHeroSpotlightSkeleton = () => (
 );
 
 const StatsSignalPanelSkeleton = ({ sideWidthClassName }: { sideWidthClassName: string }) => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <div className={cn('grid', sideWidthClassName)}>
       <div className="section-pad bg-[hsl(var(--surface-2))]">
         <SkeletonBlock className="h-3 w-24" />
@@ -8261,7 +9170,7 @@ const StatsSignalPanelSkeleton = ({ sideWidthClassName }: { sideWidthClassName: 
 );
 
 const StatsBoardPanelSkeleton = ({ cells }: { cells: number }) => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <div className="flex items-start justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
       <div>
         <SkeletonBlock className="h-3 w-20" />
@@ -8286,7 +9195,7 @@ const StatsBoardPanelSkeleton = ({ cells }: { cells: number }) => (
 );
 
 const StatsImageFeatureSkeleton = () => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <SkeletonBlock className="aspect-[16/10] rounded-none" />
     <div className="section-pad">
       <SkeletonBlock className="h-3 w-24" />
@@ -8297,7 +9206,7 @@ const StatsImageFeatureSkeleton = () => (
 );
 
 const StatsListPanelSkeleton = ({ rows }: { rows: number }) => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <div className="border-b border-border/60 px-4 py-3 sm:px-5">
       <SkeletonBlock className="h-3 w-20" />
       <SkeletonBlock className="mt-2 h-5 w-40 max-w-full" />
@@ -8320,7 +9229,7 @@ const StatsListPanelSkeleton = ({ rows }: { rows: number }) => (
 );
 
 const StatsMediaRowsSkeleton = () => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <div className="border-b border-border/60 px-4 py-3 sm:px-5">
       <SkeletonBlock className="h-3 w-20" />
       <SkeletonBlock className="mt-2 h-5 w-36" />
@@ -8408,7 +9317,7 @@ interface MapAtlasPanelProps {
 }
 
 const MapAtlasPanel = ({ isLoading, onSelectMap, selectedMap, stats }: MapAtlasPanelProps) => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <div className="flex items-start justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
       <div>
         <p className="metric-label">전장 보드</p>
@@ -8465,12 +9374,12 @@ const MapAtlasTile = ({ onSelect, selected, stat }: MapAtlasTileProps) => (
     <div className="relative aspect-[16/10] overflow-hidden bg-secondary">
       <MapScreenshot
         alt={stat.label}
-        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+        className="h-full w-full object-cover transition-opacity duration-150 group-hover:opacity-95"
         loading="lazy"
         mapId={stat.value}
       />
       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/10" />
-      <div className="absolute left-2 top-2 rounded-md bg-black/60 px-2 py-1 text-[10px] font-bold text-white backdrop-blur-sm">
+      <div className="absolute left-2 top-2 rounded-[3px] bg-black/75 px-2 py-1 text-[10px] font-bold text-white">
         <MatchModeLabel modeId={stat.modeId} />
       </div>
       <div className="absolute inset-x-2 bottom-2 flex items-end justify-between gap-2 text-white">
@@ -8568,7 +9477,7 @@ const HeroSpotlightPanel = ({
   const shouldShowBestHero = bestHero && bestHero.value !== topHero.value;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
       <div className="grid lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="relative min-h-[250px] overflow-hidden bg-secondary sm:min-h-[310px]">
           <img
@@ -8577,7 +9486,7 @@ const HeroSpotlightPanel = ({
             src={getHeroPortraitPath(topHero.value)}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/35 to-black/10" />
-          <div className="absolute left-4 top-4 rounded-md border border-white/20 bg-black/35 px-2.5 py-1 text-[11px] font-black text-white backdrop-blur-md">
+          <div className="absolute left-4 top-4 rounded-[3px] border border-white/20 bg-black/65 px-2.5 py-1 text-[11px] font-black text-white">
             최다 사용
           </div>
           <div className="absolute bottom-0 left-0 right-0 p-4 text-white sm:p-5 lg:p-6">
@@ -8653,7 +9562,7 @@ const HeroMetric = ({ label, value }: { label: string; value: string }) => (
 );
 
 const HeroRolePanel = ({ roleStats }: { roleStats: RoleStatItem[] }) => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <div className="border-b border-border/60 px-4 py-3 sm:px-5">
       <p className="metric-label">역할</p>
       <h2 className="mt-1 text-lg font-bold">역할별 사용 흐름</h2>
@@ -8684,7 +9593,7 @@ const HeroRolePanel = ({ roleStats }: { roleStats: RoleStatItem[] }) => (
 );
 
 const HeroRosterPanel = ({ heroStats }: { heroStats: HeroStatItem[] }) => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <div className="flex items-start justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
       <div className="min-w-0">
         <p className="metric-label">영웅 랭킹</p>
@@ -8735,7 +9644,7 @@ const HeroRosterRow = ({ rank, stat }: { rank: number; stat: HeroStatItem }) => 
 );
 
 const HeroBestPanel = ({ hero }: { hero: HeroStatItem }) => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <div className="aspect-[16/12] bg-secondary">
       <img
         alt={hero.label}
@@ -8800,7 +9709,7 @@ const TimeSpotlightPanel = ({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
       <div className="grid lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="section-pad bg-[hsl(var(--surface-2))]">
           <p className="metric-label">좋은 시간대</p>
@@ -8868,7 +9777,7 @@ const TimeCompareRow = ({ label, stat }: { label: string; stat: TimeStatItem | n
 );
 
 const TimeClockBoard = ({ maxCount, stats }: { maxCount: number; stats: TimeStatItem[] }) => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <div className="flex items-start justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
       <div className="min-w-0">
         <p className="metric-label">24시간 보드</p>
@@ -8923,7 +9832,7 @@ const TimeRankPanel = ({ stats }: { stats: TimeStatItem[] }) => {
   const activityRows = [...stats].sort((a, b) => b.total - a.total).slice(0, 4);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
       <div className="border-b border-border/60 px-4 py-3 sm:px-5">
         <p className="metric-label">시간대 판단</p>
         <h3 className="mt-1 text-lg font-bold">좋은 시간과 많이 한 시간</h3>
@@ -8977,7 +9886,7 @@ const OrderSpotlightPanel = ({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
       <div className="grid lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="section-pad bg-[hsl(var(--surface-2))]">
           <p className="metric-label">세션 안에서 가장 좋은 구간</p>
@@ -9041,7 +9950,7 @@ const OrderFlowPanel = ({
   worstOrder: OrderStatItem | null;
 }) => {
   return (
-    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
       <div className="flex items-start justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
         <div className="min-w-0">
           <p className="metric-label">세션 진행도</p>
@@ -9132,7 +10041,7 @@ const OrderJudgePanel = ({
       : null;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
       <div className="border-b border-border/60 px-4 py-3 sm:px-5">
         <p className="metric-label">흐름 판단</p>
         <h3 className="mt-1 text-lg font-bold">세션을 끊을 타이밍</h3>
@@ -9346,7 +10255,7 @@ const TabEmpty = ({ icon: Icon, isLoading, title }: TabEmptyProps) =>
 
 const TabLoadingSkeleton = () => (
   <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-    <div className="h-[260px] rounded-lg border border-border/70 bg-card/55 p-4">
+    <div className="h-[260px] rounded-[3px] border border-border/70 bg-card/55 p-4">
       <div className="flex h-full items-center justify-center">
         <div className="relative h-32 w-32 rounded-full border-[18px] border-secondary">
           <SkeletonBlock className="absolute inset-5 rounded-full bg-card" />

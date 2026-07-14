@@ -29,6 +29,7 @@ import { StickyNotesDock } from '@/components/home/StickyNotesDock';
 import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
 import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
 import { QuickMatchEntry } from '@/components/input/QuickMatchEntry';
+import { HeroPortraitStack } from '@/components/match/HeroPortraitStack';
 import { MapScreenshot } from '@/components/match/MapScreenshot';
 import { MatchModeLabel } from '@/components/match/MatchModeBadge';
 import { MatchRoleLabel } from '@/components/match/MatchRoleBadge';
@@ -59,6 +60,7 @@ import {
   compareMatchesByTimelineAsc,
   compareMatchesByTimelineDesc,
   getCurrentStreak,
+  summarizeResults,
 } from '@/lib/matchStats';
 import { createSessionId, groupMatchesBySession, shouldReuseSession } from '@/lib/session';
 import { cn } from '@/lib/utils';
@@ -232,7 +234,7 @@ const FavoriteTeamHomeWidget = ({
   return (
     <Link
       to={getExternalMatchPath(event)}
-      className="group hidden min-w-[288px] rounded-md border border-primary/35 bg-primary/[0.07] px-3 py-2 text-left transition-colors hover:border-primary/60 hover:bg-primary/[0.1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 sm:block"
+      className="group hidden min-w-[288px] rounded-[3px] border border-border bg-card px-3 py-2 text-left shadow-sm transition-colors hover:bg-secondary/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 sm:block"
     >
       <div className="grid grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-2">
         <span className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-md border border-white/10 bg-[linear-gradient(145deg,hsl(222_20%_15%),hsl(220_16%_8%))] text-[10px] font-black text-white/80">
@@ -348,6 +350,8 @@ const HomePage = () => {
     () => getSummaryMetrics(sessionMatches, Boolean(manualSessionId)),
     [manualSessionId, sessionMatches],
   );
+  const sessionResultSummary = useMemo(() => summarizeResults(sessionMatches), [sessionMatches]);
+  const latestSessionMatch = sessionFlowItems.at(-1)?.match ?? null;
   const activePlayerAccounts = useMemo(
     () => playerAccounts.filter((account) => account.isActive),
     [playerAccounts],
@@ -709,16 +713,27 @@ const HomePage = () => {
         )}
       >
         <PageHeader
-          eyebrow="오늘"
-          title="경기 기록"
+          eyebrow="매치 기록"
+          title="오늘의 전투 기록"
           actions={
-            favoriteTeam ? (
-              <FavoriteTeamHomeWidget
-                event={favoriteTeamNextEvent}
-                favoriteTeam={favoriteTeam}
-                isLoading={isExternalDataLoading}
-              />
-            ) : null
+            <>
+              {favoriteTeam ? (
+                <FavoriteTeamHomeWidget
+                  event={favoriteTeamNextEvent}
+                  favoriteTeam={favoriteTeam}
+                  isLoading={isExternalDataLoading}
+                />
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                className="bg-card"
+                onClick={() => setToolsOpen(true)}
+              >
+                <ImagePlus className="h-4 w-4" />
+                상세 기록
+              </Button>
+            </>
           }
         />
         <input
@@ -729,35 +744,113 @@ const HomePage = () => {
           onChange={handleFileChange}
         />
 
-        <section className="workspace-panel overflow-hidden">
-          <div className="metric-strip grid-cols-3 divide-x divide-border/70">
-            {summaryMetrics.map((metric) => (
-              <div
-                key={metric.label}
-                className="flex min-h-[68px] items-end justify-between gap-2 px-3 py-3 sm:min-h-[74px] sm:px-5 sm:py-4"
-              >
+        <section className="ow-command-deck relative min-h-[220px] overflow-hidden rounded-[3px] border border-white/10 bg-[hsl(var(--ow-navy))] text-white shadow-[0_22px_54px_-38px_rgb(2_6_23/0.9)]">
+          {latestSessionMatch ? (
+            <div className="absolute inset-0 lg:left-[52%]">
+              <MapScreenshot
+                alt=""
+                className="h-full w-full object-cover opacity-50"
+                mapId={latestSessionMatch.mapId}
+              />
+              <span className="absolute inset-0 bg-[linear-gradient(90deg,rgb(32_43_65)_0%,rgb(32_43_65/0.92)_24%,rgb(32_43_65/0.38)_100%)]" />
+            </div>
+          ) : null}
+          <div className="relative z-10 grid min-h-[220px] lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
+            <div className="flex min-w-0 flex-col justify-between p-4 sm:p-5 lg:p-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
-                  <p className="metric-label">{metric.label}</p>
-                  {isHomeDataLoading ? (
-                    <div className="mt-2 min-w-0 sm:flex sm:items-baseline sm:gap-2">
-                      <SkeletonBlock className="h-6 w-14 sm:h-7" />
-                      <SkeletonBlock className="mt-2 h-3 w-20 sm:mt-0" />
-                    </div>
-                  ) : (
-                    <div className="mt-2 min-w-0 sm:flex sm:items-baseline sm:gap-2">
-                      <p className="truncate text-xl font-bold leading-none sm:text-2xl">
+                  <p className="flex items-center gap-2 text-[10px] font-black text-white/50">
+                    <span
+                      className={cn(
+                        'h-2 w-2 rounded-full',
+                        manualSessionId ? 'bg-[hsl(var(--success))]' : 'bg-accent',
+                      )}
+                    />
+                    {manualSessionId ? '세션 진행 중' : '세션 준비'}
+                  </p>
+                  <h2 className="mt-2 truncate text-2xl font-black leading-none sm:text-[30px]">
+                    {latestSessionMatch
+                      ? getMapLabel(latestSessionMatch.mapId)
+                      : '새 세션을 시작하세요'}
+                  </h2>
+                  <p className="mt-2 flex min-w-0 items-center gap-2 text-xs font-bold text-white/60 sm:text-sm">
+                    {latestSessionMatch ? (
+                      <>
+                        <span className="shrink-0">
+                          {latestSessionMatch.teamScore}:{latestSessionMatch.enemyScore}
+                        </span>
+                        <span className="text-white/25">/</span>
+                        <span className="truncate">
+                          {getResultLabel(latestSessionMatch.result)}
+                        </span>
+                        <span className="text-white/25">/</span>
+                        <MatchModeLabel
+                          className="shrink-0 text-white/60"
+                          modeId={latestSessionMatch.modeId}
+                        />
+                      </>
+                    ) : (
+                      '첫 경기부터 흐름을 이어서 기록합니다.'
+                    )}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={manualSessionId ? 'outline' : 'default'}
+                  className={cn(
+                    'ow-command-button w-full sm:w-auto lg:absolute lg:right-6 lg:top-6',
+                    manualSessionId &&
+                      'border-white/25 bg-white/5 text-white hover:bg-white/10 hover:text-white',
+                  )}
+                  disabled={isHomeDataLoading}
+                  onClick={manualSessionId ? handleStopSession : handleStartSession}
+                >
+                  {manualSessionId ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                  {manualSessionId ? '세션 종료' : '세션 시작'}
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-3 divide-x divide-white/10 border-y border-white/10 bg-black/10">
+                {summaryMetrics.map((metric) => (
+                  <div key={metric.label} className="min-w-0 px-3 py-3 sm:px-4">
+                    <p className="text-[9px] font-black text-white/45 sm:text-[10px]">
+                      {metric.label}
+                    </p>
+                    {isHomeDataLoading ? (
+                      <SkeletonBlock className="mt-2 h-6 w-12 bg-white/15" />
+                    ) : (
+                      <p className="mt-1 truncate text-xl font-black tabular-nums sm:text-2xl">
                         {metric.value}
                       </p>
-                      <p className="mt-1 truncate text-[10px] font-semibold text-muted-foreground sm:mt-0 sm:text-xs">
-                        {metric.detail}
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="hidden items-end justify-end p-6 lg:flex">
+              {latestSessionMatch ? (
+                <div className="min-w-[260px] rounded-[3px] border border-white/15 bg-white/[0.04] p-4">
+                  <p className="text-[10px] font-black text-white/45">이번 세션</p>
+                  <div className="mt-2 flex items-end justify-between gap-5">
+                    <div>
+                      <p className="text-3xl font-black tabular-nums">
+                        {sessionResultSummary.wins}W {sessionResultSummary.losses}L
+                      </p>
+                      <p className="mt-1 text-xs font-bold text-white/50">
+                        총 {sessionResultSummary.total.toLocaleString('ko-KR')} 경기
                       </p>
                     </div>
-                  )}
+                    <HeroPortraitStack heroIds={latestSessionMatch.myHeroes} size="md" />
+                  </div>
                 </div>
-              </div>
-            ))}
+              ) : null}
+            </div>
           </div>
+        </section>
 
+        <section className="workspace-panel ow-panel-cap overflow-hidden">
           <div className="section-pad">
             <QuickMatchEntry
               key={quickEntryResetKey}
@@ -771,30 +864,25 @@ const HomePage = () => {
           </div>
         </section>
 
-        <section className="workspace-panel overflow-hidden">
+        <section className="workspace-panel ow-panel-cap overflow-hidden">
           <div className="section-header flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="metric-label">세션</p>
-              <h2 className="mt-1 truncate text-lg font-bold tracking-normal">이번 세션</h2>
+              <h2 className="mt-1 truncate text-lg font-black tracking-normal">이번 세션</h2>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {isHomeDataLoading ? (
                 <SkeletonBlock className="h-6 w-20" />
               ) : (
-                <Badge variant={manualSessionId ? 'default' : 'secondary'}>
-                  {manualSessionId ? '진행중' : `${sessionMatches.length} 경기`}
+                <Badge variant="secondary">
+                  {sessionMatches.length.toLocaleString('ko-KR')} 경기
                 </Badge>
               )}
-              <Button
-                type="button"
-                size="sm"
-                variant={manualSessionId ? 'outline' : 'default'}
-                className={manualSessionId ? 'bg-transparent' : ''}
-                disabled={isHomeDataLoading}
-                onClick={manualSessionId ? handleStopSession : handleStartSession}
-              >
-                {manualSessionId ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                {manualSessionId ? '종료' : '시작'}
+              <Button asChild type="button" size="sm" variant="outline" className="bg-card">
+                <Link to="/sessions">
+                  세션 분석
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
               </Button>
             </div>
           </div>
@@ -807,7 +895,7 @@ const HomePage = () => {
                 {sessionMatches.length > 0 ? (
                   <SessionTimeline items={sessionFlowItems} />
                 ) : (
-                  <div className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-dashed border-border/80 bg-[hsl(var(--surface-2))] px-3">
+                  <div className="flex min-h-12 items-center justify-between gap-3 rounded-[3px] border border-dashed border-border bg-[hsl(var(--surface-2))] px-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-bold">새 세션 대기</p>
                       <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
@@ -820,21 +908,22 @@ const HomePage = () => {
 
               {sessionMatches.length > 0 ? (
                 <div>
-                  <div className="flex items-center justify-between gap-3 border-b border-border/70 bg-[hsl(var(--surface-2))] px-3.5 py-2.5 sm:px-5">
+                  <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-[hsl(var(--ow-navy))] px-3.5 py-2.5 text-white sm:px-5">
                     <div className="min-w-0">
-                      <p className="truncate text-xs font-black uppercase text-muted-foreground">
+                      <p className="truncate text-xs font-black uppercase text-white/70">
                         세션 경기
                       </p>
-                      <p className="mt-0.5 truncate text-xs font-semibold text-muted-foreground">
-                        총 {sortedSessionMatches.length.toLocaleString('ko-KR')}경기
+                      <p className="mt-0.5 truncate text-xs font-semibold text-white/45">
+                        총 {sortedSessionMatches.length.toLocaleString('ko-KR')} 경기
                       </p>
                     </div>
-                    <Button asChild size="sm" variant="outline" className="h-8 bg-transparent">
-                      <Link to="/sessions">
-                        전체 보기
-                        <ArrowRight className="h-3.5 w-3.5" />
-                      </Link>
-                    </Button>
+                    <div className="flex shrink-0 items-center gap-2 text-xs font-black tabular-nums">
+                      <span className="text-emerald-300">{sessionResultSummary.wins}승</span>
+                      <span className="text-rose-300">{sessionResultSummary.losses}패</span>
+                      {sessionResultSummary.draws > 0 ? (
+                        <span className="text-white/55">{sessionResultSummary.draws}무</span>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="session-scroll max-h-[272px] divide-y divide-border/70 overflow-y-auto">
                     {sortedSessionMatches.map((match) => (
@@ -858,9 +947,11 @@ const HomePage = () => {
 
       <Dialog open={toolsOpen} onOpenChange={setToolsOpen}>
         <DialogContent className="flex h-[calc(100dvh-1rem)] max-w-2xl flex-col gap-0 p-0 sm:h-[680px] sm:max-h-[calc(100dvh-3rem)]">
-          <DialogHeader className="border-b border-border/70 bg-card px-4 py-4 pr-12 sm:px-5">
+          <DialogHeader className="border-b border-white/10 bg-[hsl(var(--ow-navy))] px-4 py-4 pr-12 text-white sm:px-5">
             <DialogTitle>보조 입력</DialogTitle>
-            <DialogDescription>상세 기록과 이미지 분석은 필요할 때만 사용합니다.</DialogDescription>
+            <DialogDescription className="text-white/55">
+              상세 기록과 이미지 분석은 필요할 때만 사용합니다.
+            </DialogDescription>
           </DialogHeader>
 
           <div
@@ -871,7 +962,7 @@ const HomePage = () => {
             <div className="grid gap-3 sm:grid-cols-2">
               <button
                 type="button"
-                className="rounded-lg border border-border/70 bg-card p-4 text-left transition-colors hover:bg-secondary"
+                className="ow-data-accent rounded-[3px] border border-border bg-card p-4 text-left transition-[background-color,border-color,box-shadow] hover:border-primary/45 hover:bg-primary/[0.05] hover:shadow-sm"
                 onClick={openDirectEntry}
               >
                 <p className="metric-label">수기</p>
@@ -883,7 +974,7 @@ const HomePage = () => {
 
               <button
                 type="button"
-                className="rounded-lg border border-border/70 bg-card p-4 text-left transition-colors hover:bg-secondary"
+                className="ow-data-accent rounded-[3px] border border-border bg-card p-4 text-left transition-[background-color,border-color,box-shadow] hover:border-primary/45 hover:bg-primary/[0.05] hover:shadow-sm"
                 onClick={() => fileInputRef.current?.click()}
               >
                 <p className="metric-label">이미지</p>
@@ -894,7 +985,7 @@ const HomePage = () => {
               </button>
             </div>
 
-            <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-lg border border-border/70 bg-card p-3">
+            <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-[3px] border border-border bg-card p-3">
               {screenshotPreview ? (
                 <div className="grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
                   <div className="aspect-video overflow-hidden rounded-md bg-secondary">
@@ -919,6 +1010,7 @@ const HomePage = () => {
                         size="icon"
                         className="h-9 w-9 shrink-0"
                         aria-label="이미지 제거"
+                        title="이미지 제거"
                         onClick={() => {
                           setScreenshotPreview(null);
                           setVisionProgress(null);
@@ -942,7 +1034,7 @@ const HomePage = () => {
                         {typeof visionProgress.progress === 'number' ? (
                           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary">
                             <div
-                              className="h-full rounded-full bg-primary transition-all"
+                              className="h-full rounded-full bg-primary transition-[width] duration-150"
                               style={{
                                 width: `${Math.max(4, Math.min(100, visionProgress.progress))}%`,
                               }}
@@ -1096,7 +1188,7 @@ interface RecentMatchRowProps {
 }
 
 const recentMatchRowClassName =
-  'grid min-h-[68px] grid-cols-[56px_minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 sm:grid-cols-[56px_72px_minmax(0,1fr)_88px_80px] sm:px-5';
+  'grid min-h-[68px] grid-cols-[56px_minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 transition-colors hover:bg-primary/[0.035] sm:grid-cols-[56px_72px_minmax(0,1fr)_88px_80px] sm:px-5';
 
 const RecentMatchRow = ({
   accountLabel,
@@ -1106,7 +1198,7 @@ const RecentMatchRow = ({
   sessionNumber,
 }: RecentMatchRowProps) => (
   <div className={recentMatchRowClassName}>
-    <div className="relative h-10 w-14 overflow-hidden rounded-md bg-secondary">
+    <div className="ow-map-tile relative h-10 w-14 overflow-hidden bg-secondary">
       <MapScreenshot
         alt=""
         className="h-full w-full object-cover"
@@ -1128,14 +1220,17 @@ const RecentMatchRow = ({
         <span className="shrink-0 text-muted-foreground">·</span>
         <MatchModeLabel className="shrink-0 text-xs text-muted-foreground" modeId={match.modeId} />
       </p>
-      <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-        <span className="sm:hidden">
-          {formatTime(match.playedAt)} · {getResultLabel(match.result)} ·{' '}
-        </span>
-        <span className="truncate">{accountLabel}</span>
-        <span className="shrink-0">·</span>
-        <MatchRoleLabel className="shrink-0" role={match.matchRole} />
-      </p>
+      <div className="mt-1 flex min-w-0 items-center gap-2">
+        <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="sm:hidden">
+            {formatTime(match.playedAt)} · {getResultLabel(match.result)} ·{' '}
+          </span>
+          <span className="truncate">{accountLabel}</span>
+          <span className="shrink-0">·</span>
+          <MatchRoleLabel className="shrink-0" role={match.matchRole} />
+        </p>
+        <HeroPortraitStack className="shrink-0" heroIds={match.myHeroes} />
+      </div>
     </div>
     <div
       className={`hidden h-9 items-center justify-center rounded-md border text-xs font-bold sm:flex ${getResultTone(
@@ -1151,6 +1246,7 @@ const RecentMatchRow = ({
         variant="ghost"
         className="h-9 w-9"
         aria-label="경기 수정"
+        title="경기 수정"
         onClick={onEdit}
       >
         <Pencil className="h-4 w-4" />
@@ -1161,6 +1257,7 @@ const RecentMatchRow = ({
         variant="ghost"
         className="h-9 w-9 text-destructive hover:text-destructive"
         aria-label="경기 삭제"
+        title="경기 삭제"
         onClick={onDelete}
       >
         <Trash2 className="h-4 w-4" />
@@ -1226,19 +1323,27 @@ const SessionTimeline = ({ items }: { items: SessionTimelineEntry[] }) => {
 const SessionTimelineItem = ({ item }: { item: SessionTimelineEntry }) => (
   <div
     className={cn(
-      'grid h-[64px] min-w-[176px] snap-start grid-cols-[30px_minmax(0,1fr)] items-center gap-2 rounded-md border px-2.5 transition-colors',
+      'grid h-[68px] min-w-[208px] snap-start grid-cols-[64px_minmax(0,1fr)] items-stretch overflow-hidden rounded-[3px] border transition-colors',
       getResultTone(item.match.result),
       item.isLatest && 'ring-2 ring-primary/20',
     )}
   >
-    <span className="flex h-7 w-7 items-center justify-center rounded bg-background/75 text-[11px] font-black tabular-nums">
-      {item.number}
-    </span>
-    <div className="min-w-0">
+    <div className="relative overflow-hidden bg-secondary">
+      <MapScreenshot
+        alt=""
+        className="h-full w-full object-cover"
+        loading="lazy"
+        mapId={item.match.mapId}
+      />
+      <span className="absolute left-1.5 top-1.5 flex h-5 min-w-5 items-center justify-center bg-black/70 px-1 text-[9px] font-black tabular-nums text-white">
+        {item.number}
+      </span>
+    </div>
+    <div className="min-w-0 self-center px-2.5">
       <div className="flex min-w-0 items-center gap-1.5">
         <p className="truncate text-xs font-bold">{getMapLabel(item.match.mapId)}</p>
         {item.isLatest ? (
-          <span className="shrink-0 rounded bg-primary/10 px-1 text-[9px] font-black text-primary">
+          <span className="shrink-0 bg-primary/10 px-1 text-[9px] font-black text-primary">
             최신
           </span>
         ) : null}

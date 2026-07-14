@@ -422,7 +422,7 @@ const HeroSection = ({
                   {tokyoTripMeta.title}
                 </h1>
               </div>
-              <div className="shrink-0 rounded-lg border border-white/15 bg-white/12 px-2 py-1.5 text-right backdrop-blur-md sm:px-3 sm:py-2">
+              <div className="shrink-0 rounded-lg border border-white/15 bg-slate-950/55 px-2 py-1.5 text-right sm:px-3 sm:py-2">
                 <p className="text-[11px] font-bold text-white/62">Tokyo</p>
                 <p className="text-base font-black">
                   {daysUntilTrip ? `D-${daysUntilTrip}` : `Day ${tripContext.currentDay.day}`}
@@ -446,7 +446,7 @@ const HeroSection = ({
         </div>
 
         <div className="hidden gap-3 sm:grid">
-          <div className="rounded-lg border border-white/15 bg-white/13 p-4 backdrop-blur-xl">
+          <div className="rounded-lg border border-white/15 bg-slate-950/60 p-4">
             <div className="flex items-center justify-between gap-2">
               <p className="text-[11px] font-bold text-white/62">다음 행동</p>
               <LocationStatusButton location={location} tone="dark" />
@@ -550,7 +550,7 @@ const HeroShortcut = ({
   onClick?: () => void;
 }) => {
   const className =
-    'flex h-16 flex-col items-center justify-center gap-1.5 rounded-lg border border-white/15 bg-white/12 text-xs font-black text-white backdrop-blur-md transition-colors hover:bg-white/18';
+    'flex h-16 flex-col items-center justify-center gap-1.5 rounded-lg border border-white/15 bg-slate-950/55 text-xs font-black text-white transition-colors hover:bg-slate-950/70';
 
   if (href) {
     return (
@@ -578,7 +578,7 @@ const TravelNowCard = ({
   label: string;
   placeholder: string;
 }) => (
-  <div className="min-w-0 rounded-lg border border-white/15 bg-white/12 p-3.5 backdrop-blur-md">
+  <div className="min-w-0 rounded-lg border border-white/15 bg-slate-950/55 p-3.5">
     <p className="text-[11px] font-bold text-white/62">{label}</p>
     {event ? (
       <div className="mt-2 flex gap-3">
@@ -642,7 +642,7 @@ const MobileTravelNav = ({
   activeSection: TokyoTravelSection;
   onSelect: (section: TokyoTravelSection) => void;
 }) => (
-  <nav className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-30 rounded-lg border border-border/70 bg-card/96 p-1 shadow-[0_18px_70px_-36px_rgb(15_23_42/0.8)] backdrop-blur-xl xl:hidden">
+  <nav className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-30 rounded-lg border border-border/70 bg-card p-1 shadow-[0_18px_70px_-36px_rgb(15_23_42/0.8)] xl:hidden">
     <div className="grid grid-cols-5 gap-1">
       {mobileSectionItems.map((item) => {
         const active = activeSection === item.value;
@@ -3036,7 +3036,7 @@ const CameraInterpretPanel = () => {
           <Camera className="h-8 w-8 text-muted-foreground" />
           <span className="mt-3 text-sm font-black">사진 선택 또는 촬영</span>
           <span className="mt-1 text-xs font-semibold leading-5 text-muted-foreground">
-            MVP에서는 파일 입력 UI와 API 연결 지점만 제공합니다.
+            현장에서 확인할 메뉴판이나 표지판 사진을 선택하세요.
           </span>
           <input
             accept="image/*"
@@ -3053,8 +3053,7 @@ const CameraInterpretPanel = () => {
           </div>
         ) : null}
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-800">
-          바코드 검색은 정확한 제품 DB가 별도로 필요합니다. Gemini는 상품명/라벨 해석 보조로만
-          연결하는 구조입니다.
+          제품 정보는 사진 속 상품명과 라벨을 기준으로 확인하는 것이 가장 정확합니다.
         </div>
       </CardContent>
     </Card>

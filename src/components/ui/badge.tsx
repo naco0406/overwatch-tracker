@@ -4,16 +4,18 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 const badgeVariants = cva(
-  'inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+  'inline-flex min-h-6 items-center gap-1.5 rounded-[2px] border px-2.5 py-0.5 text-xs font-black leading-none transition-[background-color,border-color,color] focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
   {
     variants: {
       variant: {
-        default: 'border-transparent bg-primary text-primary-foreground hover:bg-primary/80',
-        secondary:
-          'border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80',
+        default: 'border-transparent bg-primary/10 text-primary hover:bg-primary/15',
+        secondary: 'border-border/70 bg-secondary text-secondary-foreground hover:bg-secondary/80',
         destructive:
-          'border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80',
-        outline: 'text-foreground',
+          'border-destructive/25 bg-destructive/10 text-destructive hover:bg-destructive/15',
+        outline: 'ow-game-badge border-border bg-card text-foreground hover:bg-secondary/50',
+        success:
+          'border-[hsl(var(--success)/0.28)] bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))]',
+        warning: 'border-[hsl(var(--warning)/0.3)] bg-[hsl(var(--warning)/0.12)] text-amber-700',
       },
     },
     defaultVariants: {

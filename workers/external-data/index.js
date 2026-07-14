@@ -1,6 +1,14 @@
-const DEFAULT_ALLOWED_ORIGINS = 'http://localhost:5173';
+const DEFAULT_ALLOWED_ORIGINS = 'http://localhost:5173,http://127.0.0.1:5173';
 const DEFAULT_CACHE_TTL_SECONDS = 300;
 const BLIZZARD_HERO_RATES_URL = 'https://overwatch.blizzard.com/en-us/rates/';
+const BLIZZARD_HERO_RATES_DEFAULT_FILTERS = {
+  input: 'PC',
+  map: 'all-maps',
+  region: 'Asia',
+  role: 'All',
+  rq: '0',
+  tier: 'All',
+};
 const ESPORTS_SCHEDULE_URL = 'https://esports.overwatch.com/en-us/schedule';
 const OWTICS_CALENDAR_URL = 'https://owtics.gg/en-US/esports/calendar';
 const OVERFAST_HERO_STATS_URL = 'https://overfast-api.tekrop.fr/heroes/stats';
@@ -39,6 +47,7 @@ const GLOBAL_HERO_RATE_SELECT_COLUMNS = [
   'map_id',
   'role',
   'hero_id',
+  'ban_rate',
   'pick_rate',
   'win_rate',
   'sample_state',
@@ -305,6 +314,7 @@ const rowToGlobalHeroRateSnapshot = (row) => ({
   inputMethod: row.input_method,
   mapId: row.map_id,
   patchLabel: row.patch_label,
+  banRate: toNullableNumber(row.ban_rate),
   pickRate: toNullableNumber(row.pick_rate),
   region: row.region,
   role: row.role,
@@ -375,20 +385,99 @@ const normalizeBlizzardRegion = (value) => {
   return 'global';
 };
 
+const normalizeBlizzardInputMethod = (value) => {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase();
+
+  if (normalized === 'console' || normalized === 'controller') {
+    return 'controller';
+  }
+
+  return 'mouse_keyboard';
+};
+
+const normalizeBlizzardMapId = (value) => {
+  const normalized = String(value ?? 'all')
+    .trim()
+    .toLowerCase();
+
+  return normalized === 'all-maps' ? 'all' : normalized || 'all';
+};
+
+const normalizeBlizzardTier = (value) => {
+  const normalized = String(value ?? 'All')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+
+  if (
+    normalized === 'champion' ||
+    normalized === 'grandmaster' ||
+    normalized === 'grandmaster_champion'
+  ) {
+    return 'grandmaster_and_champion';
+  }
+
+  return normalized || 'all';
+};
+
+const getBlizzardHeroRatesUrl = (filters = {}) => {
+  const url = new URL(BLIZZARD_HERO_RATES_URL);
+  const mergedFilters = {
+    ...BLIZZARD_HERO_RATES_DEFAULT_FILTERS,
+    ...filters,
+  };
+
+  url.searchParams.set('input', mergedFilters.input);
+  url.searchParams.set('map', mergedFilters.map);
+  url.searchParams.set('region', mergedFilters.region);
+  url.searchParams.set('role', mergedFilters.role);
+  url.searchParams.set('rq', mergedFilters.rq);
+  url.searchParams.set('tier', mergedFilters.tier);
+
+  return url.toString();
+};
+
+const getBlizzardHeroRateCollectFilters = (url) => ({
+  input:
+    url.searchParams.get('heroInput') ??
+    url.searchParams.get('input') ??
+    BLIZZARD_HERO_RATES_DEFAULT_FILTERS.input,
+  map:
+    url.searchParams.get('heroMap') ??
+    url.searchParams.get('map') ??
+    BLIZZARD_HERO_RATES_DEFAULT_FILTERS.map,
+  region:
+    url.searchParams.get('heroRegion') ??
+    url.searchParams.get('region') ??
+    BLIZZARD_HERO_RATES_DEFAULT_FILTERS.region,
+  role:
+    url.searchParams.get('heroRole') ??
+    url.searchParams.get('role') ??
+    BLIZZARD_HERO_RATES_DEFAULT_FILTERS.role,
+  rq:
+    url.searchParams.get('heroRq') ??
+    url.searchParams.get('rq') ??
+    BLIZZARD_HERO_RATES_DEFAULT_FILTERS.rq,
+  tier:
+    url.searchParams.get('heroTier') ??
+    url.searchParams.get('tier') ??
+    BLIZZARD_HERO_RATES_DEFAULT_FILTERS.tier,
+});
+
 const parseBlizzardRatesFilters = (html) => {
   const selectedMatch = html.match(/data-selected="([^"]+)"/);
   const selected = selectedMatch ? JSON.parse(decodeHtmlEntities(selectedMatch[1])) : {};
   const roleQueueMatch = html.match(/class="herostats-filters"[^>]*data-rq="([^"]+)"/);
+  const roleQueue = String(selected.rq ?? roleQueueMatch?.[1] ?? '0');
 
   return {
-    gamemode: roleQueueMatch?.[1] === '2' ? 'competitive' : 'quickplay',
-    inputMethod: 'mouse_keyboard',
+    gamemode: roleQueue === '1' ? 'competitive' : 'quickplay',
+    inputMethod: normalizeBlizzardInputMethod(selected.input),
+    mapId: normalizeBlizzardMapId(selected.map),
     region: normalizeBlizzardRegion(selected.region),
-    tier:
-      String(selected.tier ?? 'All')
-        .trim()
-        .toLowerCase()
-        .replace(/\s+/g, '_') || 'all',
+    tier: normalizeBlizzardTier(selected.tier),
   };
 };
 
@@ -410,6 +499,7 @@ const parseBlizzardHeroRates = (html, fetchedAt = new Date().toISOString()) => {
   return rawRows
     .map((row) => {
       const heroId = typeof row?.id === 'string' ? row.id : '';
+      const banRate = parseNullableRateNumber(row?.cells?.banrate);
       const pickRate = parseNullableRateNumber(row?.cells?.pickrate);
       const winRate = parseNullableRateNumber(row?.cells?.winrate);
 
@@ -419,15 +509,17 @@ const parseBlizzardHeroRates = (html, fetchedAt = new Date().toISOString()) => {
 
       return {
         fetched_at: fetchedAt,
+        ban_rate: banRate,
         gamemode: filters.gamemode,
         hero_id: heroId,
         input_method: filters.inputMethod,
-        map_id: 'all',
+        map_id: filters.mapId,
         patch_label: 'current',
         pick_rate: pickRate,
         region: filters.region,
         role: normalizeRole(row?.hero?.role),
-        sample_state: pickRate === null && winRate === null ? 'unavailable' : 'available',
+        sample_state:
+          banRate === null && pickRate === null && winRate === null ? 'unavailable' : 'available',
         source_id: 'blizzard_hero_rates',
         tier: filters.tier,
         win_rate: winRate,
@@ -463,6 +555,7 @@ const mapOverfastHeroStats = (items, region, fetchedAt = new Date().toISOString(
 
       return {
         fetched_at: fetchedAt,
+        ban_rate: null,
         gamemode: 'competitive',
         hero_id: heroId,
         input_method: 'mouse_keyboard',
@@ -1451,10 +1544,11 @@ const getLimitParam = (request, fallback, max) => {
   return Math.max(1, Math.min(max, Math.floor(value)));
 };
 
-const appendSupabaseEqFilter = (params, url, searchKey, columnName = searchKey) => {
+const appendSupabaseEqFilter = (params, url, searchKey, columnName = searchKey, options = {}) => {
   const value = url.searchParams.get(searchKey);
+  const includeAll = options.includeAll === true;
 
-  if (!value || value === 'all') {
+  if (!value || (value === 'all' && !includeAll)) {
     return;
   }
 
@@ -1489,7 +1583,7 @@ const getBoundedSearchInteger = (url, key, fallback, min, max) => {
 
 const handleGlobalHeroRates = async (request, env, origin) => {
   const url = new URL(request.url);
-  const limit = getLimitParam(request, 1200, 5000);
+  const limit = getLimitParam(request, 1200, 20000);
   const params = new URLSearchParams({
     limit: String(limit),
     order: 'fetched_at.desc',
@@ -1500,10 +1594,11 @@ const handleGlobalHeroRates = async (request, env, origin) => {
   appendSupabaseTimestampFilter(params, url, 'to', 'fetched_at', 'lte');
   appendSupabaseEqFilter(params, url, 'heroId', 'hero_id');
   appendSupabaseEqFilter(params, url, 'sourceId', 'source_id');
+  appendSupabaseEqFilter(params, url, 'inputMethod', 'input_method');
   appendSupabaseEqFilter(params, url, 'region');
   appendSupabaseEqFilter(params, url, 'gamemode');
-  appendSupabaseEqFilter(params, url, 'tier');
-  appendSupabaseEqFilter(params, url, 'mapId', 'map_id');
+  appendSupabaseEqFilter(params, url, 'tier', 'tier', { includeAll: true });
+  appendSupabaseEqFilter(params, url, 'mapId', 'map_id', { includeAll: true });
   appendSupabaseEqFilter(params, url, 'role');
   const rows = await supabaseRestFetch(env, `global_hero_rate_snapshots?${params.toString()}`);
 
@@ -1676,18 +1771,25 @@ const collectWithFetchRun = async (env, job) => {
   }
 };
 
-const collectBlizzardHeroRates = (env, trigger) =>
-  collectWithFetchRun(env, {
+const collectBlizzardHeroRates = (env, trigger, filters = {}) => {
+  const requestUrl = getBlizzardHeroRatesUrl(filters);
+  const collectFilters = {
+    ...BLIZZARD_HERO_RATES_DEFAULT_FILTERS,
+    ...filters,
+  };
+
+  return collectWithFetchRun(env, {
     jobKey: COLLECTOR_JOB_NAMES.blizzardHeroRates,
-    requestUrl: BLIZZARD_HERO_RATES_URL,
+    requestUrl,
     run: async (startedAt) => {
-      const html = await fetchAllowedText(BLIZZARD_HERO_RATES_URL);
+      const html = await fetchAllowedText(requestUrl);
       const rows = parseBlizzardHeroRates(html, startedAt);
       const inserted = await insertHeroRateSnapshots(env, rows);
 
       return {
         insertedCount: inserted.length,
         metadata: {
+          filters: collectFilters,
           parsedCount: rows.length,
           trigger,
         },
@@ -1696,6 +1798,7 @@ const collectBlizzardHeroRates = (env, trigger) =>
     sourceId: 'blizzard_hero_rates',
     trigger,
   });
+};
 
 const collectOverfastHeroRates = async (env, trigger) => {
   const results = [];
@@ -1815,9 +1918,9 @@ const collectEsportsEvents = async (env, trigger, options = {}) => {
   return results;
 };
 
-const collectGlobalHeroRates = async (env, trigger = 'manual') => {
+const collectGlobalHeroRates = async (env, trigger = 'manual', options = {}) => {
   const [blizzardResult, overfastResults] = await Promise.all([
-    collectBlizzardHeroRates(env, trigger),
+    collectBlizzardHeroRates(env, trigger, options.heroRateFilters),
     collectOverfastHeroRates(env, trigger),
   ]);
 
@@ -1826,7 +1929,7 @@ const collectGlobalHeroRates = async (env, trigger = 'manual') => {
 
 const collectAllExternalData = async (env, trigger = 'manual', options = {}) => {
   const [heroRateResults, esportsResults] = await Promise.all([
-    collectGlobalHeroRates(env, trigger),
+    collectGlobalHeroRates(env, trigger, options),
     collectEsportsEvents(env, trigger, options),
   ]);
 
@@ -1910,13 +2013,14 @@ const handleCollect = async (request, env, origin) => {
       12,
     ),
     detailOffset: getBoundedSearchInteger(url, 'detailOffset', 0, 0, 100000),
+    heroRateFilters: getBlizzardHeroRateCollectFilters(url),
   };
   let results;
 
   if (target === 'all') {
     results = await collectAllExternalData(env, trigger, options);
   } else if (target === 'global-hero-rates') {
-    results = await collectGlobalHeroRates(env, trigger);
+    results = await collectGlobalHeroRates(env, trigger, options);
   } else if (target === 'esports-events') {
     results = await collectEsportsEvents(env, trigger, options);
   } else if (target === 'official-esports-events') {

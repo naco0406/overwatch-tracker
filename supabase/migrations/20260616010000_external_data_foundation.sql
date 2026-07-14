@@ -108,10 +108,12 @@ create table if not exists public.global_hero_rate_snapshots (
   map_id text not null default 'all',
   role text not null default 'all',
   hero_id text not null,
+  ban_rate numeric,
   pick_rate numeric,
   win_rate numeric,
   sample_state text not null default 'available',
   fetched_at timestamptz not null default now(),
+  check (ban_rate is null or (ban_rate >= 0 and ban_rate <= 100)),
   check (pick_rate is null or (pick_rate >= 0 and pick_rate <= 100)),
   check (win_rate is null or (win_rate >= 0 and win_rate <= 100)),
   check (sample_state in ('available', 'low_sample', 'unavailable'))

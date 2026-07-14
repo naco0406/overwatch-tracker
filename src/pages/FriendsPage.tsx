@@ -386,12 +386,14 @@ const PanelHeader = ({ icon: Icon, label, title, trailing }: PanelHeaderProps) =
       <p className="metric-label">{label}</p>
       <h2 className="mt-1 truncate text-base font-bold">{title}</h2>
     </div>
-    <div className="flex h-9 min-w-[2.25rem] shrink-0 items-center justify-center rounded-md border border-border/70 bg-card px-2 text-primary">
-      {trailing ? (
-        <span className="text-xs font-black tabular-nums">{trailing}</span>
-      ) : (
-        <Icon className="h-4 w-4" />
-      )}
+    <div className="ow-game-icon-shell h-9 min-w-9 shrink-0 bg-primary">
+      <div className="ow-game-icon-core bg-card px-2 text-primary">
+        {trailing ? (
+          <span className="text-xs font-black tabular-nums">{trailing}</span>
+        ) : (
+          <Icon className="h-4 w-4" />
+        )}
+      </div>
     </div>
   </div>
 );
@@ -429,7 +431,7 @@ const FindFriendPanel = ({
   onSearch,
   onSend,
 }: FindFriendPanelProps) => (
-  <section className="workspace-panel overflow-hidden shadow-sm">
+  <section className="workspace-panel ow-panel-cap overflow-hidden shadow-sm">
     <PanelHeader icon={Search} label="친구 찾기" title="닉네임 검색" />
     <div className="section-pad grid gap-3">
       {isProfileLoading ? (
@@ -697,7 +699,7 @@ const FriendRequestPanel = ({
   const totalRequests = incomingRequests.length + outgoingRequests.length;
 
   return (
-    <section className="workspace-panel overflow-hidden shadow-sm">
+    <section className="workspace-panel ow-panel-cap overflow-hidden shadow-sm">
       <PanelHeader
         icon={Bell}
         label="친구 초대"
@@ -856,7 +858,7 @@ const FriendDirectoryPanel = ({
   onFilterChange,
   onSortChange,
 }: FriendDirectoryPanelProps) => (
-  <section className={cn('workspace-panel overflow-hidden shadow-sm', className)}>
+  <section className={cn('workspace-panel ow-panel-cap overflow-hidden shadow-sm', className)}>
     <div className="section-header grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] lg:items-center">
       <div className="min-w-0">
         <p className="metric-label">친구 목록</p>
@@ -903,7 +905,7 @@ const FriendDirectoryPanel = ({
         </div>
       ) : (
         <div className="p-3.5 sm:p-4">
-          <div className="overflow-hidden rounded-lg border border-border/70 bg-card">
+          <div className="overflow-hidden rounded-[3px] border border-border bg-card">
             {friends.map((friend) => (
               <FriendListRow key={friend.friendId} friend={friend} />
             ))}
@@ -1064,7 +1066,7 @@ const FriendProfilePanel = ({ friend, onRemoveFriend, stats }: FriendProfilePane
   const bestMapLabel = stats.summary.bestMapId ? getMapLabel(stats.summary.bestMapId) : '-';
 
   return (
-    <section className="workspace-panel overflow-hidden">
+    <section className="workspace-panel ow-panel-cap overflow-hidden">
       <div className="flex flex-col gap-2 border-b border-border/70 bg-[hsl(var(--surface-2))] px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <Button asChild className="w-full bg-card sm:w-auto" variant="outline">
           <NavLink to="/friends">
@@ -1088,7 +1090,7 @@ const FriendProfilePanel = ({ friend, onRemoveFriend, stats }: FriendProfilePane
           <div className="grid gap-5 sm:grid-cols-[96px_minmax(0,1fr)] sm:items-center">
             <FriendAvatar
               avatarUrl={avatarUrl}
-              className="h-20 w-20 rounded-lg text-2xl sm:h-24 sm:w-24 sm:text-3xl"
+              className="h-20 w-20 rounded-[3px] text-2xl sm:h-24 sm:w-24 sm:text-3xl"
               nickname={profileNickname}
             />
             <div className="min-w-0">
@@ -1158,7 +1160,7 @@ interface SummaryMetricProps {
 const SummaryMetric = ({ label, primary = false, value }: SummaryMetricProps) => (
   <div
     className={cn(
-      'min-w-0 rounded-lg border border-border/70 bg-card px-3 py-3',
+      'min-w-0 rounded-[3px] border border-border/70 bg-card px-3 py-3',
       primary && 'border-primary/25 bg-primary/5',
     )}
   >
@@ -1183,7 +1185,7 @@ const SummaryRecordBlock = ({
   losses: number;
   wins: number;
 }) => (
-  <div className="rounded-lg border border-border/70 bg-card px-3 py-3">
+  <div className="rounded-[3px] border border-border/70 bg-card px-3 py-3">
     <p className="metric-label">전적</p>
     <p className="mt-1.5 text-sm font-black leading-tight [overflow-wrap:anywhere]">
       {getRecordSummary(wins, losses, draws)}
@@ -1195,14 +1197,16 @@ const HeroPerformancePanel = ({ heroes }: { heroes: FriendStatsHero[] }) => {
   const topHeroes = [...heroes].sort(getUsageSort).slice(0, 8);
 
   return (
-    <section className="workspace-panel overflow-hidden">
+    <section className="workspace-panel ow-panel-cap overflow-hidden">
       <div className="section-header flex items-center justify-between gap-3">
         <div>
           <p className="metric-label">보조 통계</p>
           <h2 className="mt-1 text-base font-bold">기록된 영웅</h2>
         </div>
-        <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border/70 bg-card text-primary">
-          <Trophy className="h-4 w-4" />
+        <div className="ow-game-icon-shell h-9 w-9 bg-primary">
+          <div className="ow-game-icon-core bg-card text-primary">
+            <Trophy className="h-4 w-4" />
+          </div>
         </div>
       </div>
       <div className="divide-y divide-border/70">
@@ -1273,7 +1277,7 @@ const RecentFormPanel = ({ recentForm }: { recentForm: FriendRecentFormItem[] })
   const currentStreak = getCurrentStreak(recentForm);
 
   return (
-    <section className="workspace-panel overflow-hidden">
+    <section className="workspace-panel ow-panel-cap overflow-hidden">
       <div className="section-header flex items-center justify-between gap-3">
         <div>
           <p className="metric-label">최근 흐름</p>
@@ -1325,7 +1329,7 @@ const ModePerformancePanel = ({ modes }: { modes: FriendStatsMode[] }) => {
   const featuredMode = sortedModes[0];
 
   return (
-    <section className="workspace-panel overflow-hidden">
+    <section className="workspace-panel ow-panel-cap overflow-hidden">
       <div className="section-header flex items-center justify-between gap-3">
         <div>
           <p className="metric-label">모드</p>
@@ -1335,8 +1339,10 @@ const ModePerformancePanel = ({ modes }: { modes: FriendStatsMode[] }) => {
           <span className="rounded-md border border-border/70 bg-card px-2 py-1 text-xs font-black text-muted-foreground">
             상위 5
           </span>
-          <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border/70 bg-card text-primary">
-            <Swords className="h-4 w-4" />
+          <div className="ow-game-icon-shell h-9 w-9 bg-primary">
+            <div className="ow-game-icon-core bg-card text-primary">
+              <Swords className="h-4 w-4" />
+            </div>
           </div>
         </div>
       </div>
@@ -1368,7 +1374,7 @@ const ModePerformancePanel = ({ modes }: { modes: FriendStatsMode[] }) => {
 };
 
 const ModeSpotlight = ({ mode }: { mode: FriendStatsMode }) => (
-  <div className="grid min-h-[156px] gap-4 rounded-lg border border-border/70 bg-card p-4 sm:grid-cols-[minmax(0,1fr)_180px]">
+  <div className="grid min-h-[156px] gap-4 rounded-[3px] border border-border/70 bg-card p-4 sm:grid-cols-[minmax(0,1fr)_180px]">
     <div className="min-w-0">
       <p className="metric-label">최고 승률 모드</p>
       <MatchModeLabel className="mt-2 text-3xl font-black tracking-normal" modeId={mode.modeId} />
@@ -1422,7 +1428,7 @@ const MapStrengthList = ({ maps }: { maps: FriendStatsMap[] }) => {
   const featuredMap = sortedMaps[0];
 
   return (
-    <section className="workspace-panel overflow-hidden">
+    <section className="workspace-panel ow-panel-cap overflow-hidden">
       <div className="section-header flex items-center justify-between gap-3">
         <div>
           <p className="metric-label">전장</p>
@@ -1432,8 +1438,10 @@ const MapStrengthList = ({ maps }: { maps: FriendStatsMap[] }) => {
           <span className="rounded-md border border-border/70 bg-card px-2 py-1 text-xs font-black text-muted-foreground">
             상위 5
           </span>
-          <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border/70 bg-card text-primary">
-            <MapIcon className="h-4 w-4" />
+          <div className="ow-game-icon-shell h-9 w-9 bg-primary">
+            <div className="ow-game-icon-core bg-card text-primary">
+              <MapIcon className="h-4 w-4" />
+            </div>
           </div>
         </div>
       </div>
@@ -1470,7 +1478,7 @@ const MapStrengthList = ({ maps }: { maps: FriendStatsMap[] }) => {
 };
 
 const MapSpotlight = ({ map }: { map: FriendStatsMap }) => (
-  <div className="grid min-h-[156px] gap-4 rounded-lg border border-border/70 bg-card p-4 sm:grid-cols-[minmax(0,1fr)_180px]">
+  <div className="grid min-h-[156px] gap-4 rounded-[3px] border border-border/70 bg-card p-4 sm:grid-cols-[minmax(0,1fr)_180px]">
     <div className="min-w-0">
       <p className="metric-label">최고 승률 전장</p>
       <h3 className="mt-2 truncate text-3xl font-black tracking-normal">

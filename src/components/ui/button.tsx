@@ -5,23 +5,27 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-semibold transition-[background-color,border-color,color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:bg-secondary disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
+  'inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-[3px] border border-transparent text-sm font-black transition-[background-color,border-color,color,box-shadow,transform] duration-150 hover:-translate-y-px active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:translate-y-0 disabled:opacity-45 motion-reduce:transform-none [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
-        destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
+        default:
+          'ow-action-button bg-accent text-accent-foreground shadow-[0_4px_10px_-8px_hsl(var(--accent)/0.7)] hover:bg-accent/95 hover:shadow-[0_5px_12px_-8px_hsl(var(--accent)/0.68)]',
+        destructive:
+          'ow-danger-button border-destructive bg-destructive text-destructive-foreground hover:border-destructive/85 hover:bg-destructive/95',
         outline:
-          'border border-input bg-card hover:border-primary/30 hover:bg-secondary hover:text-foreground',
-        secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        ghost: 'hover:bg-accent hover:text-accent-foreground',
-        link: 'text-primary underline-offset-4 hover:underline',
+          'ow-outline-button border-input bg-card text-foreground shadow-[0_5px_14px_-12px_hsl(var(--foreground)/0.42)] hover:border-foreground/25 hover:bg-secondary/55 hover:text-foreground',
+        secondary:
+          'border-border/70 bg-secondary text-secondary-foreground hover:border-foreground/15 hover:bg-secondary/75',
+        ghost:
+          'border-transparent text-muted-foreground shadow-none hover:bg-secondary hover:text-foreground',
+        link: 'border-0 text-primary underline-offset-4 hover:underline',
       },
       size: {
         default: 'h-10 px-4 py-2',
-        sm: 'h-9 rounded-md px-3 text-xs',
-        lg: 'h-11 rounded-md px-8',
-        icon: 'h-10 w-10',
+        sm: 'h-9 px-3 text-xs',
+        lg: 'h-11 px-8',
+        icon: 'ow-icon-button h-10 w-10 px-0',
       },
     },
     defaultVariants: {

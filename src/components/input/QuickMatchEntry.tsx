@@ -371,15 +371,15 @@ const QuickMatchEntry = ({
   };
 
   return (
-    <div className="w-full">
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+    <div className="quick-entry w-full">
+      <div className="quick-entry-header mb-3">
         <div className="min-w-0">
-          <p className="metric-label">빠른 기록</p>
-          <h2 className="mt-1 truncate text-[17px] font-bold leading-tight tracking-normal sm:text-lg">
+          <p className="metric-label text-primary">빠른 기록</p>
+          <h2 className="mt-1 truncate text-[18px] font-black leading-tight tracking-normal sm:text-xl">
             새 경기
           </h2>
         </div>
-        <div className="grid w-full grid-cols-3 gap-2 sm:w-auto sm:min-w-[420px] sm:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_minmax(0,0.9fr)]">
+        <div className="quick-entry-controls">
           {accounts.length > 0 ? (
             <Select
               value={effectiveSelectedAccountId}
@@ -412,7 +412,7 @@ const QuickMatchEntry = ({
               </SelectContent>
             </Select>
           ) : (
-            <div className="flex h-9 min-w-0 items-center rounded-md border border-border bg-card px-3 text-xs font-bold text-muted-foreground">
+            <div className="flex h-9 min-w-0 items-center rounded-[3px] border border-border bg-card px-3 text-xs font-bold text-muted-foreground">
               계정 미지정
             </div>
           )}
@@ -470,9 +470,9 @@ const QuickMatchEntry = ({
         </div>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_310px] lg:items-start lg:gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="quick-entry-layout">
         <div className="min-w-0">
-          <div className="grid gap-2 lg:grid-cols-[minmax(220px,300px)_minmax(0,1fr)] lg:items-center">
+          <div className="quick-entry-map-tools">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -498,7 +498,7 @@ const QuickMatchEntry = ({
             </div>
           </div>
 
-          <div className="mobile-scroll mt-2.5 h-[190px] overflow-x-auto pb-2 min-[390px]:h-[204px] sm:mt-3 sm:h-[228px] lg:h-[244px]">
+          <div className="quick-entry-map-grid mobile-scroll mt-2.5 h-[190px] overflow-x-auto pb-2 min-[390px]:h-[204px] sm:mt-3 sm:h-[228px]">
             {visibleMaps.length > 0 ? (
               <div className="grid h-full auto-cols-[124px] grid-flow-col grid-rows-2 gap-2 min-[390px]:auto-cols-[136px] sm:auto-cols-[148px] lg:auto-cols-[164px]">
                 {visibleMaps.map((map) => {
@@ -509,8 +509,9 @@ const QuickMatchEntry = ({
                       key={map.value}
                       type="button"
                       className={cn(
-                        'flex h-full min-w-0 flex-col overflow-hidden rounded-md border bg-card text-left transition-[background-color,border-color,color] hover:border-primary/35 hover:bg-secondary',
-                        selected && 'border-primary bg-primary/[0.06] text-primary',
+                        'ow-map-tile flex h-full min-w-0 flex-col overflow-hidden border border-border bg-card text-left shadow-[0_8px_18px_-18px_hsl(var(--foreground)/0.7)] transition-[background-color,border-color,color,box-shadow] hover:border-foreground/20 hover:shadow-[0_10px_20px_-16px_hsl(var(--foreground)/0.65)]',
+                        selected &&
+                          'border-primary bg-primary/[0.05] shadow-[0_10px_20px_-16px_hsl(var(--foreground)/0.55)]',
                       )}
                       onClick={() => selectMap(map.value)}
                     >
@@ -522,13 +523,13 @@ const QuickMatchEntry = ({
                           mapId={map.value}
                         />
                         <MatchModeLabel
-                          className="absolute bottom-1.5 left-1.5 h-4 max-w-[calc(100%-12px)] rounded-sm bg-black/65 px-1.5 text-[9px] font-bold leading-none text-white shadow-sm backdrop-blur-sm min-[390px]:text-[10px]"
+                          className="absolute bottom-1.5 left-1.5 h-4 max-w-[calc(100%-12px)] rounded-[2px] bg-slate-950/80 px-1.5 text-[9px] font-bold leading-none text-white shadow-sm min-[390px]:text-[10px]"
                           iconClassName="h-3 w-3 rounded-[2px]"
                           modeId={map.modeId}
                         />
                       </span>
                       <span className="flex h-7 min-w-0 shrink-0 items-center px-2">
-                        <span className="block truncate text-xs font-bold leading-4">
+                        <span className="block truncate text-xs font-black leading-4">
                           {map.label}
                         </span>
                       </span>
@@ -537,27 +538,40 @@ const QuickMatchEntry = ({
                 })}
               </div>
             ) : (
-              <div className="flex h-full items-center justify-center rounded-md border border-dashed border-border bg-[hsl(var(--surface-2))] px-4 text-center text-sm font-semibold text-muted-foreground">
+              <div className="flex h-full items-center justify-center rounded-[3px] border border-dashed border-border bg-[hsl(var(--surface-2))] px-4 text-center text-sm font-semibold text-muted-foreground">
                 검색 결과 없음
               </div>
             )}
           </div>
         </div>
 
-        <div className="rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] p-3 lg:rounded-none lg:border-y-0 lg:border-l lg:border-r-0 lg:bg-transparent lg:p-0 lg:pl-5">
-          <div className="mb-3 flex min-h-10 items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="metric-label">맵</p>
-              <p className="mt-1 truncate text-base font-bold">
-                {selectedMap ? selectedMap.label : '선택'}
-              </p>
-            </div>
+        <div className="ow-data-accent overflow-hidden rounded-[3px] border border-white/10 bg-[hsl(var(--ow-navy))] p-3 text-white shadow-[0_16px_32px_-26px_rgb(2_6_23/0.9)] [&_.metric-label]:text-white/50 lg:p-4">
+          <div className="relative -mx-3 -mt-3 mb-3 h-[76px] overflow-hidden border-b border-white/10 bg-black/15 lg:-mx-4 lg:-mt-4">
             {selectedMap ? (
-              <MatchModeBadge
-                className="w-fit shrink-0 bg-transparent"
-                modeId={selectedMap.modeId}
+              <MapScreenshot
+                alt=""
+                className="h-full w-full object-cover opacity-60"
+                loading="lazy"
+                mapId={selectedMap.value}
               />
-            ) : null}
+            ) : (
+              <div className="data-grid h-full w-full opacity-35" />
+            )}
+            <span className="absolute inset-0 bg-[linear-gradient(0deg,rgb(32_43_65/0.94)_0%,rgb(32_43_65/0.08)_100%)]" />
+            <div className="absolute inset-x-0 bottom-0 flex min-w-0 items-end justify-between gap-3 px-3 pb-2.5 lg:px-4">
+              <div className="min-w-0">
+                <p className="text-[9px] font-black text-white/48">선택한 전장</p>
+                <p className="mt-1 truncate text-lg font-black leading-none">
+                  {selectedMap ? selectedMap.label : '전장을 선택하세요'}
+                </p>
+              </div>
+              {selectedMap ? (
+                <MatchModeBadge
+                  className="w-fit shrink-0 border-white/15 bg-black/25 text-white"
+                  modeId={selectedMap.modeId}
+                />
+              ) : null}
+            </div>
           </div>
 
           <div className="grid gap-3">
@@ -570,7 +584,7 @@ const QuickMatchEntry = ({
                 onChange={(value) => updateScore('team', value)}
                 onKeyDown={(event) => handleScoreKeyDown(event, 'team')}
               />
-              <div className="pt-9 text-lg font-bold text-muted-foreground">:</div>
+              <div className="pt-9 text-lg font-black text-white/50">:</div>
               <ScoreField
                 inputRef={enemyScoreInputRef}
                 label="상대"
@@ -587,7 +601,7 @@ const QuickMatchEntry = ({
                   key={option.value}
                   type="button"
                   className={cn(
-                    'h-11 rounded-md border px-2 text-sm font-bold transition-colors',
+                    'h-11 rounded-[3px] border px-2 text-sm font-black transition-colors',
                     getResultTone(option.value, result === option.value),
                   )}
                   onClick={() => {
@@ -600,7 +614,12 @@ const QuickMatchEntry = ({
               ))}
             </div>
 
-            <Button className="h-11 w-full" type="button" disabled={isSubmitting} onClick={submit}>
+            <Button
+              className="ow-command-button h-11 w-full"
+              type="button"
+              disabled={isSubmitting}
+              onClick={submit}
+            >
               <Save className="h-4 w-4" />
               {isSubmitting ? '저장 중' : '저장'}
             </Button>
@@ -624,9 +643,9 @@ const ModeButton = ({ active, children, modeId, onClick }: ModeButtonProps) => (
   <button
     type="button"
     className={cn(
-      'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-bold transition-[background-color,border-color,color]',
+      'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[3px] border px-2.5 text-xs font-bold transition-[background-color,border-color,color,box-shadow]',
       active
-        ? 'border-primary bg-primary text-primary-foreground'
+        ? 'border-primary bg-primary text-primary-foreground shadow-[inset_0_-2px_0_rgb(0_0_0/0.12)]'
         : 'border-border bg-card text-muted-foreground hover:bg-secondary hover:text-foreground',
     )}
     onClick={onClick}
@@ -647,11 +666,11 @@ interface ScoreFieldProps {
 
 const ScoreField = ({ inputRef, label, onAdjust, onChange, onKeyDown, value }: ScoreFieldProps) => (
   <div>
-    <p className="mb-2 text-center text-xs font-bold text-muted-foreground">{label}</p>
-    <div className="grid grid-cols-[34px_minmax(0,1fr)_34px] overflow-hidden rounded-md border border-input bg-card">
+    <p className="mb-2 text-center text-xs font-bold text-white/60">{label}</p>
+    <div className="grid grid-cols-[34px_minmax(0,1fr)_34px] overflow-hidden rounded-[3px] border border-white/20 bg-card">
       <button
         type="button"
-        className="flex h-11 items-center justify-center border-r border-border/70 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        className="flex h-11 items-center justify-center border-r border-border text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
         aria-label={`${label} 점수 감소`}
         tabIndex={-1}
         onClick={() => onAdjust(-1)}
@@ -671,7 +690,7 @@ const ScoreField = ({ inputRef, label, onAdjust, onChange, onKeyDown, value }: S
       />
       <button
         type="button"
-        className="flex h-11 items-center justify-center border-l border-border/70 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        className="flex h-11 items-center justify-center border-l border-border text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
         aria-label={`${label} 점수 증가`}
         tabIndex={-1}
         onClick={() => onAdjust(1)}
@@ -683,22 +702,22 @@ const ScoreField = ({ inputRef, label, onAdjust, onChange, onKeyDown, value }: S
 );
 
 const QuickMatchEntrySkeleton = () => (
-  <div className="w-full">
-    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+  <div className="quick-entry w-full">
+    <div className="quick-entry-header mb-3">
       <div className="min-w-0">
         <SkeletonBlock className="h-3 w-16" />
         <SkeletonBlock className="mt-2 h-5 w-24" />
       </div>
-      <div className="grid w-full grid-cols-3 gap-2 sm:w-auto sm:min-w-[420px] sm:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_minmax(0,0.9fr)]">
+      <div className="quick-entry-controls">
         <SkeletonBlock className="h-9" />
         <SkeletonBlock className="h-9" />
         <SkeletonBlock className="h-9" />
       </div>
     </div>
 
-    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_310px] lg:items-start lg:gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+    <div className="quick-entry-layout">
       <div className="min-w-0">
-        <div className="grid gap-2 lg:grid-cols-[minmax(220px,300px)_minmax(0,1fr)] lg:items-center">
+        <div className="quick-entry-map-tools">
           <SkeletonBlock className="h-10 sm:h-9" />
           <div className="mobile-scroll flex gap-2 overflow-hidden pb-1">
             {Array.from({ length: 5 }, (_, index) => (
@@ -707,7 +726,7 @@ const QuickMatchEntrySkeleton = () => (
           </div>
         </div>
 
-        <div className="mt-3 grid max-h-[420px] grid-cols-2 gap-2 overflow-hidden sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+        <div className="quick-entry-map-grid mt-3 grid max-h-[420px] grid-cols-2 gap-2 overflow-hidden sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
           {Array.from({ length: 10 }, (_, index) => (
             <div key={index} className="overflow-hidden rounded-md border border-border/70 bg-card">
               <SkeletonBlock className="aspect-[16/9] rounded-none" />
@@ -720,7 +739,7 @@ const QuickMatchEntrySkeleton = () => (
         </div>
       </div>
 
-      <div className="rounded-lg border border-border/70 bg-card p-3">
+      <div className="rounded-[3px] border border-border/70 bg-card p-3">
         <div className="flex items-start justify-between gap-3">
           <div>
             <SkeletonBlock className="h-3 w-16" />

@@ -22,6 +22,7 @@ import {
 import { useForm, useFormState, useWatch, type UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
 
+import { DeferredImage } from '@/components/common/DeferredImage';
 import { MatchModeBadge, MatchModeLabel } from '@/components/match/MatchModeBadge';
 import { MapScreenshot } from '@/components/match/MapScreenshot';
 import { MatchRoleIcon, MatchRoleLabel } from '@/components/match/MatchRoleBadge';
@@ -74,6 +75,7 @@ const searchableHeroOptions = heroOptions.map((hero) => ({
 }));
 const heroRoleOrder = ['tank', 'damage', 'support'] as const;
 type CurrentModeId = (typeof modeOptions)[number]['value'];
+type SearchableMapOption = (typeof searchableMapOptions)[number];
 type SearchableHeroOption = (typeof searchableHeroOptions)[number];
 
 const isModeValue = (value: string): value is CurrentModeId =>
@@ -398,7 +400,7 @@ const MatchEntryForm = ({
             <RotateCcw className="h-4 w-4" />
             초기화
           </Button>
-          <Button disabled={isSubmitting} type="submit">
+          <Button className="ow-command-button" disabled={isSubmitting} type="submit">
             <Save className="h-4 w-4" />
             {isSubmitting ? '저장 중' : (submitLabel ?? '저장')}
           </Button>
@@ -520,11 +522,62 @@ interface MapPickerPanelProps extends MatchFormSectionProps {
   onMapQueryChange: (value: string) => void;
 }
 
+interface MapTileButtonProps {
+  map: SearchableMapOption;
+  onSelectMap: (map: SearchableMapOption) => void;
+  selected: boolean;
+}
+
+const MapTileButton = memo(({ map, onSelectMap, selected }: MapTileButtonProps) => {
+  const handleClick = useCallback(() => onSelectMap(map), [map, onSelectMap]);
+
+  return (
+    <button
+      type="button"
+      className={cn(
+        'match-map-tile ow-map-tile flex h-full min-w-0 flex-col overflow-hidden border border-border bg-card text-left shadow-[0_8px_18px_-18px_hsl(var(--foreground)/0.7)] transition-[background-color,border-color,color,box-shadow] hover:border-foreground/20 hover:shadow-[0_10px_20px_-16px_hsl(var(--foreground)/0.65)]',
+        selected &&
+          'border-primary bg-primary/[0.05] shadow-[0_10px_20px_-16px_hsl(var(--foreground)/0.55)]',
+      )}
+      onClick={handleClick}
+    >
+      <span className="relative block min-h-0 flex-1 overflow-hidden bg-secondary">
+        <MapScreenshot
+          alt={map.label}
+          className="h-full w-full object-cover"
+          decoding="async"
+          height={150}
+          loading="lazy"
+          mapId={map.value}
+          sizes="164px"
+          width={328}
+        />
+        <MatchModeLabel
+          className="absolute bottom-1.5 left-1.5 h-4 max-w-[calc(100%-12px)] rounded-sm bg-black/70 px-1.5 text-[10px] font-bold leading-none text-white shadow-sm"
+          iconClassName="h-3 w-3 rounded-[2px]"
+          modeId={map.modeId}
+        />
+      </span>
+      <span className="flex h-7 min-w-0 shrink-0 items-center px-2">
+        <span className="block truncate text-xs font-black leading-4">{map.label}</span>
+      </span>
+    </button>
+  );
+});
+MapTileButton.displayName = 'MapTileButton';
+
 const MapPickerPanel = memo(({ form, mapQuery, onMapQueryChange }: MapPickerPanelProps) => {
   const watchedModeId = useWatch({ control: form.control, name: 'modeId' });
   const watchedMapId = useWatch({ control: form.control, name: 'mapId' });
   const { errors } = useFormState({ control: form.control, name: 'mapId' });
   const selectedModeId = isModeValue(watchedModeId) ? watchedModeId : null;
+  const selectMap = useCallback(
+    (map: SearchableMapOption) => {
+      form.setValue('modeId', map.modeId, { shouldValidate: true });
+      form.setValue('mapId', map.value, { shouldValidate: true });
+    },
+    [form],
+  );
   const filteredMaps = useMemo(() => {
     const query = mapQuery.trim().toLowerCase();
 
@@ -555,7 +608,7 @@ const MapPickerPanel = memo(({ form, mapQuery, onMapQueryChange }: MapPickerPane
               key={option.value}
               type="button"
               className={cn(
-                'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-3 text-xs font-bold transition-colors',
+                'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[3px] border px-3 text-xs font-bold transition-[background-color,border-color,color,box-shadow]',
                 watchedModeId === option.value
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-border bg-card text-muted-foreground hover:bg-secondary hover:text-foreground',
@@ -571,48 +624,17 @@ const MapPickerPanel = memo(({ form, mapQuery, onMapQueryChange }: MapPickerPane
       <div className="mobile-scroll h-[228px] overflow-x-auto pb-2 sm:h-[244px]">
         {filteredMaps.length > 0 ? (
           <div className="grid h-full auto-cols-[144px] grid-flow-col grid-rows-2 gap-2 sm:auto-cols-[164px]">
-            {filteredMaps.map((map) => {
-              const selected = watchedMapId === map.value;
-
-              return (
-                <button
-                  key={map.value}
-                  type="button"
-                  className={cn(
-                    'match-map-tile flex h-full min-w-0 flex-col overflow-hidden rounded-md border bg-card text-left transition-[background-color,border-color,color] hover:border-primary/35 hover:bg-secondary',
-                    selected && 'border-primary bg-primary/[0.06] text-primary',
-                  )}
-                  onClick={() => {
-                    form.setValue('modeId', map.modeId, { shouldValidate: true });
-                    form.setValue('mapId', map.value, { shouldValidate: true });
-                  }}
-                >
-                  <span className="relative block min-h-0 flex-1 overflow-hidden bg-secondary">
-                    <MapScreenshot
-                      alt={map.label}
-                      className="h-full w-full object-cover"
-                      decoding="async"
-                      height={150}
-                      loading="lazy"
-                      mapId={map.value}
-                      sizes="164px"
-                      width={328}
-                    />
-                    <MatchModeLabel
-                      className="absolute bottom-1.5 left-1.5 h-4 max-w-[calc(100%-12px)] rounded-sm bg-black/70 px-1.5 text-[10px] font-bold leading-none text-white shadow-sm"
-                      iconClassName="h-3 w-3 rounded-[2px]"
-                      modeId={map.modeId}
-                    />
-                  </span>
-                  <span className="flex h-7 min-w-0 shrink-0 items-center px-2">
-                    <span className="block truncate text-xs font-bold leading-4">{map.label}</span>
-                  </span>
-                </button>
-              );
-            })}
+            {filteredMaps.map((map) => (
+              <MapTileButton
+                key={map.value}
+                map={map}
+                selected={watchedMapId === map.value}
+                onSelectMap={selectMap}
+              />
+            ))}
           </div>
         ) : (
-          <div className="flex h-full items-center justify-center rounded-md border border-dashed border-border bg-[hsl(var(--surface-2))] px-4 text-center text-sm font-semibold text-muted-foreground">
+          <div className="flex h-full items-center justify-center rounded-[3px] border border-dashed border-border bg-[hsl(var(--surface-2))] px-4 text-center text-sm font-semibold text-muted-foreground">
             검색 결과 없음
           </div>
         )}
@@ -642,15 +664,18 @@ const ScoreResultPanel = memo(({ form, onAdjustScore, onUpdateScore }: ScoreResu
     : resultOptions;
 
   return (
-    <div className="border-t border-border/70 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+    <div className="ow-data-accent rounded-[3px] border border-white/10 bg-[hsl(var(--ow-navy))] p-3 text-white shadow-[0_16px_32px_-26px_rgb(2_6_23/0.9)] [&_.metric-label]:text-white/50 [&_label]:text-white/75 lg:p-4">
       <div className="mb-4 min-h-12">
         <p className="metric-label">맵</p>
         <div className="mt-1 flex items-start justify-between gap-3">
-          <p className="min-w-0 truncate text-base font-bold">
+          <p className="min-w-0 truncate text-lg font-black">
             {selectedMap ? selectedMap.label : '선택'}
           </p>
           {selectedMap ? (
-            <MatchModeBadge className="shrink-0 bg-transparent" modeId={selectedMap.modeId} />
+            <MatchModeBadge
+              className="shrink-0 border-white/15 bg-white/5 text-white"
+              modeId={selectedMap.modeId}
+            />
           ) : null}
         </div>
       </div>
@@ -675,7 +700,7 @@ const ScoreResultPanel = memo(({ form, onAdjustScore, onUpdateScore }: ScoreResu
               </FormItem>
             )}
           />
-          <div className="pt-9 text-lg font-bold text-muted-foreground">:</div>
+          <div className="pt-9 text-lg font-black text-white/50">:</div>
           <FormField
             control={form.control}
             name="enemyScore"
@@ -700,7 +725,7 @@ const ScoreResultPanel = memo(({ form, onAdjustScore, onUpdateScore }: ScoreResu
         <div className="flex items-center justify-between gap-3">
           <Label>결과</Label>
           {selectedModeId && !modeAllowsDraw(selectedModeId) ? (
-            <span className="text-xs font-semibold text-muted-foreground">무승부 없음</span>
+            <span className="text-xs font-semibold text-white/55">무승부 없음</span>
           ) : null}
         </div>
         <div className="grid grid-cols-3 gap-2">
@@ -709,7 +734,7 @@ const ScoreResultPanel = memo(({ form, onAdjustScore, onUpdateScore }: ScoreResu
               key={option.value}
               type="button"
               className={cn(
-                'h-11 rounded-md border px-3 text-sm font-bold transition-colors',
+                'h-11 rounded-[3px] border px-3 text-sm font-black transition-colors',
                 getResultTone(option.value, watchedResult === option.value),
               )}
               onClick={() => form.setValue('result', option.value, { shouldValidate: true })}
@@ -746,7 +771,7 @@ const MatchMetadataSection = memo(
     setRoleFilter,
     showHeroPicker,
   }: MatchMetadataSectionProps) => (
-    <section className="rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] p-3 sm:p-4">
+    <section className="ow-data-accent rounded-[3px] border border-border bg-[hsl(var(--surface-2))] p-3 sm:p-4">
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px_220px]">
         <FormField
           control={form.control}
@@ -774,7 +799,7 @@ const MatchMetadataSection = memo(
                     key={option.value}
                     type="button"
                     className={cn(
-                      'h-9 rounded-md border px-2 text-xs font-bold transition-colors',
+                      'h-9 rounded-[3px] border px-2 text-xs font-bold transition-colors',
                       field.value === option.value
                         ? 'border-primary bg-primary text-primary-foreground'
                         : 'border-border bg-card text-muted-foreground hover:bg-secondary',
@@ -801,7 +826,7 @@ const MatchMetadataSection = memo(
                     key={option.value}
                     type="button"
                     className={cn(
-                      'h-9 rounded-md border px-2 text-xs font-bold transition-colors',
+                      'h-9 rounded-[3px] border px-2 text-xs font-bold transition-colors',
                       field.value === option.value
                         ? 'border-primary bg-primary text-primary-foreground'
                         : 'border-border bg-card text-muted-foreground hover:bg-secondary',
@@ -828,7 +853,7 @@ const MatchMetadataSection = memo(
           <button
             type="button"
             className={cn(
-              'h-9 rounded-md border px-3 text-sm font-bold transition-colors',
+              'h-9 rounded-[3px] border px-3 text-sm font-bold transition-colors',
               effectiveSelectedAccountId === ''
                 ? 'border-primary bg-primary text-primary-foreground'
                 : 'border-border bg-card text-muted-foreground hover:bg-secondary',
@@ -842,7 +867,7 @@ const MatchMetadataSection = memo(
               key={account.id}
               type="button"
               className={cn(
-                'h-9 rounded-md border px-3 text-sm font-bold transition-colors',
+                'h-9 rounded-[3px] border px-3 text-sm font-bold transition-colors',
                 effectiveSelectedAccountId === account.id && selectedAccountId !== ''
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-border bg-card text-muted-foreground hover:bg-secondary',
@@ -915,7 +940,7 @@ const HeroPickerSection = memo(
     }, [deferredHeroQuery, roleFilter]);
 
     return (
-      <section className="rounded-lg border border-border/70 bg-card">
+      <section className="ow-panel-cap rounded-[3px] border border-border bg-card">
         <button
           type="button"
           className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left sm:px-4"
@@ -949,10 +974,12 @@ const HeroPickerSection = memo(
                   <button
                     key={option.value}
                     type="button"
+                    aria-pressed={roleFilter === option.value}
+                    data-role={option.value}
                     className={cn(
-                      'inline-flex h-8 items-center justify-center gap-1.5 rounded-md border px-2.5 text-xs font-bold transition-colors',
+                      'ow-role-filter inline-flex h-8 items-center justify-center gap-1.5 rounded-[3px] border px-2.5 text-xs font-bold transition-colors',
                       roleFilter === option.value
-                        ? 'border-primary bg-primary text-primary-foreground'
+                        ? 'text-white'
                         : 'border-border bg-card text-muted-foreground hover:bg-secondary',
                     )}
                     onClick={() => onRoleFilterChange(option.value)}
@@ -976,7 +1003,7 @@ const HeroPickerSection = memo(
               </div>
             </div>
 
-            <div className="space-y-3 rounded-md border border-border/70 bg-[hsl(var(--surface-2))] p-2">
+            <div className="space-y-3 rounded-[3px] border border-border bg-[hsl(var(--surface-3))] p-2.5">
               {heroGroups.length > 0 ? (
                 heroGroups.map((group) => (
                   <section key={group.role} className="deferred-render">
@@ -987,7 +1014,7 @@ const HeroPickerSection = memo(
                         {group.heroes.length}
                       </span>
                     </div>
-                    <div className="hero-select-grid grid gap-1.5">
+                    <div className="hero-select-grid">
                       {group.heroes.map((hero) => (
                         <HeroPortraitButton
                           key={hero.value}
@@ -1000,7 +1027,7 @@ const HeroPickerSection = memo(
                   </section>
                 ))
               ) : (
-                <div className="flex min-h-28 items-center justify-center rounded-md border border-dashed border-border bg-card px-4 text-sm font-semibold text-muted-foreground">
+                <div className="flex min-h-28 items-center justify-center rounded-[3px] border border-dashed border-border bg-card px-4 text-sm font-semibold text-muted-foreground">
                   검색 결과 없음
                 </div>
               )}
@@ -1027,28 +1054,36 @@ const HeroPortraitButton = memo(({ hero, onToggleHero, selected }: HeroPortraitB
       type="button"
       aria-label={`${hero.label} ${selected ? '선택 해제' : '선택'}`}
       aria-pressed={selected}
-      className="hero-select-button group min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+      className="hero-picker-button hero-select-button group min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
       data-role={hero.role}
+      title={hero.label}
       onClick={handleClick}
     >
-      <span className="hero-select-card block aspect-square">
-        <img
-          alt=""
-          className="h-full w-full object-cover"
-          decoding="async"
-          height={256}
-          loading="lazy"
-          src={getHeroPortraitPath(hero.value)}
-          width={256}
-        />
-        {selected ? (
-          <span className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-sm bg-white text-slate-950 shadow-sm">
-            <Check className="h-3.5 w-3.5" />
+      <span className="hero-select-shell">
+        <span className="hero-select-card block">
+          <span className="relative block aspect-square overflow-hidden">
+            <DeferredImage
+              alt=""
+              className="hero-select-image h-full w-full object-cover"
+              decoding="async"
+              height={256}
+              loading="lazy"
+              rootMargin="360px"
+              src={getHeroPortraitPath(hero.value)}
+              width={256}
+            />
+            {selected ? (
+              <span className="hero-select-check">
+                <Check className="h-3.5 w-3.5" strokeWidth={3} />
+              </span>
+            ) : null}
           </span>
-        ) : null}
-      </span>
-      <span className="hero-select-name mt-0.5 block truncate px-0.5 text-[10px] font-black leading-3 text-foreground">
-        {hero.label}
+          <span className="hero-select-name min-w-0">
+            <span className="block min-w-0 truncate text-center text-[9px] font-black leading-none sm:text-[10px]">
+              {hero.label}
+            </span>
+          </span>
+        </span>
       </span>
     </button>
   );
@@ -1064,11 +1099,12 @@ const SelectedHeroToken = memo(({ hero, onToggleHero }: SelectedHeroTokenProps) 
   const handleRemove = useCallback(() => onToggleHero(hero.value), [hero.value, onToggleHero]);
 
   return (
-    <span className="inline-flex h-9 shrink-0 items-center overflow-hidden rounded-md border border-primary/25 bg-primary/[0.07] pr-1 text-primary">
-      <img
+    <span className="inline-flex h-9 shrink-0 items-center overflow-hidden rounded-[3px] border border-border bg-secondary/60 pr-1 text-foreground">
+      <DeferredImage
         alt=""
         className="h-9 w-9 object-cover"
         decoding="async"
+        eager
         height={36}
         src={getHeroPortraitPath(hero.value)}
         width={36}
@@ -1096,8 +1132,8 @@ interface ScoreStepperProps {
 
 const ScoreStepper = ({ label, onAdjust, onChange, value }: ScoreStepperProps) => (
   <div>
-    <p className="mb-2 text-center text-xs font-bold text-muted-foreground">{label}</p>
-    <div className="grid grid-cols-[34px_minmax(0,1fr)_34px] overflow-hidden rounded-md border border-input bg-card">
+    <p className="mb-2 text-center text-xs font-bold text-white/60">{label}</p>
+    <div className="grid grid-cols-[34px_minmax(0,1fr)_34px] overflow-hidden rounded-[3px] border border-white/20 bg-card">
       <button
         type="button"
         className="flex h-11 items-center justify-center border-r border-border/70 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"

@@ -309,6 +309,7 @@ const CommunityComposerDialog = ({
                       className="absolute left-3 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full bg-card/92 shadow-sm"
                       disabled={isSubmitting}
                       aria-label="이전 이미지"
+                      title="이전 이미지"
                       onClick={() => selectAdjacentImage(-1)}
                     >
                       <ChevronLeft className="h-4 w-4" />
@@ -322,6 +323,7 @@ const CommunityComposerDialog = ({
                       className="absolute right-3 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full bg-card/92 shadow-sm"
                       disabled={isSubmitting}
                       aria-label="다음 이미지"
+                      title="다음 이미지"
                       onClick={() => selectAdjacentImage(1)}
                     >
                       <ChevronRight className="h-4 w-4" />

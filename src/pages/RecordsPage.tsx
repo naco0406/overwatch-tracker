@@ -13,10 +13,13 @@ import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { MatchDeleteDialog } from '@/components/input/MatchDeleteDialog';
 import { MatchEntryDialog } from '@/components/input/MatchEntryDialog';
-import { MatchModeBadge, MatchModeLabel } from '@/components/match/MatchModeBadge';
+import { HeroPortraitStack } from '@/components/match/HeroPortraitStack';
+import { MapScreenshot } from '@/components/match/MapScreenshot';
+import { MatchModeLabel } from '@/components/match/MatchModeBadge';
 import { MatchRoleBadge, MatchRoleLabel } from '@/components/match/MatchRoleBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -103,6 +106,13 @@ const formatTime = (value: string) =>
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value));
+
+const getResultRailTone = (result: MatchResult) => {
+  if (result === 'win') return 'border-l-primary';
+  if (result === 'loss') return 'border-l-destructive';
+
+  return 'border-l-muted-foreground/40';
+};
 
 const RecordsPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -429,8 +439,8 @@ const RecordsPage = () => {
         }
       />
 
-      <section className="border-t border-border/70">
-        <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] px-3 py-3 sm:px-5">
+      <section className="workspace-panel ow-panel-cap overflow-hidden">
+        <div className="section-header px-3 py-3 sm:px-5">
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-center">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(220px,1fr)_minmax(230px,260px)_auto_auto]">
               <div className="relative col-span-2 sm:col-span-1">
@@ -553,26 +563,22 @@ const RecordsPage = () => {
           ) : filteredMatches.length > 0 ? (
             <>
               <div className="hidden overflow-x-auto md:block">
-                <table className="w-full min-w-[860px] table-fixed border-collapse text-left text-sm">
-                  <thead className="sticky top-0 z-10 bg-[hsl(var(--surface-2))]">
-                    <tr className="border-b border-border/70">
+                <table className="w-full min-w-[940px] table-fixed border-collapse text-left text-sm">
+                  <thead className="sticky top-0 z-10 bg-[hsl(var(--ow-navy))] text-white">
+                    <tr className="border-b border-white/10">
                       <th className="w-12 px-3 py-3">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 rounded border-border accent-primary"
+                        <Checkbox
                           checked={visibleSelected}
                           aria-label="불러온 기록 전체 선택"
                           onChange={toggleVisibleSelected}
                         />
                       </th>
-                      <th className="w-32 px-3 py-3 font-semibold text-muted-foreground">시간</th>
-                      <th className="px-3 py-3 font-semibold text-muted-foreground">맵</th>
-                      <th className="w-24 px-3 py-3 font-semibold text-muted-foreground">포지션</th>
-                      <th className="w-28 px-3 py-3 font-semibold text-muted-foreground">스코어</th>
-                      <th className="w-32 px-3 py-3 font-semibold text-muted-foreground">계정</th>
-                      <th className="w-24 px-3 py-3 text-right font-semibold text-muted-foreground">
-                        액션
-                      </th>
+                      <th className="w-32 px-3 py-3 font-bold text-white/55">시간</th>
+                      <th className="px-3 py-3 font-bold text-white/55">전장</th>
+                      <th className="w-24 px-3 py-3 font-bold text-white/55">포지션</th>
+                      <th className="w-28 px-3 py-3 font-bold text-white/55">스코어</th>
+                      <th className="w-32 px-3 py-3 font-bold text-white/55">계정</th>
+                      <th className="w-24 px-3 py-3 text-right font-bold text-white/55">관리</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -651,9 +657,11 @@ const RecordsPage = () => {
 
       <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
         <DialogContent className="flex h-[calc(100dvh-1rem)] max-w-2xl flex-col gap-0 p-0 sm:h-[460px] sm:max-h-[calc(100dvh-3rem)]">
-          <DialogHeader className="border-b border-border/70 px-4 py-4 pr-12 sm:px-5">
+          <DialogHeader className="border-b border-white/10 bg-[hsl(var(--ow-navy))] px-4 py-4 pr-12 text-white sm:px-5">
             <DialogTitle>필터</DialogTitle>
-            <DialogDescription>필요한 조건만 켜서 기록을 좁힙니다.</DialogDescription>
+            <DialogDescription className="text-white/55">
+              필요한 조건만 켜서 기록을 좁힙니다.
+            </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:p-5">
             <div>
@@ -919,7 +927,7 @@ const FilterButton = ({ active, children, onClick }: FilterButtonProps) => (
   <button
     type="button"
     className={cn(
-      'h-9 shrink-0 rounded-md border px-3 text-xs font-bold transition-[background-color,border-color,color]',
+      'h-9 shrink-0 rounded-[3px] border px-3 text-xs font-bold transition-[background-color,border-color,color]',
       active
         ? 'border-primary bg-primary text-primary-foreground'
         : 'border-border bg-card text-muted-foreground hover:bg-secondary hover:text-foreground',
@@ -1167,10 +1175,8 @@ const RecordTableRow = ({
       selected && 'bg-primary/[0.05]',
     )}
   >
-    <td className="px-3 py-3 align-middle">
-      <input
-        type="checkbox"
-        className="h-4 w-4 rounded border-border accent-primary"
+    <td className={cn('border-l-[3px] px-3 py-3 align-middle', getResultRailTone(match.result))}>
+      <Checkbox
         checked={selected}
         aria-label={`${getMapLabel(match.mapId)} 기록 선택`}
         onChange={onSelect}
@@ -1183,11 +1189,23 @@ const RecordTableRow = ({
       </p>
     </td>
     <td className="min-w-0 px-3 py-3 align-middle">
-      <p className="truncate font-bold">{getMapLabel(match.mapId)}</p>
-      <MatchModeLabel
-        className="mt-1 text-xs font-semibold text-muted-foreground"
-        modeId={match.modeId}
-      />
+      <div className="grid min-w-0 grid-cols-[72px_minmax(0,1fr)] items-center gap-3">
+        <div className="ow-map-tile aspect-[16/10] overflow-hidden border border-border/60 bg-secondary">
+          <MapScreenshot
+            alt=""
+            className="h-full w-full object-cover"
+            loading="lazy"
+            mapId={match.mapId}
+          />
+        </div>
+        <div className="min-w-0">
+          <p className="truncate font-black">{getMapLabel(match.mapId)}</p>
+          <MatchModeLabel
+            className="mt-1 text-xs font-semibold text-muted-foreground"
+            modeId={match.modeId}
+          />
+        </div>
+      </div>
     </td>
     <td className="px-3 py-3 align-middle">
       <MatchRoleBadge role={match.matchRole} />
@@ -1209,13 +1227,24 @@ const RecordTableRow = ({
     </td>
     <td className="px-3 py-3 align-middle">
       <p className="truncate text-sm font-semibold">{getPlayerAccountLabel(account)}</p>
-      <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-        {getOptionLabel(queueOptions, match.queueType)}
-      </p>
+      <div className="mt-1 flex min-w-0 items-center gap-2">
+        <p className="truncate text-xs font-semibold text-muted-foreground">
+          {getOptionLabel(queueOptions, match.queueType)}
+        </p>
+        <HeroPortraitStack className="shrink-0" heroIds={match.myHeroes} />
+      </div>
     </td>
     <td className="px-3 py-3 align-middle">
       <div className="flex justify-end gap-1">
-        <Button type="button" size="icon" variant="ghost" className="h-9 w-9" onClick={onEdit}>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-9 w-9"
+          aria-label="경기 수정"
+          title="경기 수정"
+          onClick={onEdit}
+        >
           <Pencil className="h-4 w-4" />
         </Button>
         <Button
@@ -1223,6 +1252,8 @@ const RecordTableRow = ({
           size="icon"
           variant="ghost"
           className="h-9 w-9 text-destructive hover:text-destructive"
+          aria-label="경기 삭제"
+          title="경기 삭제"
           onClick={onDelete}
         >
           <Trash2 className="h-4 w-4" />
@@ -1233,69 +1264,92 @@ const RecordTableRow = ({
 );
 
 const RecordCard = ({ account, match, onDelete, onEdit, onSelect, selected }: RecordRowProps) => (
-  <div className={cn('border-b border-border/70 px-3 py-2.5', selected && 'bg-primary/5')}>
-    <div className="grid grid-cols-[24px_minmax(0,1fr)_auto] items-start gap-3">
-      <label className="pt-1">
-        <input
-          type="checkbox"
-          className="h-4 w-4 rounded border-border accent-primary"
-          checked={selected}
-          aria-label={`${getMapLabel(match.mapId)} 기록 선택`}
-          onChange={onSelect}
-        />
-      </label>
-
-      <div className="min-w-0">
-        <p className="flex min-w-0 items-center gap-1.5 text-sm font-bold">
-          <span className="truncate">{getMapLabel(match.mapId)}</span>
-          <span className="shrink-0 text-muted-foreground">·</span>
-          <MatchModeLabel
-            className="shrink-0 text-xs font-semibold text-muted-foreground"
-            modeId={match.modeId}
+  <div
+    className={cn(
+      'grid grid-cols-[3px_minmax(0,1fr)] border-b border-border/70',
+      selected && 'bg-primary/5',
+    )}
+  >
+    <span
+      className={cn(
+        match.result === 'win' && 'bg-primary',
+        match.result === 'loss' && 'bg-destructive',
+        match.result === 'draw' && 'bg-muted-foreground/40',
+      )}
+    />
+    <div className="px-3 py-3">
+      <div className="grid grid-cols-[24px_68px_minmax(0,1fr)_auto] items-start gap-2.5">
+        <div className="pt-1">
+          <Checkbox
+            checked={selected}
+            aria-label={`${getMapLabel(match.mapId)} 기록 선택`}
+            onChange={onSelect}
           />
-        </p>
-        <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-          <span className="truncate">
-            {formatDate(match.playedAt)} · {formatTime(match.playedAt)} ·{' '}
-            {getPlayerAccountLabel(account)}
-          </span>
-          <span className="shrink-0">·</span>
-          <MatchRoleLabel className="shrink-0" role={match.matchRole} />
-        </p>
+        </div>
+        <div className="ow-map-tile aspect-[16/10] overflow-hidden border border-border/60 bg-secondary">
+          <MapScreenshot
+            alt=""
+            className="h-full w-full object-cover"
+            loading="lazy"
+            mapId={match.mapId}
+          />
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-black">{getMapLabel(match.mapId)}</p>
+          <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+            <span className="truncate">
+              {formatDate(match.playedAt)} · {formatTime(match.playedAt)}
+            </span>
+            <span className="shrink-0">·</span>
+            <MatchRoleLabel className="shrink-0" role={match.matchRole} />
+          </p>
+          <div className="mt-1.5 flex min-w-0 items-center gap-2">
+            <span className="truncate text-[11px] font-semibold text-muted-foreground">
+              {getPlayerAccountLabel(account)} · {getOptionLabel(queueOptions, match.queueType)}
+            </span>
+            <HeroPortraitStack className="shrink-0" heroIds={match.myHeroes} />
+          </div>
+        </div>
+        <span className="shrink-0 text-sm font-black tabular-nums">
+          {match.teamScore}:{match.enemyScore}
+        </span>
       </div>
 
-      <span className="shrink-0 text-sm font-bold">
-        {match.teamScore}:{match.enemyScore}
-      </span>
-    </div>
-
-    <div className="mt-2 flex items-center justify-between gap-2 pl-9">
-      <p className="truncate text-xs font-semibold text-muted-foreground">
-        <span
+      <div className="mt-2 flex items-center justify-between gap-2 pl-[102px]">
+        <p
           className={cn(
+            'truncate text-xs font-black',
             match.result === 'win' && 'text-primary',
             match.result === 'loss' && 'text-destructive',
+            match.result === 'draw' && 'text-muted-foreground',
           )}
         >
           {getResultLabel(match.result)}
-        </span>{' '}
-        · {getOptionLabel(queueOptions, match.queueType)} ·{' '}
-        <MatchModeBadge className="h-5 bg-transparent px-1.5" modeId={match.modeId} /> ·{' '}
-        <MatchRoleLabel role={match.matchRole} />
-      </p>
-      <div className="flex shrink-0 justify-end gap-1">
-        <Button type="button" size="icon" variant="ghost" className="h-9 w-9" onClick={onEdit}>
-          <Pencil className="h-4 w-4" />
-        </Button>
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          className="h-9 w-9 text-destructive hover:text-destructive"
-          onClick={onDelete}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
+        </p>
+        <div className="flex shrink-0 justify-end gap-1">
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="h-9 w-9"
+            aria-label="경기 수정"
+            title="경기 수정"
+            onClick={onEdit}
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="h-9 w-9 text-destructive hover:text-destructive"
+            aria-label="경기 삭제"
+            title="경기 삭제"
+            onClick={onDelete}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
     </div>
   </div>

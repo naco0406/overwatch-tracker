@@ -81,11 +81,11 @@ const CommunityPage = () => {
 
   return (
     <div className="page-stack mx-auto w-full max-w-[640px]">
-      <header className="sticky top-14 z-20 bg-background/95 py-2 backdrop-blur-xl xl:top-0">
+      <header className="ow-page-header sticky top-[108px] z-20 border-b border-border bg-background py-2 xl:top-0">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="metric-label mb-1">친구 전용</p>
-            <h1 className="truncate text-2xl font-bold leading-tight tracking-normal text-foreground sm:text-[26px]">
+            <h1 className="truncate text-2xl font-black leading-tight tracking-normal text-foreground sm:text-[28px]">
               커뮤니티
             </h1>
           </div>
@@ -208,7 +208,7 @@ const CommunityPage = () => {
 const CommunityFeedSkeleton = () => (
   <section className="space-y-4">
     {Array.from({ length: 3 }).map((_, index) => (
-      <article key={index} className="overflow-hidden rounded-lg border border-border/70 bg-card">
+      <article key={index} className="overflow-hidden rounded-[3px] border border-border bg-card">
         <div className="flex items-center gap-3 px-3.5 py-3 sm:px-5">
           <SkeletonBlock className="h-10 w-10 rounded-full" />
           <div className="min-w-0 flex-1">

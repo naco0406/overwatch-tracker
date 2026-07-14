@@ -438,14 +438,14 @@ const ExternalEsportsMatchPage = () => {
     return (
       <div className="page-stack">
         <PageHeader
-          eyebrow="Match Detail"
+          eyebrow="OVERWATCH ESPORTS"
           title="매치 상세"
-          description="외부 데이터 API가 연결되면 경기 상세를 볼 수 있습니다."
+          description="선택한 경기의 일정과 팀 정보를 확인합니다."
         />
         <EmptyState
           icon={Swords}
-          title="외부 데이터 API 주소가 없습니다."
-          description="Cloudflare Pages 환경 변수 VITE_EXTERNAL_DATA_API_URL을 설정해주세요."
+          title="경기 데이터를 연결하지 못했어요."
+          description="잠시 후 다시 시도해주세요. 문제가 계속되면 e스포츠 일정으로 돌아가세요."
         />
       </div>
     );
@@ -455,7 +455,7 @@ const ExternalEsportsMatchPage = () => {
     return (
       <div className="page-stack">
         <PageHeader
-          eyebrow="Match Detail"
+          eyebrow="OVERWATCH ESPORTS"
           title="매치 상세"
           description="경기 상세 데이터를 불러오는 중 문제가 발생했습니다."
           actions={
@@ -467,8 +467,8 @@ const ExternalEsportsMatchPage = () => {
         />
         <EmptyState
           icon={Swords}
-          title="매치 데이터를 불러오지 못했습니다."
-          description={error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.'}
+          title="매치 데이터를 불러오지 못했어요."
+          description="잠시 후 다시 시도해주세요."
         />
       </div>
     );
@@ -478,9 +478,9 @@ const ExternalEsportsMatchPage = () => {
     return (
       <div className="page-stack">
         <PageHeader
-          eyebrow="Match Detail"
+          eyebrow="OVERWATCH ESPORTS"
           title="매치 상세"
-          description="외부 경기 데이터를 불러오는 중입니다."
+          description="경기 정보를 불러오는 중입니다."
         />
         <EmptyState
           icon={Loader2}
@@ -495,9 +495,9 @@ const ExternalEsportsMatchPage = () => {
     return (
       <div className="page-stack">
         <PageHeader
-          eyebrow="Match Detail"
+          eyebrow="OVERWATCH ESPORTS"
           title="매치 상세"
-          description="현재 수집된 일정 목록에서 해당 경기를 찾지 못했습니다."
+          description="현재 일정 목록에서 해당 경기를 찾지 못했습니다."
           actions={
             <Button asChild variant="outline" className="bg-transparent">
               <Link to="/external-data/esports">
@@ -510,7 +510,7 @@ const ExternalEsportsMatchPage = () => {
         <EmptyState
           icon={Swords}
           title="매치를 찾을 수 없습니다."
-          description="수집 범위 밖의 경기이거나 새로고침이 필요할 수 있습니다."
+          description="제공 범위 밖의 경기이거나 새로고침이 필요할 수 있습니다."
         />
       </div>
     );
@@ -530,7 +530,7 @@ const ExternalEsportsMatchPage = () => {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="Match Detail"
+        eyebrow="OVERWATCH ESPORTS"
         title={`${match.teamA || 'TBD'} vs ${match.teamB || 'TBD'}`}
         description={[match.tournament, match.stage, getExternalRegionLabel(match.region)]
           .filter(Boolean)
@@ -608,7 +608,7 @@ const ExternalMatchHero = ({ event, now }: { event: MatchEvent; now: number }) =
   const competitionLogoUrl = getCompetitionLogoUrl(event);
 
   return (
-    <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <section className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
       <div className="grid gap-px bg-border/60 xl:grid-cols-[minmax(0,1fr)_280px]">
         <div className="bg-card px-4 py-5 sm:px-6">
           <div className="flex flex-wrap items-center gap-2">
@@ -781,8 +781,10 @@ const MatchHeroFact = ({
 }) => (
   <div className="min-w-0 bg-[hsl(var(--surface-2))] px-3.5 py-3">
     <div className="flex items-start gap-2.5">
-      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/70 bg-card text-primary">
-        <Icon className="h-3.5 w-3.5" />
+      <div className="ow-game-icon-shell mt-0.5 h-7 w-7 bg-primary">
+        <div className="ow-game-icon-core bg-card text-primary">
+          <Icon className="h-3.5 w-3.5" />
+        </div>
       </div>
       <div className="min-w-0">
         <p className="metric-label">{label}</p>
@@ -805,7 +807,7 @@ const ExternalWatchPanel = ({ event }: { event: MatchEvent }) => {
   const urls = Array.from(new Set([...event.watchUrls, detailUrl].filter(Boolean)));
 
   return (
-    <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <section className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
       <div className="border-b border-border/60 px-4 py-3">
         <p className="metric-label">Where to Watch</p>
         <h2 className="mt-1 text-lg font-bold">방송 및 원문 링크</h2>
@@ -857,7 +859,7 @@ const ExternalWatchPanel = ({ event }: { event: MatchEvent }) => {
         ) : (
           <InlineEmptyState
             title="방송 링크가 없습니다."
-            description="공식 일정 또는 OWTICS 링크가 수집되면 표시됩니다."
+            description="공식 일정 또는 OWTICS 링크가 제공되면 표시됩니다."
           />
         )}
       </div>
@@ -879,7 +881,7 @@ const ExternalCompetitionPanel = ({ event }: { event: MatchEvent }) => {
   ].filter((row): row is [string, string] => Boolean(row[1]));
 
   return (
-    <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <section className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
       <div className="border-b border-border/60 px-4 py-3">
         <p className="metric-label">Competition</p>
         <h2 className="mt-1 text-lg font-bold">대회 정보</h2>
@@ -930,12 +932,12 @@ const ExternalMatchFactsPanel = ({
   const metadataRows = getAvailableMetadataRows(event);
 
   return (
-    <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <section className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
       <div className="border-b border-border/60 px-4 py-3">
         <p className="metric-label">Match Facts</p>
         <h2 className="mt-1 flex items-center gap-2 text-lg font-bold">
           <Info className="h-4 w-4 text-primary" />
-          수집 메타데이터
+          데이터 정보
         </h2>
       </div>
       <div className="grid divide-y divide-border/60">
@@ -943,10 +945,10 @@ const ExternalMatchFactsPanel = ({
         <MatchFactRow label="상태" value={getExternalEventStatusLabel(event.status)} />
         <MatchFactRow label="지역" value={getExternalRegionLabel(event.region)} />
         <MatchFactRow
-          label="소스"
+          label="출처"
           value={source?.displayName ?? getCompactSourceLabel(event.sourceId)}
         />
-        <MatchFactRow label="최근 수집" value={formatEventDateTime(event.fetchedAt)} />
+        <MatchFactRow label="최근 업데이트" value={formatEventDateTime(event.fetchedAt)} />
         {metadataRows.map(([label, value]) => (
           <MatchFactRow key={label} label={label} value={value} />
         ))}
@@ -973,7 +975,7 @@ const ExternalMatchRosterPanel = ({
   teamB: string;
   teamBRoster: RosterPlayer[];
 }) => (
-  <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+  <section className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <div className="border-b border-border/60 px-4 py-3 sm:px-5">
       <p className="metric-label">Rosters</p>
       <h2 className="mt-1 text-lg font-bold">팀 로스터</h2>
@@ -1028,7 +1030,7 @@ const ExternalRecentMatchesPanel = ({
   teamB: string;
   teamBRecentMatches: TeamRecentMatch[];
 }) => (
-  <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+  <section className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <div className="border-b border-border/60 px-4 py-3 sm:px-5">
       <p className="metric-label">Recent Matches</p>
       <h2 className="mt-1 text-lg font-bold">최근 경기 흐름</h2>
@@ -1124,10 +1126,10 @@ const ExternalOverallRecordPanel = ({
   teamARecord: TeamRecord;
   teamBRecord: TeamRecord;
 }) => (
-  <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+  <section className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <div className="border-b border-border/60 px-4 py-3 sm:px-5">
       <p className="metric-label">Overall Record</p>
-      <h2 className="mt-1 text-lg font-bold">현재 수집 범위 기준 전적</h2>
+      <h2 className="mt-1 text-lg font-bold">현재 제공 범위 기준 전적</h2>
     </div>
     <div className="grid gap-px bg-border/60 lg:grid-cols-[minmax(0,1fr)_88px_minmax(0,1fr)]">
       <RecordTeamCard align="left" record={teamARecord} />

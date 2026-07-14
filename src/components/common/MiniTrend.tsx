@@ -7,10 +7,10 @@ interface MiniTrendProps {
 }
 
 const toneClasses = {
-  primary: 'bg-primary',
-  success: 'bg-[hsl(var(--success))]',
-  warning: 'bg-[hsl(var(--warning))]',
-  danger: 'bg-[hsl(var(--danger))]',
+  primary: 'bg-gradient-to-t from-primary to-cyan-300',
+  success: 'bg-gradient-to-t from-[hsl(var(--success))] to-emerald-300',
+  warning: 'bg-gradient-to-t from-[hsl(var(--warning))] to-amber-300',
+  danger: 'bg-gradient-to-t from-[hsl(var(--danger))] to-rose-300',
 };
 
 const MiniTrend = ({ className, tone = 'primary', values }: MiniTrendProps) => (
@@ -18,7 +18,7 @@ const MiniTrend = ({ className, tone = 'primary', values }: MiniTrendProps) => (
     {values.map((value, index) => (
       <div
         key={`${value}-${index}`}
-        className={cn('w-full rounded-sm opacity-90', toneClasses[tone])}
+        className={cn('w-full rounded-[1px] opacity-90', toneClasses[tone])}
         style={{ height: `${Math.max(10, Math.min(100, value))}%` }}
       />
     ))}

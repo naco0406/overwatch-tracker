@@ -48,11 +48,11 @@ const MatchEntryDialog = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="!flex max-h-[calc(100dvh-1rem)] max-w-5xl flex-col gap-0 p-0 sm:max-h-[calc(100dvh-3rem)]"
-        overlayClassName="bg-slate-950/24 backdrop-blur-0"
+        overlayClassName="bg-slate-950/60"
       >
-        <DialogHeader className="shrink-0 border-b border-border/70 bg-card px-4 py-4 pr-14 sm:px-5 sm:py-5">
+        <DialogHeader className="shrink-0 border-b border-white/10 bg-[hsl(var(--ow-navy))] px-4 py-4 pr-14 text-white sm:px-5 sm:py-5">
           <DialogTitle>{isEditing ? '경기 수정' : '경기 입력'}</DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-white/55">
             {isEditing ? '저장된 경기 정보' : '경기 결과와 플레이 정보'}
           </DialogDescription>
         </DialogHeader>
@@ -63,8 +63,8 @@ const MatchEntryDialog = ({
           defaultSettings={defaultSettings}
           headerContent={
             screenshot ? (
-              <div className="grid gap-3 rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] p-3 sm:grid-cols-[160px_minmax(0,1fr)]">
-                <div className="aspect-video overflow-hidden rounded-md bg-secondary">
+              <div className="ow-data-accent grid gap-3 rounded-[3px] border border-border bg-[hsl(var(--surface-2))] p-3 sm:grid-cols-[160px_minmax(0,1fr)]">
+                <div className="ow-map-tile aspect-video overflow-hidden bg-secondary">
                   <img
                     alt={screenshot.name}
                     className="h-full w-full object-cover"

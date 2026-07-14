@@ -19,15 +19,16 @@ import {
   reduceLiveVisionAnalysis,
   type LiveSceneSnapshot,
 } from '@/lib/liveFrameRuntime';
-import {
-  analyzeLiveVisionCanvas,
-  drawLiveProbeFrame,
-  drawLiveVisionFrame,
-  prewarmLiveVisionOcr,
-  probeLiveVisionCanvas,
-  terminateLiveVisionOcr,
-  type LiveVisionAnalysis,
-} from '@/lib/liveVision';
+import type { LiveVisionAnalysis } from '@/lib/liveVision';
+
+type LiveVisionModule = typeof import('@/lib/liveVision');
+
+let liveVisionModulePromise: Promise<LiveVisionModule> | null = null;
+
+const loadLiveVisionModule = () => {
+  liveVisionModulePromise ??= import('@/lib/liveVision');
+  return liveVisionModulePromise;
+};
 
 export type LiveStatus = 'capturing' | 'error' | 'idle' | 'starting' | 'unsupported';
 
@@ -198,6 +199,7 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
   const lastStableCandidateKeyRef = useRef('');
   const liveSessionIdRef = useRef(0);
   const liveRuntimeRef = useRef(createLiveSceneRuntimeState());
+  const liveVisionModuleRef = useRef<LiveVisionModule | null>(null);
   const probeCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const scheduleFrameSamplingRef = useRef<() => void>(() => undefined);
   const streamRef = useRef<MediaStream | null>(null);
@@ -266,7 +268,7 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
       lastSceneSnapshotUiAtRef.current = 0;
       lastStableCandidateKeyRef.current = '';
       visionInFlightRef.current = false;
-      void terminateLiveVisionOcr();
+      void liveVisionModuleRef.current?.terminateLiveVisionOcr();
     },
     [clearSampling],
   );
@@ -351,14 +353,20 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
-      const probeCanvas = probeCanvasRef.current ?? document.createElement('canvas');
-      probeCanvasRef.current = probeCanvas;
+      const liveVisionModule = liveVisionModuleRef.current;
 
-      if (!drawLiveProbeFrame(video, probeCanvas)) {
+      if (!liveVisionModule) {
         return;
       }
 
-      const probe = probeLiveVisionCanvas(probeCanvas);
+      const probeCanvas = probeCanvasRef.current ?? document.createElement('canvas');
+      probeCanvasRef.current = probeCanvas;
+
+      if (!liveVisionModule.drawLiveProbeFrame(video, probeCanvas)) {
+        return;
+      }
+
+      const probe = liveVisionModule.probeLiveVisionCanvas(probeCanvas);
       reduceLiveProbe(runtime, probe, requestedAt);
       publishSceneSnapshot(getLiveSceneSnapshot(runtime, requestedAt), requestedAt);
 
@@ -387,15 +395,16 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
       const visionCanvas = visionCanvasRef.current ?? document.createElement('canvas');
       visionCanvasRef.current = visionCanvas;
 
-      if (!drawLiveVisionFrame(video, visionCanvas)) {
+      if (!liveVisionModule.drawLiveVisionFrame(video, visionCanvas)) {
         return;
       }
 
       visionInFlightRef.current = true;
       const liveSessionId = liveSessionIdRef.current;
-      void analyzeLiveVisionCanvas(visionCanvas, {
-        includeOcr: visionPlan.includeOcr,
-      })
+      void liveVisionModule
+        .analyzeLiveVisionCanvas(visionCanvas, {
+          includeOcr: visionPlan.includeOcr,
+        })
         .then((analysis) => {
           if (liveSessionId !== liveSessionIdRef.current) {
             return;
@@ -497,7 +506,9 @@ export const LiveCaptureProvider = ({ children }: { children: ReactNode }) => {
     setSceneSnapshot(getLiveSceneSnapshot(liveRuntimeRef.current, 0));
 
     try {
-      void prewarmLiveVisionOcr();
+      const liveVisionModule = await loadLiveVisionModule();
+      liveVisionModuleRef.current = liveVisionModule;
+      void liveVisionModule.prewarmLiveVisionOcr();
       const stream = await createDisplayMediaStream();
       const [videoTrack] = stream.getVideoTracks();
 

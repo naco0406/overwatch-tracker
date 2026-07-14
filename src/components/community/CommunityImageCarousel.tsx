@@ -106,6 +106,7 @@ const CommunityImageCarousel = ({ className, images }: CommunityImageCarouselPro
               size="icon"
               className="absolute left-3 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full bg-card/92 shadow-sm transition-opacity sm:opacity-0 sm:group-hover/carousel:opacity-100 sm:focus-visible:opacity-100"
               aria-label="이전 이미지"
+              title="이전 이미지"
               onClick={goPrevious}
             >
               <ChevronLeft className="h-4 w-4" />
@@ -118,6 +119,7 @@ const CommunityImageCarousel = ({ className, images }: CommunityImageCarouselPro
               size="icon"
               className="absolute right-3 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full bg-card/92 shadow-sm transition-opacity sm:opacity-0 sm:group-hover/carousel:opacity-100 sm:focus-visible:opacity-100"
               aria-label="다음 이미지"
+              title="다음 이미지"
               onClick={goNext}
             >
               <ChevronRight className="h-4 w-4" />

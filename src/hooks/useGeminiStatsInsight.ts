@@ -22,7 +22,7 @@ const createInitialState = (signature: string): GeminiStatsInsightState => ({
 });
 
 const getErrorMessage = (error: unknown) =>
-  error instanceof Error ? error.message : 'Gemini API 요청에 실패했습니다.';
+  error instanceof Error ? error.message : 'AI 요약을 만들지 못했습니다.';
 
 export const useGeminiStatsInsight = (signature: string) => {
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -47,7 +47,7 @@ export const useGeminiStatsInsight = (signature: string) => {
       abortControllerRef.current = abortController;
 
       setState({
-        message: 'Gemini API로 요약을 생성하고 있습니다.',
+        message: 'AI가 경기 흐름을 정리하고 있습니다.',
         signature,
         status: 'loading',
         text: '',

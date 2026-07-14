@@ -68,6 +68,7 @@ export interface GlobalHeroRateSnapshot {
   inputMethod: string;
   mapId: string | 'all';
   patchLabel: string;
+  banRate: number | null;
   pickRate: number | null;
   region: string;
   role: MatchRole | 'all';

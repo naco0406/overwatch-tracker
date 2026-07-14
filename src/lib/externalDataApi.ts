@@ -29,7 +29,27 @@ export interface ExternalCollectRequest {
   assetLimit?: number;
   detailLimit?: number;
   detailOffset?: number;
+  heroInput?: string;
+  heroMap?: string;
+  heroRegion?: string;
+  heroRole?: string;
+  heroRq?: string;
+  heroTier?: string;
   target?: ExternalCollectTarget;
+}
+
+export interface ExternalHeroRatesRequest {
+  from?: string;
+  gamemode?: string;
+  heroId?: string;
+  inputMethod?: string;
+  limit?: number;
+  mapId?: string;
+  region?: string;
+  role?: string;
+  sourceId?: string;
+  tier?: string;
+  to?: string;
 }
 
 export interface ExternalCollectResponse {
@@ -155,10 +175,55 @@ const getHeroRatesPath = () => {
   const from = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const params = new URLSearchParams({
     from,
-    limit: '5000',
+    limit: '20000',
   });
 
   return `/external/global-hero-rates?${params.toString()}`;
+};
+
+const getExternalHeroRatesPath = ({
+  from,
+  gamemode,
+  heroId,
+  inputMethod,
+  limit = 20000,
+  mapId,
+  region,
+  role,
+  sourceId,
+  tier,
+  to,
+}: ExternalHeroRatesRequest = {}) => {
+  const params = new URLSearchParams({
+    from: from ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    limit: String(limit),
+  });
+
+  const appendParam = (key: string, value?: string) => {
+    if (typeof value === 'string' && value.trim()) {
+      params.set(key, value);
+    }
+  };
+
+  appendParam('gamemode', gamemode);
+  appendParam('heroId', heroId);
+  appendParam('inputMethod', inputMethod);
+  appendParam('mapId', mapId);
+  appendParam('region', region);
+  appendParam('role', role);
+  appendParam('sourceId', sourceId);
+  appendParam('tier', tier);
+  appendParam('to', to);
+
+  return `/external/global-hero-rates?${params.toString()}`;
+};
+
+const getExternalHeroRates = async (
+  request: ExternalHeroRatesRequest = {},
+): Promise<GlobalHeroRateSnapshot[]> => {
+  const body = await fetchExternalJson<GlobalHeroRatesResponse>(getExternalHeroRatesPath(request));
+
+  return Array.isArray(body.heroRates) ? body.heroRates : [];
 };
 
 const getExternalDataOverview = async (): Promise<ExternalDataOverview> => {
@@ -190,6 +255,12 @@ const collectExternalData = async ({
   assetLimit,
   detailLimit,
   detailOffset,
+  heroInput,
+  heroMap,
+  heroRegion,
+  heroRole,
+  heroRq,
+  heroTier,
   target = 'all',
 }: ExternalCollectRequest = {}): Promise<ExternalCollectResponse> => {
   const params = new URLSearchParams({
@@ -208,6 +279,30 @@ const collectExternalData = async ({
     params.set('assetLimit', String(assetLimit));
   }
 
+  if (typeof heroInput === 'string' && heroInput.trim()) {
+    params.set('heroInput', heroInput);
+  }
+
+  if (typeof heroMap === 'string' && heroMap.trim()) {
+    params.set('heroMap', heroMap);
+  }
+
+  if (typeof heroRegion === 'string' && heroRegion.trim()) {
+    params.set('heroRegion', heroRegion);
+  }
+
+  if (typeof heroRole === 'string' && heroRole.trim()) {
+    params.set('heroRole', heroRole);
+  }
+
+  if (typeof heroRq === 'string' && heroRq.trim()) {
+    params.set('heroRq', heroRq);
+  }
+
+  if (typeof heroTier === 'string' && heroTier.trim()) {
+    params.set('heroTier', heroTier);
+  }
+
   return fetchExternalJson<ExternalCollectResponse>(`/external/collect/${target}?${params}`, {
     method: 'POST',
   });
@@ -218,6 +313,7 @@ export {
   ExternalDataApiError,
   getExternalDataApiBaseUrl,
   getExternalDataOverview,
+  getExternalHeroRates,
   isExternalDataApiConfigured,
   listExternalSources,
 };

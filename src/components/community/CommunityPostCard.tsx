@@ -34,7 +34,7 @@ const CommunityPostCard = ({
   const sanitizedHtml = sanitizeRichTextHtml(post.bodyHtml);
 
   return (
-    <article className="overflow-hidden rounded-lg border border-border/70 bg-card shadow-sm shadow-slate-950/5">
+    <article className="overflow-hidden rounded-[3px] border border-border bg-card shadow-[0_14px_34px_-28px_hsl(var(--foreground)/0.55)]">
       <header className="flex h-14 items-center justify-between gap-3 px-3.5 sm:px-4">
         <div className="flex min-w-0 items-center gap-3">
           <Avatar className="h-9 w-9">
@@ -59,6 +59,7 @@ const CommunityPostCard = ({
             className="h-9 w-9 text-muted-foreground hover:text-destructive"
             disabled={isDeleting}
             aria-label="게시글 삭제"
+            title="게시글 삭제"
             onClick={() => onDelete(post.id)}
           >
             {isDeleting ? (

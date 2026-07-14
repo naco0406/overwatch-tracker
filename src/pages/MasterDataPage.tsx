@@ -2,6 +2,7 @@ import { CalendarDays, Clock3, Grid2X2, Search } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 
 import { SkeletonBlock } from '@/components/common/DataState';
+import { DeferredImage } from '@/components/common/DeferredImage';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,9 +13,10 @@ import {
   getModeLabel,
   heroOptions,
   mapOptions,
+  matchRoleOptions,
   modeOptions,
-  roleLabels,
   roleOptions,
+  type HeroOption,
   type HeroRoleFilter,
 } from '@/data/matchOptions';
 import {
@@ -123,16 +125,26 @@ const MasterDataPage = () => {
       return modeMatches && queryMatches;
     });
   }, [mapQuery, modeFilter]);
+  const groupedHeroes = useMemo(
+    () =>
+      matchRoleOptions
+        .map((role) => ({
+          ...role,
+          heroes: filteredHeroes.filter((hero) => hero.role === role.value),
+        }))
+        .filter((group) => group.heroes.length > 0),
+    [filteredHeroes],
+  );
 
   return (
     <div className="page-stack">
       <PageHeader
         eyebrow="오버워치"
-        title="오버워치 에셋"
-        description="상세 입력과 이미지 분석에 쓰이는 영웅, 전장, 모드, 시즌 정보를 확인합니다."
+        title="게임 자료"
+        description="오버워치 영웅, 전장, 게임 모드와 현재 시즌을 살펴봅니다."
       />
 
-      <section className="workspace-panel overflow-hidden">
+      <section className="workspace-panel ow-panel-cap overflow-hidden">
         <Tabs defaultValue="heroes">
           <div className="section-header flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <TabsList className="grid w-full grid-cols-3 lg:w-auto">
@@ -186,35 +198,22 @@ const MasterDataPage = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3 2xl:grid-cols-4">
-              {filteredHeroes.map((hero) => (
-                <article
-                  key={hero.value}
-                  className="group overflow-hidden rounded-lg border border-border/70 bg-card transition-[border-color,background-color] hover:border-primary/35"
-                >
-                  <AssetArtwork
-                    alt={hero.label}
-                    className="aspect-[16/11]"
-                    fallbackLabel={hero.label}
-                    imageClassName="object-cover object-top transition-transform duration-300 group-hover:scale-[1.03]"
-                    src={getHeroPortraitPath(hero.value)}
-                  />
-                  <div className="grid gap-2 border-t border-border/70 p-2.5 sm:flex sm:items-center sm:justify-between sm:gap-3 sm:p-3">
-                    <div className="min-w-0">
-                      <h2 className="truncate text-base font-bold">{hero.label}</h2>
-                      <p className="mt-1 text-xs font-semibold text-muted-foreground">
-                        영웅 초상화
-                      </p>
-                    </div>
-                    <Badge
-                      className="w-fit gap-2 border-border bg-secondary/60 text-foreground"
-                      variant="outline"
-                    >
-                      <AssetIcon size="sm" src={getRoleIconPath(hero.role)} />
-                      {roleLabels[hero.role]}
-                    </Badge>
+            <div className="space-y-6">
+              {groupedHeroes.map((group) => (
+                <section key={group.value}>
+                  <div className="mb-3 flex items-center gap-2 border-b border-border/70 pb-2">
+                    <AssetIcon size="sm" src={getRoleIconPath(group.value)} />
+                    <h2 className="text-sm font-black">{group.label}</h2>
+                    <span className="text-xs font-bold text-muted-foreground">
+                      {group.heroes.length.toLocaleString('ko-KR')}
+                    </span>
                   </div>
-                </article>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 sm:gap-2.5 lg:grid-cols-7 2xl:grid-cols-9">
+                    {group.heroes.map((hero) => (
+                      <HeroAssetCard key={hero.value} hero={hero} />
+                    ))}
+                  </div>
+                </section>
               ))}
             </div>
           </TabsContent>
@@ -260,25 +259,23 @@ const MasterDataPage = () => {
               </div>
             </div>
 
-            <div className="grid gap-3 lg:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
               {filteredMaps.map((map) => (
                 <article
                   key={map.value}
-                  className="group overflow-hidden rounded-lg border border-border/70 bg-card transition-[border-color,background-color] hover:border-primary/35"
+                  className="ow-map-tile group overflow-hidden border border-border bg-card shadow-[0_10px_24px_-22px_hsl(var(--foreground)/0.65)] transition-[border-color,box-shadow] hover:border-primary/55 hover:shadow-[0_12px_26px_-20px_hsl(var(--primary)/0.6)]"
                 >
                   <AssetArtwork
                     alt={map.label}
-                    className="aspect-[16/8.5]"
+                    className="aspect-video"
                     fallbackLabel={map.label}
-                    imageClassName="object-cover transition-transform duration-300 group-hover:scale-[1.025]"
+                    imageClassName="object-cover"
                     src={getMapScreenshotPath(map.value)}
                   />
-                  <div className="grid gap-3 border-t border-border/70 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                  <div className="grid gap-2 border-t border-border/70 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                     <div className="min-w-0">
-                      <h2 className="truncate text-base font-bold">{getMapLabel(map.value)}</h2>
-                      <p className="mt-1 text-xs font-semibold text-muted-foreground">
-                        전장 이미지
-                      </p>
+                      <h2 className="truncate text-base font-black">{getMapLabel(map.value)}</h2>
+                      <p className="mt-1 text-xs font-semibold text-muted-foreground">전장</p>
                     </div>
                     <Badge
                       className="w-fit gap-2 border-border bg-secondary/60 text-foreground"
@@ -324,7 +321,10 @@ const MasterDataPage = () => {
             {isSeasonsLoading ? (
               <div className="grid gap-3 lg:grid-cols-2">
                 {Array.from({ length: 4 }, (_, index) => (
-                  <div key={index} className="rounded-lg border border-border/70 bg-card p-4">
+                  <div
+                    key={index}
+                    className="ow-panel-cap rounded-[3px] border border-border bg-card p-4"
+                  >
                     <SkeletonBlock className="h-4 w-28" />
                     <SkeletonBlock className="mt-3 h-6 w-44" />
                     <SkeletonBlock className="mt-4 h-3 w-full" />
@@ -343,10 +343,10 @@ const MasterDataPage = () => {
                 ))}
               </div>
             ) : (
-              <div className="rounded-lg border border-dashed border-border/70 bg-[hsl(var(--surface-2))] p-5">
+              <div className="rounded-[3px] border border-dashed border-border bg-[hsl(var(--surface-2))] p-5">
                 <p className="text-sm font-bold">시즌 정보 없음</p>
                 <p className="mt-1 text-xs font-semibold text-muted-foreground">
-                  경쟁전 시즌 마이그레이션이 적용되면 이곳에 시즌 기간이 표시됩니다.
+                  시즌 일정이 확인되면 시작일과 종료일이 여기에 표시됩니다.
                 </p>
               </div>
             )}
@@ -357,13 +357,32 @@ const MasterDataPage = () => {
   );
 };
 
+const HeroAssetCard = ({ hero }: { hero: HeroOption }) => (
+  <article className="hero-select-button group min-w-0" data-role={hero.role}>
+    <div className="hero-select-shell">
+      <div className="hero-select-card">
+        <AssetArtwork
+          alt={hero.label}
+          className="aspect-[4/4.35] bg-[hsl(var(--surface-3))]"
+          fallbackLabel={hero.label}
+          imageClassName="object-cover object-top transition-opacity group-hover:opacity-95"
+          src={getHeroPortraitPath(hero.value)}
+        />
+        <div className="hero-select-name min-w-0 border-t border-border px-1.5">
+          <h3 className="truncate text-[10px] font-black sm:text-[11px]">{hero.label}</h3>
+        </div>
+      </div>
+    </div>
+  </article>
+);
+
 interface AssetSummaryChipProps {
   label: string;
   value: number | string;
 }
 
 const AssetSummaryChip = ({ label, value }: AssetSummaryChipProps) => (
-  <div className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-border/70 bg-card px-3 text-xs font-bold">
+  <div className="inline-flex h-9 shrink-0 items-center gap-2 rounded-[3px] border border-border bg-card px-3 text-xs font-bold">
     <span className="text-muted-foreground">{label}</span>
     <span>{value}</span>
   </div>
@@ -377,14 +396,14 @@ interface SeasonMetricCardProps {
 }
 
 const SeasonMetricCard = ({ detail, icon, label, value }: SeasonMetricCardProps) => (
-  <article className="rounded-lg border border-border/70 bg-card p-4">
+  <article className="ow-panel-cap rounded-[3px] border border-border bg-card p-4">
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
         <p className="metric-label">{label}</p>
-        <p className="mt-1 truncate text-lg font-bold">{value}</p>
+        <p className="mt-1 truncate text-lg font-black">{value}</p>
       </div>
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-[hsl(var(--surface-2))] text-primary">
-        {icon}
+      <div className="ow-game-icon-shell h-9 w-9 shrink-0 bg-primary">
+        <div className="ow-game-icon-core bg-card text-primary">{icon}</div>
       </div>
     </div>
     <p className="mt-3 min-h-8 text-xs font-semibold leading-relaxed text-muted-foreground">
@@ -411,7 +430,7 @@ const SeasonCard = ({ current, season }: SeasonCardProps) => {
   return (
     <article
       className={cn(
-        'overflow-hidden rounded-lg border bg-card transition-[border-color,box-shadow]',
+        'ow-panel-cap overflow-hidden rounded-[3px] border bg-card transition-[border-color,box-shadow]',
         current
           ? 'border-primary/35 shadow-[0_20px_60px_-48px_hsl(var(--primary)/0.85)]'
           : 'border-border/70',
@@ -421,7 +440,7 @@ const SeasonCard = ({ current, season }: SeasonCardProps) => {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="metric-label">경쟁전 시즌</p>
-            <h2 className="mt-1 truncate text-lg font-bold">{season.displayName}</h2>
+            <h2 className="mt-1 truncate text-lg font-black">{season.displayName}</h2>
           </div>
           <Badge
             variant={current ? 'secondary' : 'outline'}
@@ -511,20 +530,22 @@ const AssetArtwork = ({
 }: AssetArtworkProps) => (
   <div
     className={cn(
-      'relative overflow-hidden bg-[radial-gradient(circle_at_50%_30%,hsl(var(--primary)/0.20),transparent_48%),linear-gradient(145deg,hsl(var(--surface-2)),hsl(var(--background)))]',
+      'relative overflow-hidden bg-[linear-gradient(118deg,hsl(var(--surface-2))_0%,hsl(var(--surface-2))_72%,hsl(var(--primary)/0.12)_72%,hsl(var(--primary)/0.12)_74%,hsl(var(--background))_74%)]',
       className,
     )}
   >
     <div className="absolute inset-0 flex items-center justify-center p-4 text-center">
-      <span className="rounded-md border border-border/60 bg-card/75 px-3 py-2 text-sm font-black shadow-sm">
+      <span className="rounded-[3px] border border-border bg-card px-3 py-2 text-sm font-black shadow-sm">
         {fallbackLabel}
       </span>
     </div>
-    <img
+    <DeferredImage
       alt={alt}
       className={cn('relative z-10 h-full w-full', imageClassName)}
+      decoding="async"
+      placeholderClassName="bg-transparent"
+      rootMargin="320px"
       src={src}
-      loading="lazy"
       onError={(event) => {
         event.currentTarget.style.display = 'none';
       }}
@@ -533,19 +554,15 @@ const AssetArtwork = ({
 );
 
 const AssetIcon = ({ alt = '', className, size = 'md', src }: AssetIconProps) => (
-  <span
-    className={cn(
-      'inline-flex shrink-0 items-center justify-center rounded-md border border-slate-900/10 bg-slate-950',
-      size === 'sm' ? 'h-6 w-6' : 'h-7 w-7',
-      className,
-    )}
-  >
-    <img
-      alt={alt}
-      className={cn(size === 'sm' ? 'h-3.5 w-3.5' : 'h-4 w-4')}
-      src={src}
-      loading="lazy"
-    />
+  <span className={cn('ow-game-icon-shell', size === 'sm' ? 'h-6 w-6' : 'h-7 w-7', className)}>
+    <span className="ow-game-icon-core">
+      <img
+        alt={alt}
+        className={cn(size === 'sm' ? 'h-3.5 w-3.5' : 'h-4 w-4')}
+        src={src}
+        loading="lazy"
+      />
+    </span>
   </span>
 );
 

@@ -150,12 +150,14 @@ const LivePage = () => {
       <div className="page-stack">
         <PageHeader compact title="LIVE" />
 
-        <section className="workspace-panel overflow-hidden">
+        <section className="workspace-panel ow-panel-cap overflow-hidden">
           <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_300px]">
             <div className="section-pad lg:border-r lg:border-border/70">
               <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-primary/20 bg-primary/5 text-primary">
-                  <MonitorUp className="h-5 w-5" />
+                <div className="ow-game-icon-shell h-11 w-11 bg-primary">
+                  <div className="ow-game-icon-core bg-card text-primary">
+                    <MonitorUp className="h-5 w-5" />
+                  </div>
                 </div>
                 <div className="min-w-0">
                   <p className="metric-label">화면 공유 대기</p>
@@ -257,8 +259,10 @@ interface LiveReadinessRowProps {
 
 const LiveReadinessRow = ({ icon: Icon, label, status, value }: LiveReadinessRowProps) => (
   <div className="grid grid-cols-[36px_minmax(0,1fr)] gap-3 py-3 sm:grid-cols-[36px_minmax(0,1fr)_96px] sm:items-center">
-    <div className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary text-primary">
-      <Icon className="h-4 w-4" />
+    <div className="ow-game-icon-shell h-9 w-9 bg-primary">
+      <div className="ow-game-icon-core bg-card text-primary">
+        <Icon className="h-4 w-4" />
+      </div>
     </div>
     <div className="min-w-0">
       <p className="truncate text-sm font-bold">{label}</p>
@@ -271,7 +275,7 @@ const LiveReadinessRow = ({ icon: Icon, label, status, value }: LiveReadinessRow
 );
 
 const LiveErrorNotice = ({ message }: { message: string }) => (
-  <div className="mt-4 rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-destructive">
+  <div className="mt-4 rounded-[3px] border border-destructive/25 bg-destructive/10 p-3 text-destructive">
     <div className="flex items-start gap-2">
       <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
       <div className="min-w-0">
@@ -293,7 +297,7 @@ const LivePreviewPanel = ({
   sceneSnapshot: LiveSceneSnapshot;
   status: LiveStatus;
 }) => (
-  <div className="workspace-panel flex h-full flex-col overflow-hidden">
+  <div className="workspace-panel ow-panel-cap flex h-full flex-col overflow-hidden">
     <div className="section-header flex items-center justify-between gap-3">
       <div className="min-w-0">
         <p className="metric-label">입력 화면</p>
@@ -306,7 +310,7 @@ const LivePreviewPanel = ({
     </div>
 
     <div className="section-pad flex flex-1 flex-col">
-      <div className="relative overflow-hidden rounded-xl border border-border/70 bg-slate-950 shadow-sm">
+      <div className="relative overflow-hidden rounded-[3px] border border-border/70 bg-slate-950 shadow-sm">
         <canvas
           ref={canvasRef}
           className="aspect-video h-full max-h-[70vh] min-h-[320px] w-full bg-slate-950 object-contain"
@@ -359,7 +363,7 @@ const LiveDecisionPanel = ({
       : '맵 선택 대기';
 
   return (
-    <div className="workspace-panel flex h-full flex-col overflow-hidden">
+    <div className="workspace-panel ow-panel-cap flex h-full flex-col overflow-hidden">
       <div className="section-header">
         <div className="min-w-0">
           <p className="metric-label">추천 판단</p>
@@ -392,7 +396,7 @@ const LiveChoiceRail = ({
 }: {
   recommendations: LiveMapChoiceRecommendation[];
 }) => (
-  <div className="workspace-panel overflow-hidden">
+  <div className="workspace-panel ow-panel-cap overflow-hidden">
     <div className="section-header flex items-center justify-between gap-3">
       <div className="min-w-0">
         <p className="metric-label">선택지 비교</p>
@@ -421,7 +425,7 @@ const LiveChoiceRail = ({
 );
 
 const LiveOverlayBadge = ({ label, value }: { label: string; value: string }) => (
-  <span className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-white/10 bg-white/10 px-2.5 py-1 text-xs font-bold backdrop-blur">
+  <span className="inline-flex max-w-full items-center gap-1.5 rounded-[3px] border border-white/10 bg-white/15 px-2.5 py-1 text-xs font-bold">
     <span className="text-white/55">{label}</span>
     <span className="truncate text-white">{value}</span>
   </span>
@@ -496,7 +500,7 @@ const PrimaryRecommendation = ({
   recommendation: LiveMapChoiceRecommendation;
   runnerUpRecommendation?: LiveMapChoiceRecommendation;
 }) => (
-  <div className="overflow-hidden rounded-lg border border-border/70 bg-card">
+  <div className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <div className="relative min-h-[160px] overflow-hidden bg-slate-950">
       {recommendation.choiceType === 'map' ? (
         <MapScreenshot
@@ -505,7 +509,7 @@ const PrimaryRecommendation = ({
           className="absolute inset-0 h-full w-full object-cover"
         />
       ) : (
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(34,211,238,0.28),transparent_34%),linear-gradient(135deg,#0f172a,#111827_48%,#020617)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(118deg,#111827_0%,#1f2937_70%,#0ea5e9_70%,#0ea5e9_72%,#020617_72%)]" />
       )}
       <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-slate-950/10" />
       <div className="relative flex min-h-[160px] flex-col justify-end p-3.5 text-white">
@@ -567,9 +571,11 @@ const RecommendationRationale = ({
 };
 
 const EmptyRecognitionState = ({ hasFrame }: { hasFrame: boolean }) => (
-  <div className="flex min-h-[168px] items-center gap-3 rounded-lg border border-dashed border-border/80 bg-[hsl(var(--surface-2))] p-4">
-    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-secondary text-primary">
-      <MapIcon className="h-4 w-4" />
+  <div className="flex min-h-[168px] items-center gap-3 rounded-[3px] border border-dashed border-border/80 bg-[hsl(var(--surface-2))] p-4">
+    <div className="ow-game-icon-shell h-10 w-10 bg-primary">
+      <div className="ow-game-icon-core bg-card text-primary">
+        <MapIcon className="h-4 w-4" />
+      </div>
     </div>
     <div className="min-w-0">
       <p className="text-sm font-bold">{hasFrame ? '맵 선택 화면 대기 중' : '프레임 대기 중'}</p>
@@ -581,7 +587,7 @@ const EmptyRecognitionState = ({ hasFrame }: { hasFrame: boolean }) => (
 );
 
 const LiveRecommendationSkeleton = () => (
-  <div className="rounded-lg border border-border/70 p-3.5">
+  <div className="rounded-[3px] border border-border/70 p-3.5">
     <div className="flex items-start gap-3">
       <SkeletonBlock className="h-9 w-9 shrink-0" />
       <div className="min-w-0 flex-1">

@@ -976,7 +976,7 @@ const AccountSettingsSection = ({
   onSignOut,
   onUpdatePassword,
 }: AccountSettingsSectionProps) => (
-  <section className="workspace-panel overflow-hidden">
+  <section className="workspace-panel ow-panel-cap overflow-hidden">
     <div className="section-header">
       <SectionLead icon={ShieldCheck} label="내 계정" title="로그인과 커뮤니티 프로필" />
     </div>
@@ -1003,13 +1003,13 @@ const AccountSettingsSection = ({
             <div className="relative">
               <Avatar
                 className={cn(
-                  'h-24 w-24 rounded-2xl border border-border/70 bg-card shadow-sm transition-[box-shadow,border-color]',
+                  'h-24 w-24 rounded-[4px] border border-border/70 bg-card shadow-sm transition-[box-shadow,border-color]',
                   isAvatarDragging &&
                     'border-primary/70 shadow-[0_0_0_4px_hsl(var(--primary)/0.12)]',
                 )}
               >
                 <AvatarImage alt={nickname ?? '프로필'} src={avatarUrlInput || undefined} />
-                <AvatarFallback className="rounded-2xl bg-primary/10 text-3xl font-black text-primary">
+                <AvatarFallback className="rounded-[4px] bg-primary/10 text-3xl font-black text-primary">
                   {nickname ? (
                     nickname.trim().slice(0, 1).toUpperCase()
                   ) : (
@@ -1018,7 +1018,7 @@ const AccountSettingsSection = ({
                 </AvatarFallback>
               </Avatar>
               {isAvatarUploading ? (
-                <div className="absolute inset-0 grid place-items-center rounded-2xl bg-background/70 backdrop-blur-sm">
+                <div className="absolute inset-0 grid place-items-center rounded-[4px] bg-background/90">
                   <Loader2 className="h-6 w-6 animate-spin text-primary" />
                 </div>
               ) : null}
@@ -1820,7 +1820,7 @@ const BattleNetSettingsSection = ({
   onStartEditAccount,
   onToggleMain,
 }: BattleNetSettingsSectionProps) => (
-  <section className="workspace-panel overflow-hidden">
+  <section className="workspace-panel ow-panel-cap overflow-hidden">
     <div className="section-header">
       <SectionLead icon={UserRound} label="배틀넷" title="배틀태그 관리" />
     </div>
@@ -2031,7 +2031,7 @@ const DataSettingsSection = ({
   onImportCsv,
   onPasteImportOpen,
 }: DataSettingsSectionProps) => (
-  <section className="workspace-panel overflow-hidden">
+  <section className="workspace-panel ow-panel-cap overflow-hidden">
     <div className="section-header">
       <SectionLead icon={Database} label="데이터" title="파일과 표 이전" />
     </div>
@@ -2301,7 +2301,7 @@ const PermanentDeletePlayerAccountDialog = ({
       </DialogHeader>
 
       <div className="px-4 py-4 sm:px-5">
-        <div className="rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] p-3">
+        <div className="rounded-[3px] border border-border/70 bg-[hsl(var(--surface-2))] p-3">
           <p className="metric-label text-destructive">삭제 대상</p>
           <p className="mt-1 truncate text-sm font-bold">
             {account ? getPlayerAccountLabel(account) : '선택된 계정 없음'}
@@ -2346,8 +2346,10 @@ interface SectionLeadProps {
 
 const SectionLead = ({ icon: Icon, label, title }: SectionLeadProps) => (
   <div className="flex items-center gap-3">
-    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary text-primary">
-      <Icon className="h-5 w-5" />
+    <div className="ow-game-icon-shell h-10 w-10 bg-primary">
+      <div className="ow-game-icon-core bg-card text-primary">
+        <Icon className="h-5 w-5" />
+      </div>
     </div>
     <div>
       <p className="metric-label">{label}</p>

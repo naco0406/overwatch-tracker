@@ -2,8 +2,9 @@ import type { LucideIcon } from 'lucide-react';
 import {
   BarChart3,
   ChevronDown,
-  Command,
+  Crosshair,
   Database,
+  Gauge,
   Home,
   LogOut,
   MessagesSquare,
@@ -41,7 +42,7 @@ interface NavItem {
 const primaryNavItems: NavItem[] = [
   { to: '/', label: '홈', icon: Home },
   {
-    to: '/records',
+    to: '/sessions',
     label: '기록',
     icon: TableProperties,
     children: [
@@ -64,13 +65,13 @@ const primaryNavItems: NavItem[] = [
   },
   {
     to: '/external-data/heroes',
-    label: '외부 데이터',
-    icon: Database,
+    label: '메타',
+    icon: Gauge,
     children: [
       { to: '/external-data/heroes', label: '영웅 메타' },
-      { to: '/external-data/esports', label: 'e스포츠 일정' },
-      { to: '/external-data/assets', label: '오버워치 에셋' },
-      { to: '/external-data/sources', label: '데이터 소스 현황' },
+      { to: '/external-data/esports', label: 'e스포츠' },
+      { to: '/external-data/assets', label: '게임 자료' },
+      { to: '/external-data/sources', label: '데이터 안내' },
     ],
   },
   {
@@ -120,6 +121,9 @@ const AppLayout = () => {
   };
   const visibleNavItems: NavItem[] = [...desktopNavItems, liveNavItem];
   const activeNavItem = visibleNavItems.find((item) => isNavItemActive(item, location.pathname));
+  const activeSubItem = activeNavItem?.children?.find((child) =>
+    isPathActive(child.to, location.pathname),
+  );
   const liveActive = isPathActive('/live', location.pathname);
   const liveActionLabel = isLiveAvailable
     ? '공유 종료'
@@ -176,37 +180,41 @@ const AppLayout = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <aside className="fixed inset-y-0 left-0 hidden w-72 border-r border-border/70 bg-card/95 backdrop-blur-xl xl:flex xl:flex-col">
-        <div className="flex h-16 items-center border-b border-border/70 px-5">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Command className="h-5 w-5" />
-          </div>
-          <div className="ml-3 min-w-0">
-            <span className="block truncate text-sm font-semibold">Overwatch Tracker</span>
-            <span className="block truncate text-xs text-muted-foreground">Match lab</span>
-          </div>
+    <div className="ow-shell min-h-screen bg-background">
+      <aside className="ow-nav-surface fixed inset-y-0 left-0 z-40 hidden w-[248px] border-r border-white/[0.08] xl:flex xl:flex-col">
+        <div className="flex h-20 shrink-0 items-center gap-3 px-5">
+          <Crosshair className="h-6 w-6 shrink-0 text-white/75" />
+          <span className="truncate text-sm font-black text-white">OW TRACKER</span>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 p-3">
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-3">
           {desktopNavItems.map((item) => {
             const active = isNavItemActive(item, location.pathname);
 
             return (
-              <div key={item.to}>
+              <div
+                key={item.to}
+                className={cn(item === settingsNavItem && 'mt-3 border-t border-white/[0.08] pt-3')}
+              >
                 <NavLink
                   to={item.to}
+                  aria-current={!item.children && active ? 'page' : undefined}
+                  aria-expanded={item.children ? active : undefined}
                   className={cn(
-                    'group flex h-11 items-center gap-3 rounded-md px-3 text-sm font-semibold text-muted-foreground transition-[background-color,color] hover:bg-secondary hover:text-foreground',
-                    active &&
-                      'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground',
+                    'group flex h-11 items-center gap-3 rounded-[2px] px-3 text-sm font-extrabold text-white/50 transition-[background-color,color] hover:bg-white/[0.055] hover:text-white',
+                    active && 'bg-white/[0.085] text-white hover:bg-white/10',
                   )}
                 >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
+                  <item.icon
+                    className={cn(
+                      'h-[18px] w-[18px] shrink-0 transition-colors',
+                      active ? 'text-white' : 'text-white/35 group-hover:text-white/65',
+                    )}
+                  />
+                  <span className="truncate">{item.label}</span>
                 </NavLink>
 
                 {item.children && active ? (
-                  <div className="ml-5 mt-1 border-l border-border/70 pl-2">
+                  <div className="ml-[30px] mt-1 space-y-0.5 pl-2">
                     {item.children.map((child) => {
                       const childActive = isPathActive(child.to, location.pathname);
 
@@ -214,9 +222,10 @@ const AppLayout = () => {
                         <NavLink
                           key={child.to}
                           to={child.to}
+                          aria-current={childActive ? 'page' : undefined}
                           className={cn(
-                            'flex h-8 items-center rounded-md px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground',
-                            childActive && 'bg-secondary text-foreground',
+                            'flex h-8 items-center rounded-[2px] px-3 text-xs font-bold text-white/35 transition-[background-color,color] hover:bg-white/[0.04] hover:text-white/70',
+                            childActive && 'bg-white/[0.055] text-white',
                           )}
                         >
                           {child.label}
@@ -229,66 +238,58 @@ const AppLayout = () => {
             );
           })}
         </nav>
-        <div className="mx-3 mb-3 border-t border-border/70 pt-3">
+        <div className="border-t border-white/[0.08] px-3 py-3">
           <div
             className={cn(
-              'relative rounded-lg border p-3 transition-[background-color,border-color,box-shadow] hover:border-primary/30 hover:shadow-sm',
+              'flex items-center gap-1.5 rounded-[2px] p-1.5 transition-colors',
               isLiveAvailable
-                ? 'border-destructive/30 bg-destructive/10'
+                ? 'bg-destructive/10'
                 : liveActive
-                  ? 'border-primary/25 bg-primary/5'
-                  : 'border-border/70 bg-[hsl(var(--surface-2))]',
+                  ? 'bg-white/[0.065]'
+                  : 'hover:bg-white/[0.055]',
             )}
           >
             <button
               type="button"
-              className="absolute inset-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[2px] px-2 py-1.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
               aria-label="LIVE 맵 추천으로 이동"
               onClick={handleLiveCardClick}
-            />
-            <div
-              className={cn(
-                'pointer-events-none relative flex h-10 items-center justify-between gap-3 rounded-md px-2 transition-colors',
-                isLiveAvailable
-                  ? 'text-destructive'
-                  : liveActive
-                    ? 'text-primary'
-                    : 'text-muted-foreground',
-              )}
             >
-              <span className="flex min-w-0 items-center gap-2">
-                <span
-                  className={cn(
-                    'h-2.5 w-2.5 shrink-0 rounded-full',
-                    isLiveAvailable
-                      ? 'animate-pulse bg-destructive'
-                      : liveActive
-                        ? 'bg-primary'
-                        : 'bg-muted-foreground/50',
-                  )}
-                />
-                <span className="truncate text-sm font-bold">LIVE</span>
+              <span
+                className={cn(
+                  'h-2 w-2 shrink-0 rounded-full',
+                  isLiveAvailable
+                    ? 'ow-status-beacon bg-destructive'
+                    : liveActive
+                      ? 'bg-white/70'
+                      : 'bg-white/30',
+                )}
+              />
+              <span className="min-w-0">
+                <span className="block truncate text-xs font-black text-white">LIVE</span>
+                <span className="mt-0.5 block truncate text-[10px] font-bold text-white/35">
+                  {liveNavStatusLabel}
+                </span>
               </span>
-              <span className="text-xs font-bold">{liveNavStatusLabel}</span>
-            </div>
+            </button>
             <Button
               type="button"
-              variant={isLiveAvailable ? 'outline' : 'default'}
-              size="sm"
+              variant="ghost"
+              size="icon"
               className={cn(
-                'relative z-10 mt-3 w-full justify-start',
-                isLiveAvailable &&
-                  'border-destructive/30 bg-card text-destructive hover:text-destructive',
+                'h-9 w-9 shrink-0 bg-transparent text-white/55 hover:bg-white/10 hover:text-white',
+                isLiveAvailable && 'text-destructive hover:text-destructive',
               )}
               disabled={liveStatus === 'starting' || liveStatus === 'unsupported'}
+              aria-label={liveActionLabel}
+              title={liveActionLabel}
               onClick={handleLiveActionClick}
             >
               {isLiveAvailable ? <Square className="h-4 w-4" /> : <MonitorUp className="h-4 w-4" />}
-              {liveActionLabel}
             </Button>
           </div>
         </div>
-        <div className="border-t border-border/70 p-3">
+        <div className="border-t border-white/[0.08] px-3 py-2.5">
           <AccountMenu
             avatarUrl={accountAvatarUrl}
             displayName={accountDisplayName}
@@ -301,17 +302,17 @@ const AppLayout = () => {
         </div>
       </aside>
 
-      <div className="xl:pl-72">
-        <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-2 border-b border-border/70 bg-card/95 px-3.5 backdrop-blur-xl xl:hidden">
+      <div className="xl:pl-[248px]">
+        <header className="ow-nav-surface sticky top-0 z-30 flex h-16 items-center justify-between gap-2 border-b border-white/[0.08] px-3.5 xl:hidden">
           <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Command className="h-4 w-4" />
-            </div>
+            <Crosshair className="h-5 w-5 shrink-0 text-white/75" />
             <div className="min-w-0">
-              <span className="block truncate text-sm font-semibold">OW Tracker</span>
+              <span className="block truncate text-sm font-black text-white">OW TRACKER</span>
               {activeNavItem ? (
-                <span className="block truncate text-[11px] font-semibold text-muted-foreground">
-                  {activeNavItem.label}
+                <span className="block truncate text-[11px] font-bold text-white/45">
+                  {activeSubItem
+                    ? `${activeNavItem.label} · ${activeSubItem.label}`
+                    : activeNavItem.label}
                 </span>
               ) : null}
             </div>
@@ -328,7 +329,7 @@ const AppLayout = () => {
           />
         </header>
         {activeNavItem?.children ? (
-          <nav className="sticky top-14 z-20 border-b border-border/70 bg-background/95 px-3.5 py-2 backdrop-blur-xl xl:hidden">
+          <nav className="sticky top-16 z-20 border-b border-border bg-card px-3.5 xl:hidden">
             <div className="mobile-scroll flex gap-1 overflow-x-auto">
               {activeNavItem.children.map((child) => {
                 const childActive = isPathActive(child.to, location.pathname);
@@ -337,10 +338,10 @@ const AppLayout = () => {
                   <NavLink
                     key={child.to}
                     to={child.to}
+                    aria-current={childActive ? 'page' : undefined}
                     className={cn(
-                      'flex h-9 shrink-0 items-center rounded-md px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground',
-                      childActive &&
-                        'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground',
+                      'flex h-11 shrink-0 items-center rounded-[2px] px-3 text-xs font-bold text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground',
+                      childActive && 'bg-secondary text-foreground',
                     )}
                   >
                     {child.label}
@@ -351,10 +352,10 @@ const AppLayout = () => {
           </nav>
         ) : null}
         <TemporaryTokyoTravelBanner />
-        <main className="safe-page-bottom mx-auto flex min-h-screen w-full max-w-none flex-col px-3.5 pt-4 sm:px-6 sm:pt-5 xl:px-8 xl:py-8">
+        <main className="safe-page-bottom mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[1640px] flex-col px-3.5 pt-4 sm:px-6 sm:pt-5 xl:min-h-screen xl:px-8 xl:py-7 2xl:px-10">
           <Outlet />
         </main>
-        <nav className="safe-bottom-nav fixed inset-x-2 z-40 grid grid-cols-5 rounded-lg border border-border/70 bg-card/95 p-1 backdrop-blur-xl xl:hidden">
+        <nav className="ow-nav-surface safe-bottom-nav fixed inset-x-2 z-40 grid grid-cols-5 rounded-[3px] border border-white/[0.08] p-1 shadow-[0_18px_42px_-20px_rgb(2_6_23/0.7)] xl:hidden">
           {mobileNavItems.map((item) => {
             const active = isNavItemActive(item, location.pathname);
 
@@ -362,13 +363,14 @@ const AppLayout = () => {
               <NavLink
                 key={item.to}
                 to={item.to}
+                aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'flex h-[52px] min-h-[52px] flex-col items-center justify-center gap-1 rounded-md px-0.5 text-[10px] font-semibold text-muted-foreground transition-[background-color,color] min-[390px]:text-[11px]',
-                  active && 'bg-primary text-primary-foreground',
+                  'flex h-[54px] min-h-[54px] flex-col items-center justify-center gap-1 rounded-[2px] px-0.5 text-[10px] font-bold text-white/45 transition-[background-color,color] min-[390px]:text-[11px]',
+                  active && 'bg-white/[0.09] text-white',
                 )}
                 aria-label={item.label}
               >
-                <item.icon className="h-4 w-4" />
+                <item.icon className={cn('h-4 w-4', active ? 'text-white' : 'text-white/35')} />
                 <span>{item.label}</span>
               </NavLink>
             );
@@ -410,8 +412,10 @@ const AccountMenu = ({
         <button
           type="button"
           className={cn(
-            'group flex min-w-0 items-center gap-3 rounded-lg border border-border/70 bg-card text-left transition-[background-color,border-color,box-shadow] hover:border-primary/30 hover:bg-secondary/70 hover:shadow-sm',
-            compact ? 'h-10 max-w-[54vw] px-2' : 'w-full px-2.5 py-2.5',
+            'group flex min-w-0 items-center gap-3 rounded-[2px] text-left text-white transition-[background-color,border-color]',
+            compact
+              ? 'h-10 max-w-[54vw] bg-transparent px-2 hover:bg-white/[0.07]'
+              : 'w-full bg-transparent px-2 py-2 hover:bg-white/[0.05]',
           )}
         >
           <ProfileAvatar
@@ -424,28 +428,28 @@ const AccountMenu = ({
           <span className="min-w-0 flex-1">
             <span
               className={cn(
-                'block truncate font-black text-foreground',
+                'block truncate font-black text-white',
                 compact ? 'max-w-[24vw] text-xs' : 'text-sm',
               )}
             >
               {isProfileLoading ? '불러오는 중' : displayName}
             </span>
             {!compact ? (
-              <span className="mt-0.5 block truncate text-xs font-semibold text-muted-foreground">
+              <span className="mt-0.5 block truncate text-xs font-bold text-white/35">
                 {subtitle}
               </span>
             ) : null}
           </span>
-          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+          <ChevronDown className="h-4 w-4 shrink-0 text-white/30 transition-transform group-data-[state=open]:rotate-180" />
         </button>
       </PopoverTrigger>
       <PopoverContent
         align={compact ? 'end' : 'start'}
-        className="w-80 overflow-hidden rounded-lg p-0"
+        className="w-80 overflow-hidden rounded-[3px] p-0"
         side={compact ? 'bottom' : 'top'}
         sideOffset={10}
       >
-        <div className="border-b border-border/70 bg-[hsl(var(--surface-2))] p-4">
+        <div className="border-b border-border bg-[hsl(var(--surface-2))] p-4">
           <div className="grid grid-cols-[48px_minmax(0,1fr)] gap-3">
             <ProfileAvatar
               avatarUrl={avatarUrl}
@@ -468,7 +472,7 @@ const AccountMenu = ({
               <PopoverClose asChild>
                 <NavLink
                   to="/settings/account"
-                  className="flex h-10 items-center gap-3 rounded-md px-3 text-sm font-bold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                  className="flex h-10 items-center gap-3 rounded-[3px] px-3 text-sm font-bold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                 >
                   <UserRound className="h-4 w-4" />내 계정
                 </NavLink>
@@ -476,7 +480,7 @@ const AccountMenu = ({
               <PopoverClose asChild>
                 <NavLink
                   to="/settings/battle-net"
-                  className="flex h-10 items-center gap-3 rounded-md px-3 text-sm font-bold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                  className="flex h-10 items-center gap-3 rounded-[3px] px-3 text-sm font-bold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                 >
                   <Settings className="h-4 w-4" />
                   배틀넷 계정
@@ -485,7 +489,7 @@ const AccountMenu = ({
               <PopoverClose asChild>
                 <NavLink
                   to="/settings/data"
-                  className="flex h-10 items-center gap-3 rounded-md px-3 text-sm font-bold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                  className="flex h-10 items-center gap-3 rounded-[3px] px-3 text-sm font-bold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                 >
                   <Database className="h-4 w-4" />
                   데이터
@@ -531,12 +535,18 @@ const ProfileAvatar = ({
 }: ProfileAvatarProps) => (
   <Avatar
     className={cn(
-      'rounded-lg border border-border/70 bg-card shadow-sm',
+      'rounded-[2px] border shadow-none',
+      large ? 'border-border bg-card' : 'border-white/10 bg-white/[0.06]',
       large ? 'h-12 w-12' : compact ? 'h-8 w-8' : 'h-10 w-10',
     )}
   >
     <AvatarImage alt={displayName} src={avatarUrl ?? undefined} />
-    <AvatarFallback className="rounded-lg bg-primary/10 text-sm font-black text-primary">
+    <AvatarFallback
+      className={cn(
+        'rounded-[2px] text-sm font-black',
+        large ? 'bg-primary/10 text-primary' : 'bg-white/10 text-white',
+      )}
+    >
       {hasNickname ? fallback : <UserRound className="h-4 w-4" />}
     </AvatarFallback>
   </Avatar>

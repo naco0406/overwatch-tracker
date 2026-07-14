@@ -271,7 +271,7 @@ const StickyNotesDock = ({ onDesktopOpenChange }: StickyNotesDockProps) => {
           >
             <span
               className={cn(
-                'flex min-h-24 w-8 flex-col items-center justify-center gap-2 rounded-l-md border border-r-0 border-border bg-card/95 backdrop-blur-xl transition-[background-color,border-color]',
+                'flex min-h-24 w-8 flex-col items-center justify-center gap-2 rounded-l-[3px] border border-r-0 border-border bg-card transition-[background-color,border-color]',
                 'group-hover:border-primary/30 group-hover:bg-secondary',
                 isPanelOpen && 'border-primary/25 bg-secondary text-foreground',
               )}
@@ -286,7 +286,15 @@ const StickyNotesDock = ({ onDesktopOpenChange }: StickyNotesDockProps) => {
             </span>
           </button>
 
-          <div className="flex min-w-0 flex-col overflow-hidden rounded-l-md border border-border bg-[hsl(216_38%_90%)] shadow-xl shadow-slate-950/10">
+          <div
+            aria-hidden={!isPanelOpen}
+            className={cn(
+              'flex min-w-0 flex-col overflow-hidden rounded-l-md border border-border bg-[hsl(216_38%_90%)] transition-[opacity,visibility,box-shadow] duration-150',
+              isPanelOpen
+                ? 'visible opacity-100 shadow-xl shadow-slate-950/10'
+                : 'invisible pointer-events-none opacity-0 shadow-none',
+            )}
+          >
             <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-card px-3.5">
               <div className="flex min-w-0 items-center gap-2">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-border bg-[hsl(var(--surface-2))] text-primary">
@@ -309,6 +317,7 @@ const StickyNotesDock = ({ onDesktopOpenChange }: StickyNotesDockProps) => {
                   size="icon"
                   className="h-9 w-9"
                   aria-label="새 메모"
+                  title="새 메모"
                   onClick={openCreateEditor}
                 >
                   <Plus className="h-4 w-4" />
@@ -444,6 +453,7 @@ const StickyNoteCard = ({ isDeleting, note, onDelete, onEdit }: StickyNoteCardPr
             size="icon"
             className="h-8 w-8"
             aria-label="메모 편집"
+            title="메모 편집"
             onClick={onEdit}
           >
             <Pencil className="h-4 w-4" />
@@ -455,6 +465,7 @@ const StickyNoteCard = ({ isDeleting, note, onDelete, onEdit }: StickyNoteCardPr
             className="h-8 w-8 text-destructive hover:text-destructive"
             disabled={isDeleting}
             aria-label="메모 삭제"
+            title="메모 삭제"
             onClick={onDelete}
           >
             {isDeleting ? (

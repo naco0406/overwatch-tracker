@@ -42,7 +42,7 @@ const MatchDeleteDialog = ({
       </DialogHeader>
       <div className="space-y-4 p-4 sm:p-5">
         {match ? (
-          <div className="rounded-lg border border-border/70 bg-[hsl(var(--surface-2))] p-3">
+          <div className="rounded-[3px] border border-border/70 bg-[hsl(var(--surface-2))] p-3">
             <p className="text-sm font-bold">{getMapLabel(match.mapId)}</p>
             <p className="mt-1 text-xs font-semibold text-muted-foreground">
               {formatPlayedAt(match.playedAt)} · {getResultLabel(match.result)} · {match.teamScore}:

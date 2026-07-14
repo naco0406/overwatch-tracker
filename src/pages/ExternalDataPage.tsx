@@ -9,7 +9,7 @@ import {
   Swords,
 } from 'lucide-react';
 import { useState } from 'react';
-import { NavLink, Navigate, useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 
 import { EmptyState } from '@/components/common/EmptyState';
 import { InlineEmptyState, SkeletonBlock } from '@/components/common/DataState';
@@ -45,46 +45,35 @@ import {
 
 const externalDataSections = [
   {
-    description: '외부 영웅 픽률과 승률을 역할, 메타 신호, 영웅 초상화 중심으로 봅니다.',
-    eyebrow: 'Hero Meta',
+    description: '블리자드 공식 통계로 현재 영웅 픽률, 벤률, 승률을 비교합니다.',
+    eyebrow: '영웅 메타',
     label: '영웅 메타',
     title: '영웅 메타',
     value: 'heroes',
   },
   {
-    description: '공식 일정과 OWTICS 보강 일정을 날짜, 지역, 경기 상태 기준으로 봅니다.',
-    eyebrow: 'Esports',
-    label: 'e스포츠 일정',
-    title: 'e스포츠 일정',
+    description: '관심 있는 팀과 지역의 오버워치 e스포츠 일정을 한눈에 확인합니다.',
+    eyebrow: '오버워치 e스포츠',
+    label: 'e스포츠',
+    title: 'e스포츠',
     value: 'esports',
   },
   {
-    description: '공식/서드파티 소스, TTL, 제공 데이터, 수집 최신성을 레지스트리로 봅니다.',
-    eyebrow: 'Sources',
-    label: '데이터 소스 현황',
-    title: '데이터 소스 현황',
+    description: '통계가 어디에서 왔고 언제 갱신되었는지 확인합니다.',
+    eyebrow: '데이터 안내',
+    label: '데이터 안내',
+    title: '데이터 안내',
     value: 'sources',
   },
-] as const;
-
-const externalDataNavSections = [
-  externalDataSections[0],
-  externalDataSections[1],
-  {
-    label: '오버워치 에셋',
-    to: '/external-data/assets',
-    value: 'assets',
-  },
-  externalDataSections[2],
 ] as const;
 
 type ExternalDataSection = (typeof externalDataSections)[number]['value'];
 
 const externalSourceTypeLabels = {
-  official_api: '공식 API',
+  official_api: '블리자드 공식',
   official_web: '공식 웹',
-  third_party_api: '서드파티 API',
-  third_party_web: '서드파티 웹',
+  third_party_api: '커뮤니티 데이터',
+  third_party_web: '커뮤니티 웹',
 } satisfies Record<ExternalSourceType, string>;
 
 const externalRegionLabels = {
@@ -129,16 +118,16 @@ const createExternalMetrics = ({
   return [
     {
       detail: isConfigured
-        ? `${officialSourceCount}개 공식 · ${Math.max(0, sources.length - officialSourceCount)}개 서드파티`
-        : '환경 변수 설정 필요',
+        ? `${officialSourceCount}개 공식 · ${Math.max(0, sources.length - officialSourceCount)}개 보조 출처`
+        : '연결 정보 없음',
       icon: Globe2,
-      label: '연결 소스',
+      label: '데이터 출처',
       value: isConfigured ? (isLoading ? '...' : sources.length.toLocaleString('ko-KR')) : '--',
     },
     {
-      detail: sources.length > 0 ? '활성화된 소스 기준' : '소스 조회 대기',
+      detail: sources.length > 0 ? '현재 제공 중' : '확인 중',
       icon: ShieldCheck,
-      label: '공식 소스',
+      label: '공식 출처',
       value: isConfigured
         ? isLoading
           ? '...'
@@ -147,16 +136,16 @@ const createExternalMetrics = ({
     },
     {
       detail: latestHeroRateFetchedAt
-        ? `최근 수집 ${formatExternalDateTime(latestHeroRateFetchedAt)}`
-        : '영웅 메타 수집 대기',
+        ? `${formatExternalDateTime(latestHeroRateFetchedAt)} 업데이트`
+        : '업데이트 전',
       icon: BarChart3,
       label: '영웅 메타',
       value: isConfigured ? (isLoading ? '...' : heroRates.length.toLocaleString('ko-KR')) : '--',
     },
     {
       detail: latestEsportsFetchedAt
-        ? `최근 수집 ${formatExternalDateTime(latestEsportsFetchedAt)}`
-        : '일정 수집 대기',
+        ? `${formatExternalDateTime(latestEsportsFetchedAt)} 업데이트`
+        : '업데이트 전',
       icon: CalendarDays,
       label: 'e스포츠',
       value: isConfigured
@@ -170,7 +159,7 @@ const createExternalMetrics = ({
 
 const getExternalFreshnessLabel = (value: string | null) => {
   if (!value) {
-    return '수집 대기';
+    return '업데이트 전';
   }
 
   const diffMs = Date.now() - new Date(value).getTime();
@@ -405,14 +394,14 @@ const formatExternalCollectionSummary = (
 ) => {
   const detailTotal = summary.detailFetched + summary.detailFailed;
   const detailLabel =
-    detailTotal > 0 ? ` · OWTICS 상세 ${summary.detailFetched.toLocaleString('ko-KR')}개 보강` : '';
+    detailTotal > 0 ? ` · 경기 상세 ${summary.detailFetched.toLocaleString('ko-KR')}개` : '';
   const assetTotal = summary.assetUploaded + summary.assetHit + summary.assetFailed;
   const assetLabel =
-    assetTotal > 0
-      ? ` · 로고 ${summary.assetUploaded.toLocaleString('ko-KR')}개 저장 · 캐시 ${summary.assetHit.toLocaleString('ko-KR')}`
-      : '';
+    assetTotal > 0 ? ` · 팀 로고 ${summary.assetUploaded.toLocaleString('ko-KR')}개 반영` : '';
+  const failedLabel =
+    summary.failed > 0 ? ` · 실패 ${summary.failed.toLocaleString('ko-KR')}건` : '';
 
-  return `${summary.jobs.toLocaleString('ko-KR')}개 작업 · ${summary.inserted.toLocaleString('ko-KR')}개 반영 · 실패 ${summary.failed.toLocaleString('ko-KR')}${detailLabel}${assetLabel}`;
+  return `${summary.inserted.toLocaleString('ko-KR')}개 반영${detailLabel}${assetLabel}${failedLabel}`;
 };
 
 const ExternalDataPage = () => {
@@ -485,27 +474,27 @@ const ExternalDataPage = () => {
 
     try {
       if (activeSection === 'sources' || activeSection === 'heroes') {
-        await runStep({ target: 'global-hero-rates' }, '영웅 메타 수집');
+        await runStep({ target: 'global-hero-rates' }, '영웅 메타 업데이트');
       }
 
       if (activeSection === 'sources' || activeSection === 'esports') {
-        await runStep({ target: 'official-esports-events' }, '공식 일정 수집');
+        await runStep({ target: 'official-esports-events' }, '공식 일정 업데이트');
         await runOwticsDetailBatches();
       }
 
       const summary = summarizeExternalCollectionResponses(responses);
 
       toast({
-        title: summary.ok ? '외부 데이터 수집 완료' : '외부 데이터 수집 일부 실패',
+        title: summary.ok ? '데이터를 업데이트했어요' : '일부 데이터를 업데이트하지 못했어요',
         description: formatExternalCollectionSummary(summary),
         variant: summary.ok ? 'default' : 'destructive',
       });
       void refetch();
     } catch (collectError) {
       toast({
-        title: '외부 데이터 수집 실패',
+        title: '데이터를 업데이트하지 못했어요',
         description:
-          collectError instanceof Error ? collectError.message : '수집 작업을 실행하지 못했습니다.',
+          collectError instanceof Error ? collectError.message : '잠시 후 다시 시도해주세요.',
         variant: 'destructive',
       });
     } finally {
@@ -515,52 +504,52 @@ const ExternalDataPage = () => {
 
   return (
     <div className="page-stack">
-      <PageHeader
-        eyebrow={activeSectionMeta.eyebrow}
-        title={activeSectionMeta.title}
-        description={activeSectionMeta.description}
-        actions={
-          <div className="flex flex-wrap gap-2">
-            {activeSection === 'sources' ? (
+      {activeSection !== 'heroes' ? (
+        <PageHeader
+          eyebrow={activeSectionMeta.eyebrow}
+          title={activeSectionMeta.title}
+          description={activeSectionMeta.description}
+          actions={
+            <div className="flex flex-wrap gap-2">
+              {activeSection === 'sources' ? (
+                <Button
+                  variant="default"
+                  disabled={isCollectingExternalData || !isConfigured}
+                  onClick={() => void handleCollectExternalData()}
+                >
+                  {isCollectingExternalData ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Database className="h-4 w-4" />
+                  )}
+                  {collectionProgressLabel ?? '전체 업데이트'}
+                </Button>
+              ) : null}
               <Button
-                variant="default"
-                disabled={isCollectingExternalData || !isConfigured}
-                onClick={() => void handleCollectExternalData()}
+                variant="outline"
+                className="bg-transparent"
+                disabled={isFetching || !isConfigured || isCollectingExternalData}
+                onClick={() => void refetch()}
               >
-                {isCollectingExternalData ? (
+                {isFetching ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <Database className="h-4 w-4" />
+                  <RefreshCw className="h-4 w-4" />
                 )}
-                {collectionProgressLabel ?? '데이터 수집'}
+                새로고침
               </Button>
-            ) : null}
-            <Button
-              variant="outline"
-              className="bg-transparent"
-              disabled={isFetching || !isConfigured || isCollectingExternalData}
-              onClick={() => void refetch()}
-            >
-              {isFetching ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-              업데이트
-            </Button>
-          </div>
-        }
-      />
-
-      <ExternalDataSectionNav activeSection={activeSection} />
+            </div>
+          }
+        />
+      ) : null}
 
       {!isConfigured ? (
         <div className="space-y-4">
           <MetricGrid metrics={fallbackMetrics} />
           <EmptyState
             icon={Database}
-            title="외부 데이터 API 주소가 없습니다."
-            description="Cloudflare Pages 환경 변수 VITE_EXTERNAL_DATA_API_URL을 설정하면 외부 데이터 페이지를 사용할 수 있습니다."
+            title="영웅 메타를 준비하지 못했어요."
+            description="잠시 후 다시 시도해주세요. 문제가 계속되면 데이터 안내를 확인하세요."
           />
         </div>
       ) : error ? (
@@ -572,8 +561,8 @@ const ExternalDataPage = () => {
             </Button>
           }
           icon={Database}
-          title="외부 데이터를 불러오지 못했습니다."
-          description={error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.'}
+          title="데이터를 불러오지 못했어요."
+          description="잠시 후 다시 시도해주세요."
         />
       ) : (
         <ExternalDataSectionBody
@@ -581,6 +570,7 @@ const ExternalDataPage = () => {
           esportsEvents={esportsEvents}
           heroRates={heroRates}
           isLoading={isLoading}
+          onCollected={() => void refetch()}
           sourceCards={sourceCards}
           sources={sources}
           warnings={warnings}
@@ -590,29 +580,12 @@ const ExternalDataPage = () => {
   );
 };
 
-const ExternalDataSectionNav = ({ activeSection }: { activeSection: ExternalDataSection }) => (
-  <nav className="mobile-scroll flex gap-2 overflow-x-auto">
-    {externalDataNavSections.map((item) => (
-      <NavLink
-        key={item.value}
-        to={item.value === 'assets' ? item.to : `/external-data/${item.value}`}
-        className={cn(
-          'flex h-10 shrink-0 items-center rounded-md border border-border/70 bg-card px-3 text-sm font-bold text-muted-foreground transition-colors hover:border-primary/35 hover:text-foreground',
-          activeSection === item.value &&
-            'border-primary/60 bg-primary text-primary-foreground hover:text-primary-foreground',
-        )}
-      >
-        {item.label}
-      </NavLink>
-    ))}
-  </nav>
-);
-
 const ExternalDataSectionBody = ({
   activeSection,
   esportsEvents,
   heroRates,
   isLoading,
+  onCollected,
   sourceCards,
   sources,
   warnings,
@@ -621,6 +594,7 @@ const ExternalDataSectionBody = ({
   esportsEvents: ExternalDataOverview['esportsEvents'];
   heroRates: ExternalDataOverview['heroRates'];
   isLoading: boolean;
+  onCollected: () => void;
   sourceCards: ExternalSourceCardModel[];
   sources: ExternalSource[];
   warnings: NonNullable<ExternalDataOverview['warnings']>;
@@ -640,6 +614,7 @@ const ExternalDataSectionBody = ({
       <ExternalHeroesDetailPage
         heroRates={heroRates}
         isLoading={isLoading}
+        onCollected={onCollected}
         sources={sources}
         warnings={warnings}
       />
@@ -706,7 +681,7 @@ const ExternalEsportsBriefing = ({
   const regionSummaries = getEsportsRegionSummaries(esportsEvents).slice(0, 6);
 
   return (
-    <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <section className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
       <div className="grid gap-px bg-border/60 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
         <div className="bg-card px-4 py-4 sm:px-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -772,7 +747,7 @@ const ExternalEsportsBriefing = ({
             ) : (
               <InlineEmptyState
                 title="지역 커버리지가 없습니다."
-                description="일정이 수집되면 지역별 경기 밀도가 표시됩니다."
+                description="일정이 준비되면 지역별 경기 분포가 표시됩니다."
               />
             )}
           </div>
@@ -870,17 +845,24 @@ const ExternalCoverageRow = ({
 const ExternalHeroesDetailPage = ({
   heroRates,
   isLoading,
+  onCollected,
   sources,
   warnings,
 }: {
   heroRates: ExternalHeroRateItem[];
   isLoading: boolean;
+  onCollected: () => void;
   sources: ExternalSource[];
   warnings: NonNullable<ExternalDataOverview['warnings']>;
 }) => {
   return (
     <div className="space-y-4">
-      <ExternalHeroMetaPanel heroRates={heroRates} isLoading={isLoading} sources={sources} />
+      <ExternalHeroMetaPanel
+        heroRates={heroRates}
+        isLoading={isLoading}
+        onCollected={onCollected}
+        sources={sources}
+      />
       {warnings.length > 0 ? <ExternalDataWarningsPanel warnings={warnings} /> : null}
     </div>
   );
@@ -928,13 +910,13 @@ const ExternalSourcesBriefing = ({
   ) as Array<[ExternalSourceType, number]>;
 
   return (
-    <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+    <section className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
       <div className="grid gap-px bg-border/60 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="bg-card px-4 py-4 sm:px-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="metric-label">연결 상태</p>
-              <h2 className="mt-1 text-xl font-black">어떤 보조 데이터가 준비됐는지</h2>
+              <p className="metric-label">데이터 신뢰도</p>
+              <h2 className="mt-1 text-xl font-black">출처와 업데이트 상태</h2>
             </div>
             <Badge variant="outline" className="gap-1.5 bg-transparent">
               <ShieldCheck className="h-3.5 w-3.5" />
@@ -952,23 +934,23 @@ const ExternalSourcesBriefing = ({
               <ExternalBriefMetric
                 label="공식"
                 value={officialCount.toLocaleString('ko-KR')}
-                detail="공식 API/웹"
+                detail="블리자드 제공"
               />
               <ExternalBriefMetric
-                label="서드파티"
+                label="보조 출처"
                 value={thirdPartyCount.toLocaleString('ko-KR')}
-                detail="보강 API/웹"
+                detail="커뮤니티 데이터"
               />
               <ExternalBriefMetric
-                label="수집됨"
+                label="업데이트됨"
                 value={sourceCards.filter((card) => card.latestAt).length.toLocaleString('ko-KR')}
-                detail="최근 수집 기록"
+                detail="최근 반영 기준"
               />
             </div>
           )}
         </div>
         <div className="bg-[hsl(var(--surface-2))] px-4 py-4 sm:px-5">
-          <p className="metric-label">제공 방식</p>
+          <p className="metric-label">출처 구성</p>
           <div className="mt-3 grid gap-2">
             {typeSummaries.length > 0 ? (
               typeSummaries.map(([type, count]) => (
@@ -984,8 +966,8 @@ const ExternalSourcesBriefing = ({
               ))
             ) : (
               <InlineEmptyState
-                title="소스 타입이 없습니다."
-                description="소스 목록이 수집되면 타입 분포가 표시됩니다."
+                title="확인할 출처가 없어요."
+                description="데이터가 연결되면 출처 구성이 표시됩니다."
               />
             )}
           </div>
@@ -1002,17 +984,17 @@ const ExternalSourceRegistry = ({
   isLoading: boolean;
   sourceCards: ExternalSourceCardModel[];
 }) => (
-  <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
+  <section className="ow-panel-cap overflow-hidden rounded-[3px] border border-border bg-card">
     <div className="border-b border-border/60 px-4 py-3 sm:px-5">
-      <p className="metric-label">상세 상태</p>
-      <h2 className="mt-1 text-lg font-bold">소스별 제공 데이터</h2>
+      <p className="metric-label">출처 상세</p>
+      <h2 className="mt-1 text-lg font-bold">어디에서 어떤 데이터를 가져오나요?</h2>
     </div>
     <div className="hidden grid-cols-[minmax(220px,1.2fr)_140px_minmax(180px,0.9fr)_130px_90px] gap-3 border-b border-border/60 bg-[hsl(var(--surface-2))] px-4 py-2 text-xs font-bold text-muted-foreground lg:grid">
-      <span>소스</span>
-      <span>타입</span>
+      <span>출처</span>
+      <span>구분</span>
       <span>제공 데이터</span>
-      <span>최근 수집</span>
-      <span>갱신 주기</span>
+      <span>최근 업데이트</span>
+      <span>업데이트 간격</span>
     </div>
     {isLoading && sourceCards.length === 0 ? (
       <div className="grid gap-0">
@@ -1032,8 +1014,8 @@ const ExternalSourceRegistry = ({
     ) : (
       <InlineEmptyState
         className="m-4"
-        title="표시할 데이터 소스가 없습니다."
-        description="소스 목록이 수집되면 레지스트리가 표시됩니다."
+        title="표시할 데이터 출처가 없어요."
+        description="데이터가 연결되면 출처 정보가 표시됩니다."
       />
     )}
   </section>
@@ -1053,7 +1035,7 @@ const ExternalSourceRegistryRow = ({ card }: { card: ExternalSourceCardModel }) 
             ) : (
               <Globe2 className="h-3 w-3" />
             )}
-            {source.isOfficial ? '공식' : '서드파티'}
+            {source.isOfficial ? '공식' : '보조 출처'}
           </Badge>
           <Badge variant="outline" className="bg-transparent text-[11px]">
             {card.statusLabel}
@@ -1061,7 +1043,7 @@ const ExternalSourceRegistryRow = ({ card }: { card: ExternalSourceCardModel }) 
         </div>
         <h3 className="mt-2 truncate text-base font-black">{source.displayName}</h3>
         <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-          {source.notes || (source.isOfficial ? '공식 데이터' : '외부 보강 데이터')}
+          {source.isOfficial ? '공식 제공 데이터' : '통계와 일정을 보완하는 데이터'}
         </p>
       </div>
       <div className="text-sm font-bold text-muted-foreground">

@@ -12,7 +12,7 @@ const TemporaryTokyoTravelBanner = () => {
   }
 
   return (
-    <div className="h-14 border-b border-border/70 bg-sky-50/70 px-3.5 backdrop-blur-xl sm:px-6 xl:h-16 xl:px-8">
+    <div className="h-14 border-b border-border bg-sky-50 px-3.5 sm:px-6 xl:h-16 xl:px-8">
       <Link
         to={TOKYO_TRAVEL_ROUTE}
         className={cn(

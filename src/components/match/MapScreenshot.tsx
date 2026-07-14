@@ -1,5 +1,6 @@
 import { useState, type ImgHTMLAttributes } from 'react';
 
+import { DeferredImage } from '@/components/common/DeferredImage';
 import { MatchModeLabel } from '@/components/match/MatchModeBadge';
 import { getMapLabel, mapOptions } from '@/data/matchOptions';
 import { getMapScreenshotPath } from '@/data/masterAssets';
@@ -53,7 +54,7 @@ export const MapScreenshot = ({
   }
 
   return (
-    <img
+    <DeferredImage
       {...props}
       alt={alt}
       className={className}
