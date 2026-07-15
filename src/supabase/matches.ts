@@ -18,6 +18,9 @@ type HeroRow = Database['public']['Tables']['match_heroes']['Row'];
 type MatchInsert = Database['public']['Tables']['matches']['Insert'];
 type MatchRow = Database['public']['Tables']['matches']['Row'];
 type MatchUpdate = Database['public']['Tables']['matches']['Update'];
+type MatchWithHeroesRow = MatchRow & { match_heroes: HeroRow[] };
+
+const MATCHES_PAGE_SIZE = 200;
 
 const toIsoString = (value?: MatchDateInput) => {
   if (!value) {
@@ -63,31 +66,19 @@ const rowToMatch = (row: MatchRow, heroRows: HeroRow[] = []): Match => ({
   userId: row.user_id,
 });
 
-const getHeroesByMatchId = async (userId: string, matchIds: string[]) => {
-  const heroesByMatchId = new Map<string, HeroRow[]>();
-
-  if (matchIds.length === 0) {
-    return heroesByMatchId;
-  }
-
+const getMatchHeroes = async (userId: string, matchId: string) => {
   const { data, error } = await supabase
     .from('match_heroes')
     .select('*')
     .eq('user_id', userId)
-    .in('match_id', matchIds)
+    .eq('match_id', matchId)
     .order('order_index', { ascending: true });
 
   if (error) {
     throw error;
   }
 
-  for (const hero of data ?? []) {
-    const current = heroesByMatchId.get(hero.match_id) ?? [];
-    current.push(hero);
-    heroesByMatchId.set(hero.match_id, current);
-  }
-
-  return heroesByMatchId;
+  return data ?? [];
 };
 
 const getMatchRowOrThrow = async (userId: string, matchId: string) => {
@@ -201,41 +192,52 @@ const buildMatchUpdate = (input: MatchUpdateInput) => {
 
 export const listMatches = async (filters: MatchFilters = {}) => {
   const user = await getCurrentUserOrThrow();
+  const matchRows: MatchWithHeroesRow[] = [];
+  let pageStart = 0;
 
-  let query = supabase
-    .from('matches')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('played_at', { ascending: false })
-    .order('created_at', { ascending: false })
-    .order('id', { ascending: false });
+  while (true) {
+    let query = supabase
+      .from('matches')
+      .select('*, match_heroes(*)')
+      .eq('user_id', user.id)
+      .order('played_at', { ascending: false })
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false });
 
-  if (filters.account) query = query.eq('account', filters.account);
-  if (filters.accountId) query = query.eq('account_id', filters.accountId);
-  if (filters.competitiveSeasonId) {
-    query = query.eq('competitive_season_id', filters.competitiveSeasonId);
+    if (filters.account) query = query.eq('account', filters.account);
+    if (filters.accountId) query = query.eq('account_id', filters.accountId);
+    if (filters.competitiveSeasonId) {
+      query = query.eq('competitive_season_id', filters.competitiveSeasonId);
+    }
+    if (filters.mapId) query = query.eq('map_id', filters.mapId);
+    if (filters.matchRole) query = query.eq('match_role', filters.matchRole);
+    if (filters.modeId) query = query.eq('mode_id', filters.modeId);
+    if (filters.playedFrom) {
+      query = query.gte('played_at', toIsoString(filters.playedFrom) ?? '');
+    }
+    if (filters.playedTo) query = query.lte('played_at', toIsoString(filters.playedTo) ?? '');
+    if (filters.queueType) query = query.eq('queue_type', filters.queueType);
+    if (filters.sessionId) query = query.eq('session_id', filters.sessionId);
+
+    const { data, error } = await query.range(pageStart, pageStart + MATCHES_PAGE_SIZE - 1);
+
+    if (error) {
+      throw error;
+    }
+
+    const pageRows = data ?? [];
+    matchRows.push(...pageRows);
+
+    if (pageRows.length < MATCHES_PAGE_SIZE) {
+      break;
+    }
+
+    pageStart += MATCHES_PAGE_SIZE;
   }
-  if (filters.mapId) query = query.eq('map_id', filters.mapId);
-  if (filters.matchRole) query = query.eq('match_role', filters.matchRole);
-  if (filters.modeId) query = query.eq('mode_id', filters.modeId);
-  if (filters.playedFrom) query = query.gte('played_at', toIsoString(filters.playedFrom) ?? '');
-  if (filters.playedTo) query = query.lte('played_at', toIsoString(filters.playedTo) ?? '');
-  if (filters.queueType) query = query.eq('queue_type', filters.queueType);
-  if (filters.sessionId) query = query.eq('session_id', filters.sessionId);
 
-  const { data, error } = await query;
-
-  if (error) {
-    throw error;
-  }
-
-  const matchRows = data ?? [];
-  const heroesByMatchId = await getHeroesByMatchId(
-    user.id,
-    matchRows.map((match) => match.id),
+  const matches = matchRows.map(({ match_heroes: heroRows, ...match }) =>
+    rowToMatch(match, heroRows),
   );
-
-  const matches = matchRows.map((match) => rowToMatch(match, heroesByMatchId.get(match.id)));
 
   if (!filters.heroId) {
     return matches;
@@ -247,9 +249,9 @@ export const listMatches = async (filters: MatchFilters = {}) => {
 export const getMatch = async (matchId: string) => {
   const user = await getCurrentUserOrThrow();
   const match = await getMatchRowOrThrow(user.id, matchId);
-  const heroesByMatchId = await getHeroesByMatchId(user.id, [match.id]);
+  const heroRows = await getMatchHeroes(user.id, match.id);
 
-  return rowToMatch(match, heroesByMatchId.get(match.id));
+  return rowToMatch(match, heroRows);
 };
 
 export const createMatch = async (input: MatchCreateInput) => {
@@ -297,9 +299,9 @@ export const createMatch = async (input: MatchCreateInput) => {
     throw insertHeroesError;
   }
 
-  const heroesByMatchId = await getHeroesByMatchId(user.id, [data.id]);
+  const heroRows = await getMatchHeroes(user.id, data.id);
 
-  return rowToMatch(data, heroesByMatchId.get(data.id));
+  return rowToMatch(data, heroRows);
 };
 
 export const updateMatch = async (input: MatchUpdateInput) => {
@@ -332,9 +334,9 @@ export const updateMatch = async (input: MatchUpdateInput) => {
     });
   }
 
-  const heroesByMatchId = await getHeroesByMatchId(user.id, [match.id]);
+  const heroRows = await getMatchHeroes(user.id, match.id);
 
-  return rowToMatch(match, heroesByMatchId.get(match.id));
+  return rowToMatch(match, heroRows);
 };
 
 export const deleteMatch = async (matchId: string) => {
